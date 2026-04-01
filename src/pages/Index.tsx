@@ -78,7 +78,15 @@ const Index = () => {
       {/* Content */}
       <section className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-2 gap-6">
-          <BlockList blocks={blocks ?? []} loading={blocksLoading} />
+          <div>
+            <BlockList blocks={blocks ?? []} loading={blocksLoading} />
+            <Link
+              to="/blocks"
+              className="mt-3 flex items-center justify-center gap-1 text-sm text-primary hover:underline"
+            >
+              View All Blocks <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
           <TransactionList transactions={recentTxs} loading={blocksLoading} />
         </div>
       </section>

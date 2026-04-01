@@ -185,7 +185,7 @@ const Header = () => {
                 </Link>
               ))}
               <a
-                href="https://github.com"
+                href="https://github.com/hc172808/gyds-explorer"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-2 text-sm text-muted-foreground hover:text-primary hover:bg-secondary/50 rounded-md transition-colors flex items-center gap-2"
