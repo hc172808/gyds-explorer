@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Blocks, Fuel, Link2, Users } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Blocks, Fuel, Link2, Users, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
@@ -11,13 +12,13 @@ const Index = () => {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["networkStats"],
     queryFn: getNetworkStats,
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   });
 
   const { data: blocks, isLoading: blocksLoading } = useQuery({
     queryKey: ["latestBlocks"],
     queryFn: () => getLatestBlocks(10),
-    refetchInterval: 10000,
+    refetchInterval: 3000,
   });
 
   // Extract transactions from blocks
@@ -77,7 +78,15 @@ const Index = () => {
       {/* Content */}
       <section className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-2 gap-6">
-          <BlockList blocks={blocks ?? []} loading={blocksLoading} />
+          <div>
+            <BlockList blocks={blocks ?? []} loading={blocksLoading} />
+            <Link
+              to="/blocks"
+              className="mt-3 flex items-center justify-center gap-1 text-sm text-primary hover:underline"
+            >
+              View All Blocks <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
           <TransactionList transactions={recentTxs} loading={blocksLoading} />
         </div>
       </section>
