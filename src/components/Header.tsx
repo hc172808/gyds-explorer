@@ -115,7 +115,7 @@ const Header = () => {
 
           {/* GitHub link */}
           <a
-            href="https://github.com"
+            href="https://github.com/hc172808/gyds-explorer"
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
