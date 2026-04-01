@@ -34,6 +34,7 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/block/:id" element={<BlockDetail />} />
+                <Route path="/blocks" element={<AllBlocks />} />
                 <Route path="/tx/:hash" element={<TxDetail />} />
                 <Route path="/address/:address" element={<AddressDetail />} />
                 <Route path="/programs" element={<Programs />} />
