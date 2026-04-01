@@ -11,13 +11,13 @@ const Index = () => {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["networkStats"],
     queryFn: getNetworkStats,
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   });
 
   const { data: blocks, isLoading: blocksLoading } = useQuery({
     queryKey: ["latestBlocks"],
     queryFn: () => getLatestBlocks(10),
-    refetchInterval: 10000,
+    refetchInterval: 3000,
   });
 
   // Extract transactions from blocks
