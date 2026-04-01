@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Blocks, Fuel, Link2, Users } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Blocks, Fuel, Link2, Users, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
