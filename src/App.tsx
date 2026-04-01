@@ -8,6 +8,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Index from "./pages/Index";
 import BlockDetail from "./pages/BlockDetail";
+import AllBlocks from "./pages/AllBlocks";
 import TxDetail from "./pages/TxDetail";
 import AddressDetail from "./pages/AddressDetail";
 import Programs from "./pages/Programs";
