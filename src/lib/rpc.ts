@@ -1,9 +1,9 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 
 const RPC_ENDPOINTS = [
-  "https://rpc.netlifegy.com",
-  "https://rpc2.netlifegy.com",
-];
+  import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
+  import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com",
+].filter(Boolean);
 
 let currentEndpoint = 0;
 
