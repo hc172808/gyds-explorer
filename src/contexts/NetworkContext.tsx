@@ -8,26 +8,29 @@ interface NetworkConfig {
   rpcEndpoints: string[];
 }
 
+const PRIMARY_RPC = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+const SECONDARY_RPC = import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com";
+
 const NETWORKS: Record<NetworkType, NetworkConfig> = {
   mainnet: {
     name: "Mainnet",
     type: "mainnet",
-    rpcEndpoints: ["https://rpc.netlifegy.com", "https://rpc2.netlifegy.com"],
+    rpcEndpoints: [PRIMARY_RPC, SECONDARY_RPC],
   },
   testnet: {
     name: "Testnet",
     type: "testnet",
-    rpcEndpoints: ["https://rpc.netlifegy.com", "https://rpc2.netlifegy.com"],
+    rpcEndpoints: [PRIMARY_RPC, SECONDARY_RPC],
   },
   devnet: {
     name: "Devnet",
     type: "devnet",
-    rpcEndpoints: ["https://rpc.netlifegy.com", "https://rpc2.netlifegy.com"],
+    rpcEndpoints: [PRIMARY_RPC, SECONDARY_RPC],
   },
   custom: {
     name: "Custom RPC",
     type: "custom",
-    rpcEndpoints: ["https://rpc.netlifegy.com"],
+    rpcEndpoints: [PRIMARY_RPC],
   },
 };
 
