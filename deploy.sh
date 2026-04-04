@@ -595,12 +595,24 @@ log "Step 8/10 — Setting up PM2 process manager..."
 
 npm install -g pm2 2>/dev/null || true
 
-# Stop existing process if any
+# Stop existing processes if any
 pm2 delete gyds-api 2>/dev/null || true
+pm2 delete gyds-indexer 2>/dev/null || true
 
 # Start API server with PM2
 cd "${API_DIR}"
 pm2 start server.js --name gyds-api --env production
+
+# Start Block Indexer with PM2
+if [ -d "${APP_DIR}/indexer" ]; then
+  cd "${APP_DIR}/indexer"
+  npm install
+  pm2 start indexer.js --name gyds-indexer --env production
+  info "Block indexer started via PM2."
+else
+  warn "Indexer directory not found, skipping indexer setup."
+fi
+
 pm2 save
 
 # Setup PM2 to start on boot
