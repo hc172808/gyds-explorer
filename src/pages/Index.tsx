@@ -5,6 +5,7 @@ import { Blocks, Fuel, Link2, Users, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
+import SearchBar from "@/components/SearchBar";
 import { getNetworkStats, getLatestBlocks, gweiFromWei, hexToNumber } from "@/lib/rpc";
 import { Transaction } from "@/lib/types";
 
@@ -39,14 +40,15 @@ const Index = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-10"
+            className="text-center mb-8"
           >
             <h1 className="text-4xl md:text-5xl font-bold mb-3">
               <span className="gradient-text">GYDS</span> Network Explorer
             </h1>
-            <p className="text-muted-foreground max-w-md mx-auto">
+            <p className="text-muted-foreground max-w-md mx-auto mb-6">
               Explore blocks, transactions, and addresses on the GYDS blockchain network
             </p>
+            <SearchBar />
           </motion.div>
 
           {/* Stats Grid */}

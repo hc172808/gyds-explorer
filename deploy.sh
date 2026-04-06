@@ -67,7 +67,8 @@ echo "║   6. Create API server                     ║"
 echo "║   7. Install dependencies & build          ║"
 echo "║   8. Setup PM2 process manager             ║"
 echo "║   9. Configure Nginx                       ║"
-echo "║  10. SSL certificate (optional)            ║"
+echo "║  10. pgAdmin web interface                 ║"
+echo "║  11. SSL certificate (optional)            ║"
 echo "╚════════════════════════════════════════════╝"
 echo ""
 
@@ -690,9 +691,6 @@ systemctl reload nginx
 info "Nginx configured with API reverse proxy."
 
 # ============================================================
-# STEP 10: SSL with Certbot (optional)
-# ============================================================
-# ============================================================
 # STEP 10: Install pgAdmin Web Interface
 # ============================================================
 log "Step 10/12 — Installing pgAdmin web interface..."
@@ -784,7 +782,7 @@ if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos \
     --email "admin@${DOMAIN}" || warn "Certbot failed — you can run it manually later."
 else
-  log "Step 10/10 — Skipping SSL (no domain provided)."
+  log "Step 11/12 — Skipping SSL (no domain provided)."
   warn "To enable SSL later: sudo certbot --nginx -d yourdomain.com"
 fi
 
@@ -802,6 +800,7 @@ echo "║   🔌 API server:     http://localhost:${API_PORT}/api"
 echo "║   🗄️  Database:       ${DB_NAME} (PostgreSQL)"
 echo "║   👤 DB User:        ${DB_USER}"
 echo "║   🔑 DB Password:    (saved in ${APP_DIR}/.env)"
+echo "║   📊 pgAdmin:        http://your-server/pgadmin4"
 echo "║                                                        ║"
 
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then

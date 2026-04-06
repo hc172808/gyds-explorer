@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link, useSearchParams } from "react-router-dom";
 import { Blocks, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
-import { getBlock, hexToNumber, timeAgo, formatAddress } from "@/lib/rpc";
+import { getBlock, hexToNumber, timeAgo, formatAddress, rpcCall } from "@/lib/rpc";
 
 const BLOCKS_PER_PAGE = 25;
 
