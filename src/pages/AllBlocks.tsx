@@ -24,13 +24,8 @@ const AllBlocks = () => {
   const { data: latestBlockHex } = useQuery({
     queryKey: ["latestBlockNumber"],
     queryFn: async () => {
-      const res = await fetch("https://rpc.netlifegy.com", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: Date.now() }),
-      });
-      const data = await res.json();
-      return data.result as string;
+      const result = await rpcCall("eth_blockNumber");
+      return result as string;
     },
     refetchInterval: 10000,
   });
