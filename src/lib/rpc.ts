@@ -7,7 +7,7 @@ const RPC_ENDPOINTS = [
 
 let currentEndpoint = 0;
 
-async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
+export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
   const maxRetries = RPC_ENDPOINTS.length;
   for (let i = 0; i < maxRetries; i++) {
     const url = RPC_ENDPOINTS[(currentEndpoint + i) % RPC_ENDPOINTS.length];

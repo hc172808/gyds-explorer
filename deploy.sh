@@ -67,7 +67,8 @@ echo "║   6. Create API server                     ║"
 echo "║   7. Install dependencies & build          ║"
 echo "║   8. Setup PM2 process manager             ║"
 echo "║   9. Configure Nginx                       ║"
-echo "║  10. SSL certificate (optional)            ║"
+echo "║  10. pgAdmin web interface                 ║"
+echo "║  11. SSL certificate (optional)            ║"
 echo "╚════════════════════════════════════════════╝"
 echo ""
 
@@ -690,15 +691,98 @@ systemctl reload nginx
 info "Nginx configured with API reverse proxy."
 
 # ============================================================
-# STEP 10: SSL with Certbot (optional)
+# STEP 10: Install pgAdmin Web Interface
+# ============================================================
+log "Step 10/12 — Installing pgAdmin web interface..."
+
+if ! command -v pgadmin4 &> /dev/null && [ ! -f /usr/pgadmin4/bin/setup-web.sh ]; then
+  curl -fsSL https://www.pgadmin.org/static/packages_pgadmin_org.pub | gpg --dearmor -o /usr/share/keyrings/pgadmin-archive-keyring.gpg 2>/dev/null || true
+  echo "deb [signed-by=/usr/share/keyrings/pgadmin-archive-keyring.gpg] https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/$(lsb_release -cs) pgadmin4 main" > /etc/apt/sources.list.d/pgadmin4.list
+  apt-get update -y
+  apt-get install -y pgadmin4-web
+  info "pgAdmin4 installed."
+else
+  warn "pgAdmin4 already installed."
+fi
+
+# Generate pgAdmin credentials
+PGADMIN_EMAIL="admin@${DOMAIN:-gyds.local}"
+PGADMIN_PASSWORD=$(generate_password)
+
+# Configure pgAdmin web mode
+export PGADMIN_SETUP_EMAIL="${PGADMIN_EMAIL}"
+export PGADMIN_SETUP_PASSWORD="${PGADMIN_PASSWORD}"
+/usr/pgadmin4/bin/setup-web.sh --yes 2>/dev/null || warn "pgAdmin web setup may need manual config."
+
+# Add pgAdmin server config for auto-connection
+PGADMIN_SERVERS_DIR="/var/lib/pgadmin/storage/${PGADMIN_EMAIL//[@.]/_}"
+mkdir -p "${PGADMIN_SERVERS_DIR}" 2>/dev/null || true
+
+cat > /tmp/pgadmin_servers.json <<EOF
+{
+  "Servers": {
+    "1": {
+      "Name": "GYDS Explorer DB",
+      "Group": "Servers",
+      "Host": "localhost",
+      "Port": ${DB_PORT},
+      "MaintenanceDB": "${DB_NAME}",
+      "Username": "${DB_USER}",
+      "SSLMode": "prefer",
+      "PassFile": "/tmp/.pgpass_gyds"
+    }
+  }
+}
+EOF
+
+# Create pgpass file for auto-login
+echo "localhost:${DB_PORT}:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" > /tmp/.pgpass_gyds
+chmod 600 /tmp/.pgpass_gyds
+
+# Import servers into pgAdmin (if pgadmin4 CLI available)
+python3 /usr/pgadmin4/lib/python3*/site-packages/pgadmin4/setup.py --load-servers /tmp/pgadmin_servers.json --user "${PGADMIN_EMAIL}" 2>/dev/null || true
+
+# Add pgAdmin variables to .env
+cat >> "${APP_DIR}/.env" <<EOF
+
+# ---------- pgAdmin Web Interface ----------
+PGADMIN_EMAIL=${PGADMIN_EMAIL}
+PGADMIN_PASSWORD=${PGADMIN_PASSWORD}
+EOF
+
+# Configure Nginx proxy for pgAdmin
+PGADMIN_NGINX="/etc/nginx/sites-available/pgadmin"
+cat > "${PGADMIN_NGINX}" <<EOF
+server {
+    listen 5050;
+    server_name ${SERVER_NAME};
+
+    location / {
+        proxy_pass http://127.0.0.1:80/pgadmin4/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Script-Name /pgadmin4;
+    }
+}
+EOF
+ln -sf "${PGADMIN_NGINX}" /etc/nginx/sites-enabled/ 2>/dev/null || true
+
+info "pgAdmin web interface configured."
+info "pgAdmin URL: http://your-server:80/pgadmin4"
+info "pgAdmin email: ${PGADMIN_EMAIL}"
+info "pgAdmin password: ${PGADMIN_PASSWORD} (saved in .env)"
+
+# ============================================================
+# STEP 11: SSL with Certbot (optional)
 # ============================================================
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
-  log "Step 10/10 — Setting up SSL with Certbot..."
+  log "Step 11/12 — Setting up SSL with Certbot..."
   apt-get install -y certbot python3-certbot-nginx
   certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos \
     --email "admin@${DOMAIN}" || warn "Certbot failed — you can run it manually later."
 else
-  log "Step 10/10 — Skipping SSL (no domain provided)."
+  log "Step 11/12 — Skipping SSL (no domain provided)."
   warn "To enable SSL later: sudo certbot --nginx -d yourdomain.com"
 fi
 
@@ -716,6 +800,7 @@ echo "║   🔌 API server:     http://localhost:${API_PORT}/api"
 echo "║   🗄️  Database:       ${DB_NAME} (PostgreSQL)"
 echo "║   👤 DB User:        ${DB_USER}"
 echo "║   🔑 DB Password:    (saved in ${APP_DIR}/.env)"
+echo "║   📊 pgAdmin:        http://your-server/pgadmin4"
 echo "║                                                        ║"
 
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
