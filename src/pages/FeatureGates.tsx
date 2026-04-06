@@ -8,9 +8,9 @@ const FEATURES = [
   { name: "EIP-3855 PUSH0", status: true, description: "PUSH0 opcode support" },
   { name: "SiMD-296 Protocol", status: true, description: "GYDS network consensus enhancement" },
   { name: "Shanghai Upgrade", status: true, description: "Beacon chain withdrawal support" },
-  { name: "Account Abstraction (EIP-4337)", status: false, description: "Smart contract wallets as first-class accounts" },
-  { name: "Verkle Trees", status: false, description: "Verkle tree state commitment scheme" },
-  { name: "EOF (EVM Object Format)", status: false, description: "Structured bytecode container format" },
+  { name: "Account Abstraction (EIP-4337)", status: true, description: "Smart contract wallets as first-class accounts" },
+  { name: "Verkle Trees", status: true, description: "Verkle tree state commitment scheme" },
+  { name: "EOF (EVM Object Format)", status: true, description: "Structured bytecode container format" },
 ];
 
 const FeatureGates = () => {
