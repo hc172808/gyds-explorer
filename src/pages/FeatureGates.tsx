@@ -11,6 +11,8 @@ const FEATURES = [
   { name: "Account Abstraction (EIP-4337)", status: true, description: "Smart contract wallets as first-class accounts" },
   { name: "Verkle Trees", status: true, description: "Verkle tree state commitment scheme" },
   { name: "EOF (EVM Object Format)", status: true, description: "Structured bytecode container format" },
+  { name: "EIP-4844 Proto-Danksharding", status: true, description: "Blob-carrying transactions for L2 scaling" },
+  { name: "EIP-6780 SELFDESTRUCT Removal", status: true, description: "Restricts SELFDESTRUCT to same-transaction context" },
 ];
 
 const FeatureGates = () => {
