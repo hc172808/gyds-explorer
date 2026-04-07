@@ -268,6 +268,10 @@ API_PORT=${API_PORT}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
+# ---------- Feature Gate Service ----------
+FEATURE_GATE_PORT=3002
+VITE_FEATURE_GATE_URL=http://localhost:3002
+
 # ---------- Optional ----------
 API_RATE_LIMIT=100
 API_CORS_ORIGINS=http://localhost:8080,${BASE_URL}
