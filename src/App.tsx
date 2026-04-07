@@ -16,6 +16,7 @@ import Supply from "./pages/Supply";
 import Inspector from "./pages/Inspector";
 import SimD296 from "./pages/SimD296";
 import FeatureGates from "./pages/FeatureGates";
+import AdminDashboard from "./pages/AdminDashboard";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
 
@@ -42,6 +43,7 @@ const App = () => (
                 <Route path="/inspector" element={<Inspector />} />
                 <Route path="/simd-296" element={<SimD296 />} />
                 <Route path="/feature-gates" element={<FeatureGates />} />
+                <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/terms" element={<TermsOfService />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

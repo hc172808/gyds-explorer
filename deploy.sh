@@ -268,6 +268,10 @@ API_PORT=${API_PORT}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
+# ---------- Feature Gate Service ----------
+FEATURE_GATE_PORT=3002
+VITE_FEATURE_GATE_URL=http://localhost:3002
+
 # ---------- Optional ----------
 API_RATE_LIMIT=100
 API_CORS_ORIGINS=http://localhost:8080,${BASE_URL}
@@ -599,19 +603,37 @@ npm install -g pm2 2>/dev/null || true
 # Stop existing processes if any
 pm2 delete gyds-api 2>/dev/null || true
 pm2 delete gyds-indexer 2>/dev/null || true
+pm2 delete gyds-feature-gates 2>/dev/null || true
 
-# Start API server with PM2
-cd "${API_DIR}"
-pm2 start server.js --name gyds-api --env production
-
-# Start Block Indexer with PM2
-if [ -d "${APP_DIR}/indexer" ]; then
-  cd "${APP_DIR}/indexer"
+# Install feature-gate-service dependencies
+if [ -d "${APP_DIR}/feature-gate-service" ]; then
+  cd "${APP_DIR}/feature-gate-service"
   npm install
-  pm2 start indexer.js --name gyds-indexer --env production
-  info "Block indexer started via PM2."
+  cd "${APP_DIR}"
+fi
+
+# Use ecosystem config if available
+if [ -f "${APP_DIR}/ecosystem.config.js" ]; then
+  cd "${APP_DIR}"
+  pm2 start ecosystem.config.js
+  info "All services started via PM2 ecosystem config."
 else
-  warn "Indexer directory not found, skipping indexer setup."
+  # Fallback to individual starts
+  cd "${API_DIR}"
+  pm2 start server.js --name gyds-api --env production
+
+  if [ -d "${APP_DIR}/indexer" ]; then
+    cd "${APP_DIR}/indexer"
+    npm install
+    pm2 start indexer.js --name gyds-indexer --env production
+    info "Block indexer started via PM2."
+  fi
+
+  if [ -d "${APP_DIR}/feature-gate-service" ]; then
+    cd "${APP_DIR}/feature-gate-service"
+    pm2 start server.js --name gyds-feature-gates --env production
+    info "Feature Gate Service started via PM2."
+  fi
 fi
 
 pm2 save
@@ -620,7 +642,7 @@ pm2 save
 pm2 startup systemd -u root --hp /root 2>/dev/null || true
 
 cd "${APP_DIR}"
-info "API server running via PM2 on port ${API_PORT}"
+info "All services running via PM2"
 
 # ============================================================
 # STEP 9: Configure Nginx
@@ -667,6 +689,16 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Proxy Feature Gate Service requests
+    location /fgate/ {
+        proxy_pass http://127.0.0.1:3002/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # SPA fallback — all routes serve index.html

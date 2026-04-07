@@ -2,7 +2,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ArrowLeft, Wallet, FileCode2, Copy, Check } from "lucide-react";
-import { getBalance, getTransactionCount, getCode, weiToEther, hexToNumber } from "@/lib/rpc";
+import { getBalance, getTransactionCount, getCode, hexToNumber } from "@/lib/rpc";
+import { weiToGyds } from "@/lib/coins";
 import { useState } from "react";
 
 const AddressDetail = () => {
@@ -36,7 +37,7 @@ const AddressDetail = () => {
   };
 
   const fields = [
-    { label: "Balance", value: balance ? `${weiToEther(balance)} GYDS` : "..." },
+    { label: "Balance (GYDS)", value: balance ? `${weiToGyds(balance)} GYDS` : "..." },
     { label: "Transactions", value: txCount ? hexToNumber(txCount).toLocaleString() : "..." },
     { label: "Type", value: isContract ? "Contract" : "Externally Owned Account (EOA)" },
   ];
