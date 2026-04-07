@@ -2,7 +2,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRightLeft, CheckCircle, XCircle } from "lucide-react";
-import { getTransaction, getTransactionReceipt, hexToNumber, weiToEther, gweiFromWei, formatTimestamp } from "@/lib/rpc";
+import { getTransaction, getTransactionReceipt, hexToNumber, gweiFromWei, formatTimestamp } from "@/lib/rpc";
+import { weiToGyds } from "@/lib/coins";
 import { getBlock } from "@/lib/rpc";
 
 const TxDetail = () => {
@@ -62,7 +63,7 @@ const TxDetail = () => {
     { label: "Timestamp", value: block ? formatTimestamp(block.timestamp) : "..." },
     { label: "From", value: tx.from, mono: true, link: `/address/${tx.from}` },
     { label: "To", value: tx.to ?? "Contract Creation", mono: true, link: tx.to ? `/address/${tx.to}` : undefined },
-    { label: "Value", value: `${weiToEther(tx.value)} GYDS` },
+    { label: "Value", value: `${weiToGyds(tx.value)} GYDS` },
     { label: "Gas Price", value: `${gweiFromWei(tx.gasPrice)} Gwei` },
     { label: "Gas Used", value: receipt ? hexToNumber(receipt.gasUsed).toLocaleString() : "..." },
     { label: "Nonce", value: hexToNumber(tx.nonce).toString() },
