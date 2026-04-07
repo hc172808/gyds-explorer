@@ -1,11 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ToggleLeft, ArrowLeft, CheckCircle, XCircle, Shield, ShieldOff } from "lucide-react";
+import { ToggleLeft, ArrowLeft, CheckCircle, XCircle, Shield, LogOut, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import WalletLoginDialog from "@/components/WalletLoginDialog";
+import {
+  fetchFeatureGates,
+  toggleFeatureGate,
+  getAdminInfo,
+  clearStoredToken,
+  getStoredToken,
+  type FeatureGate,
+} from "@/lib/featureGateApi";
 
-const DEFAULT_FEATURES = [
+const DEFAULT_FEATURES: FeatureGate[] = [
   { id: "eip-1559", name: "EIP-1559 Base Fee", status: true, description: "Dynamic base fee per gas mechanism" },
   { id: "eip-2930", name: "EIP-2930 Access Lists", status: true, description: "Optional access lists for transactions" },
   { id: "eip-3855", name: "EIP-3855 PUSH0", status: true, description: "PUSH0 opcode support" },
@@ -18,54 +28,86 @@ const DEFAULT_FEATURES = [
   { id: "eip-6780", name: "EIP-6780 SELFDESTRUCT Removal", status: true, description: "Restricts SELFDESTRUCT to same-transaction context" },
 ];
 
-const STORAGE_KEY = "gyds-feature-gates";
-const ADMIN_KEY = "gyds-admin-mode";
-
 const FeatureGates = () => {
-  const [isAdmin, setIsAdmin] = useState(() => {
-    return localStorage.getItem(ADMIN_KEY) === "true";
-  });
+  const [adminWallet, setAdminWallet] = useState<string | null>(null);
+  const [adminLabel, setAdminLabel] = useState<string>("");
+  const [features, setFeatures] = useState<FeatureGate[]>(DEFAULT_FEATURES);
+  const [loading, setLoading] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState(false);
 
-  const [features, setFeatures] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as Record<string, boolean>;
-        return DEFAULT_FEATURES.map((f) => ({
-          ...f,
-          status: parsed[f.id] !== undefined ? parsed[f.id] : f.status,
-        }));
-      } catch {
-        return DEFAULT_FEATURES;
-      }
-    }
-    return DEFAULT_FEATURES;
-  });
-
+  // Check for existing session and load features
   useEffect(() => {
-    const statuses: Record<string, boolean> = {};
-    features.forEach((f) => (statuses[f.id] = f.status));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(statuses));
-  }, [features]);
-
-  useEffect(() => {
-    localStorage.setItem(ADMIN_KEY, String(isAdmin));
-  }, [isAdmin]);
-
-  const toggleFeature = (id: string) => {
-    setFeatures((prev) =>
-      prev.map((f) => {
-        if (f.id === id) {
-          const newStatus = !f.status;
-          toast(newStatus ? "Feature enabled" : "Feature disabled", {
-            description: f.name,
-          });
-          return { ...f, status: newStatus };
+    const init = async () => {
+      // Check existing admin token
+      if (getStoredToken()) {
+        const info = await getAdminInfo();
+        if (info) {
+          setAdminWallet(info.walletAddress);
+          setAdminLabel(info.label);
         }
-        return f;
-      })
-    );
+      }
+      // Try to load from API
+      await loadFeatures();
+    };
+    init();
+  }, []);
+
+  const loadFeatures = useCallback(async () => {
+    setLoading(true);
+    try {
+      const gates = await fetchFeatureGates();
+      if (gates && gates.length > 0) {
+        setFeatures(gates);
+        setApiAvailable(true);
+      }
+    } catch {
+      // API not available, use defaults
+      setApiAvailable(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleToggle = async (id: string) => {
+    const feature = features.find((f) => f.id === id);
+    if (!feature) return;
+
+    const newStatus = !feature.status;
+
+    // Optimistic update
+    setFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, status: newStatus } : f)));
+
+    if (apiAvailable) {
+      try {
+        await toggleFeatureGate(id, newStatus);
+        toast(newStatus ? "Feature enabled" : "Feature disabled", { description: feature.name });
+      } catch (err: unknown) {
+        // Revert on failure
+        setFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, status: !newStatus } : f)));
+        const message = err instanceof Error ? err.message : "Failed to update";
+        toast.error("Update failed", { description: message });
+      }
+    } else {
+      toast(newStatus ? "Feature enabled" : "Feature disabled", {
+        description: `${feature.name} (local only)`,
+      });
+    }
   };
+
+  const handleLogin = (walletAddress: string, label: string) => {
+    setAdminWallet(walletAddress);
+    setAdminLabel(label);
+    loadFeatures();
+  };
+
+  const handleLogout = () => {
+    clearStoredToken();
+    setAdminWallet(null);
+    setAdminLabel("");
+    toast("Logged out", { description: "Admin session ended" });
+  };
+
+  const isAdmin = !!adminWallet;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -74,7 +116,7 @@ const FeatureGates = () => {
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
 
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-amber/10">
               <ToggleLeft className="w-6 h-6 text-amber" />
@@ -82,18 +124,40 @@ const FeatureGates = () => {
             <h1 className="text-2xl font-bold">Feature Gates</h1>
           </div>
 
-          <button
-            onClick={() => setIsAdmin(!isAdmin)}
-            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              isAdmin
-                ? "bg-primary/10 text-primary border border-primary/20"
-                : "bg-secondary text-muted-foreground border border-border"
-            }`}
-          >
-            {isAdmin ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
-            {isAdmin ? "Admin Mode" : "View Mode"}
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                  <Shield className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs font-medium text-primary">
+                    {adminLabel || `${adminWallet!.slice(0, 6)}...${adminWallet!.slice(-4)}`}
+                  </span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1 text-muted-foreground text-xs">
+                  <LogOut className="w-3.5 h-3.5" />
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <WalletLoginDialog onLoginSuccess={handleLogin} />
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadFeatures}
+              disabled={loading}
+              className="text-muted-foreground"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
+
+        {!apiAvailable && (
+          <div className="mb-4 px-4 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-muted-foreground">
+            ⚠️ Feature Gate Service not connected. Showing default states. Changes are local only.
+          </div>
+        )}
 
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           {features.map((f) => (
@@ -108,7 +172,7 @@ const FeatureGates = () => {
                 <p className="text-xs text-muted-foreground">{f.description}</p>
               </div>
               {isAdmin ? (
-                <Switch checked={f.status} onCheckedChange={() => toggleFeature(f.id)} />
+                <Switch checked={f.status} onCheckedChange={() => handleToggle(f.id)} />
               ) : (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${f.status ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"}`}>
                   {f.status ? "Active" : "Inactive"}
