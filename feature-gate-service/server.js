@@ -206,6 +206,81 @@ app.put("/api/feature-gates/:id", requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Admin Wallet Management Routes ───────────────────────────────
+
+// List all admin wallets
+app.get("/api/admin/wallets", requireAdmin, async (_req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, wallet_address, label, is_active, created_at FROM admin_wallets ORDER BY created_at DESC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch wallets error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Add admin wallet
+app.post("/api/admin/wallets", requireAdmin, async (req, res) => {
+  try {
+    const { walletAddress, label } = req.body;
+    if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    const result = await pool.query(
+      "INSERT INTO admin_wallets (wallet_address, label) VALUES ($1, $2) RETURNING *",
+      [walletAddress.toLowerCase(), label || null]
+    );
+    console.log(`Admin wallet added: ${walletAddress} by ${req.admin.walletAddress}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "Wallet address already exists" });
+    }
+    console.error("Add wallet error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Toggle admin wallet active status
+app.put("/api/admin/wallets/:id/toggle", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+    const result = await pool.query(
+      "UPDATE admin_wallets SET is_active = $1 WHERE id = $2 RETURNING *",
+      [is_active, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Wallet not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Toggle wallet error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Remove admin wallet
+app.delete("/api/admin/wallets/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      "DELETE FROM admin_wallets WHERE id = $1 RETURNING wallet_address",
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Wallet not found" });
+    }
+    console.log(`Admin wallet removed: ${result.rows[0].wallet_address} by ${req.admin.walletAddress}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Remove wallet error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── Health ───────────────────────────────────────────────────────
 app.get("/api/health", async (_req, res) => {
   try {
