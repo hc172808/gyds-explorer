@@ -2,6 +2,7 @@ package database
 
 import (
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -58,21 +59,21 @@ func (l *LevelDB) Close() error {
 
 // levelDBIterator wraps the LevelDB iterator
 type levelDBIterator struct {
-	iter *leveldb.Iterator
+	iter iterator.Iterator
 }
 
 func (it *levelDBIterator) Next() bool {
-	return (*it.iter).Next()
+	return it.iter.Next()
 }
 
 func (it *levelDBIterator) Key() []byte {
-	return (*it.iter).Key()
+	return it.iter.Key()
 }
 
 func (it *levelDBIterator) Value() []byte {
-	return (*it.iter).Value()
+	return it.iter.Value()
 }
 
 func (it *levelDBIterator) Release() {
-	(*it.iter).Release()
+	it.iter.Release()
 }
