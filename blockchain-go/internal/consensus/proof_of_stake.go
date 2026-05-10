@@ -4,21 +4,29 @@ import (
 	"math/big"
 	"sort"
 	"sync"
-
-	"github.com/guardian-chain/blockchain-go/internal/blockchain"
 )
 
 // MinStake is the minimum GYDS required to become a validator (1000 GYDS)
 var MinStake = new(big.Int).Mul(big.NewInt(1000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 
+// BlockReward used for PoS bonus calculation (kept in sync with blockchain.BlockReward)
+var BlockReward = new(big.Int).Mul(big.NewInt(2), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+
+// StateReader is the minimal state interface PoS needs.
+// This avoids importing the blockchain package and prevents an import cycle.
+type StateReader interface {
+	GetStake(addr string) *big.Int
+	AllAccounts() []string
+}
+
 // ProofOfStake manages validator selection and staking consensus
 type ProofOfStake struct {
 	mu    sync.RWMutex
-	state *blockchain.StateDB
+	state StateReader
 }
 
 // NewProofOfStake creates a new PoS consensus engine
-func NewProofOfStake(state *blockchain.StateDB) *ProofOfStake {
+func NewProofOfStake(state StateReader) *ProofOfStake {
 	return &ProofOfStake{state: state}
 }
 
@@ -40,7 +48,6 @@ func (pos *ProofOfStake) GetValidators() []string {
 		}
 	}
 
-	// Sort by stake descending for deterministic ordering
 	sort.Slice(validators, func(i, j int) bool {
 		si := pos.state.GetStake(validators[i])
 		sj := pos.state.GetStake(validators[j])
@@ -51,20 +58,17 @@ func (pos *ProofOfStake) GetValidators() []string {
 }
 
 // SelectValidator picks the next block producer based on stake weight
-// Uses a simple round-robin weighted by stake amount
 func (pos *ProofOfStake) SelectValidator(blockNumber uint64) string {
 	validators := pos.GetValidators()
 	if len(validators) == 0 {
-		return "" // No validators, fall back to PoW
+		return ""
 	}
 
-	// Weighted selection: higher stake = more frequent selection
 	totalStake := new(big.Int)
 	for _, v := range validators {
 		totalStake.Add(totalStake, pos.state.GetStake(v))
 	}
 
-	// Use block number as seed for deterministic selection
 	target := new(big.Int).Mod(big.NewInt(int64(blockNumber)), totalStake)
 
 	cumulative := new(big.Int)
@@ -79,7 +83,6 @@ func (pos *ProofOfStake) SelectValidator(blockNumber uint64) string {
 }
 
 // CalculateDifficulty adjusts difficulty based on stake
-// Higher stake = lower difficulty (easier to mine)
 func (pos *ProofOfStake) CalculateDifficulty(stake *big.Int) *big.Int {
 	baseDifficulty := big.NewInt(1000000)
 
@@ -87,8 +90,6 @@ func (pos *ProofOfStake) CalculateDifficulty(stake *big.Int) *big.Int {
 		return baseDifficulty
 	}
 
-	// Reduce difficulty proportionally to stake
-	// difficulty = baseDifficulty / (1 + stake/MinStake)
 	ratio := new(big.Int).Div(stake, MinStake)
 	divisor := new(big.Int).Add(big.NewInt(1), ratio)
 	adjusted := new(big.Int).Div(baseDifficulty, divisor)
@@ -100,7 +101,6 @@ func (pos *ProofOfStake) CalculateDifficulty(stake *big.Int) *big.Int {
 }
 
 // CalculateRewardBonus computes additional mining reward based on stake
-// Bonus = base_reward * (stake / total_stake) * 0.5
 func (pos *ProofOfStake) CalculateRewardBonus(stake *big.Int) *big.Int {
 	if stake.Sign() == 0 {
 		return new(big.Int)
@@ -116,8 +116,7 @@ func (pos *ProofOfStake) CalculateRewardBonus(stake *big.Int) *big.Int {
 		return new(big.Int)
 	}
 
-	// Bonus = BlockReward * stake / totalStake / 2
-	bonus := new(big.Int).Mul(blockchain.BlockReward, stake)
+	bonus := new(big.Int).Mul(BlockReward, stake)
 	bonus.Div(bonus, totalStake)
 	bonus.Div(bonus, big.NewInt(2))
 
@@ -126,14 +125,12 @@ func (pos *ProofOfStake) CalculateRewardBonus(stake *big.Int) *big.Int {
 
 // ValidateStake checks if a staking transaction is valid
 func (pos *ProofOfStake) ValidateStake(addr string, amount *big.Int) error {
-	// Any positive amount can be staked
 	if amount.Sign() <= 0 {
 		return errInvalidStakeAmount
 	}
 	return nil
 }
 
-// Custom errors
 type posError string
 
 func (e posError) Error() string { return string(e) }
