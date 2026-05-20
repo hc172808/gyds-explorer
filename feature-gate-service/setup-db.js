@@ -62,7 +62,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO admin_wallets (wallet_address, label) VALUES
   ('0x6422D12BFADdEE5142BFaD21b3006a74D09017B1', 'Founder')
 ON CONFLICT (wallet_address) DO UPDATE SET label = EXCLUDED.label, is_active = TRUE;
-ON CONFLICT (wallet_address) DO NOTHING;
+
 
 CREATE INDEX IF NOT EXISTS idx_admin_wallets_address ON admin_wallets (wallet_address);
 CREATE INDEX IF NOT EXISTS idx_feature_gates_status ON feature_gates (status);
