@@ -58,9 +58,10 @@ INSERT INTO feature_gates (id, name, description, status) VALUES
   ('eip-6780', 'EIP-6780 SELFDESTRUCT Removal', 'Restricts SELFDESTRUCT to same-transaction context', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Insert a default admin wallet (CHANGE THIS to your actual admin wallet address)
+-- Insert founder/admin wallet
 INSERT INTO admin_wallets (wallet_address, label) VALUES
-  ('0x0000000000000000000000000000000000000000', 'Default Admin - CHANGE ME')
+  ('0x6422D12BFADdEE5142BFaD21b3006a74D09017B1', 'Founder')
+ON CONFLICT (wallet_address) DO UPDATE SET label = EXCLUDED.label, is_active = TRUE;
 ON CONFLICT (wallet_address) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_admin_wallets_address ON admin_wallets (wallet_address);
