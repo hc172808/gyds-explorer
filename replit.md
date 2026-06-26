@@ -1,36 +1,41 @@
-# [Project name]
+# GYDS Network Explorer
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Solana-compatible blockchain explorer that lets users browse blocks, transactions, and wallet addresses on the GYDS network.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/solana-explorer run dev` — run the frontend (workflow: `artifacts/solana-explorer: web`)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
+- Required env: `VITE_RPC_URL_2` — secondary RPC endpoint (default: https://rpc2.netlifegy.com)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React + Vite, Tailwind v3, shadcn/ui
+- Routing: react-router-dom v7 with `basename={import.meta.env.BASE_URL}`
+- Charts: recharts, framer-motion
+- State: @tanstack/react-query
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/solana-explorer/src/` — all frontend source
+- `artifacts/solana-explorer/src/pages/` — page components (Index, BlockDetail, TxDetail, etc.)
+- `artifacts/solana-explorer/src/components/` — shared UI components
+- `artifacts/solana-explorer/src/contexts/NetworkContext.tsx` — network/RPC switching logic
+- `artifacts/solana-explorer/src/hookslib/` — custom data-fetching hooks
+- `artifacts/solana-explorer/src/index.css` — theme (dark, neon-green accent, Space Grotesk + JetBrains Mono fonts)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Pure frontend app — no backend needed; calls Solana/GYDS RPC endpoints directly from the browser
+- Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
+- react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
+- RPC endpoints configurable via `VITE_RPC_URL` / `VITE_RPC_URL_2` env vars
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users can search and explore the GYDS blockchain: view live block heights, gas prices, chain info, latest blocks and transactions, inspect individual blocks/transactions/addresses, browse programs, token supply, and use the transaction inspector.
 
 ## User preferences
 
@@ -38,7 +43,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Do NOT run `pnpm dev` at workspace root — use the workflow or `pnpm --filter @workspace/solana-explorer run dev`
+- Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
+- The app talks directly to RPC nodes — no api-server is used by this app
 
 ## Pointers
 

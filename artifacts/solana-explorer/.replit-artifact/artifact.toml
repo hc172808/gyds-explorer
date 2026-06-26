@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Solana Explorer"
+version = "1.0.0"
+id = "artifacts/solana-explorer"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18680
+
+[services.development]
+run = "pnpm --filter @workspace/solana-explorer run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/solana-explorer", "run", "build" ]
+publicDir = "artifacts/solana-explorer/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18680"
+BASE_PATH = "/"
