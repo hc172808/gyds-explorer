@@ -3,7 +3,7 @@
  * Handles communication with the Feature Gate Service
  */
 
-const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL || "http://localhost:3002";
+const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL ?? "";
 
 const TOKEN_KEY = "gyds-admin-token";
 
