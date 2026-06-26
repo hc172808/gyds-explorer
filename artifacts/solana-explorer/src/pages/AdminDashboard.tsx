@@ -15,16 +15,16 @@ import { getStoredToken } from "@/lib/featureGateApi";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
 
-const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL || "http://localhost:3002";
+const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL ?? "";
 
 type Tab = "wallets" | "node" | "tokens";
 
 interface AdminWallet {
   id: number;
-  wallet_address: string;
+  walletAddress: string;
   label: string | null;
-  is_active: boolean;
-  created_at: string;
+  isActive: boolean;
+  createdAt: string;
 }
 
 interface RpcStatus {
@@ -324,7 +324,7 @@ function AdminWalletsTab() {
       const res = await fetch(`${API_BASE}/api/admin/wallets/${id}/toggle`, {
         method: "PUT",
         headers: authHeaders(),
-        body: JSON.stringify({ is_active: !currentActive }),
+        body: JSON.stringify({ isActive: !currentActive }),
       });
       if (!res.ok) throw new Error("Failed to toggle");
       fetchWallets();
@@ -382,21 +382,21 @@ function AdminWalletsTab() {
         ) : (
           wallets.map((w) => (
             <div key={w.id} className="flex items-center gap-3 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
-              {w.is_active
+              {w.isActive
                 ? <CheckCircle className="w-4 h-4 text-primary shrink-0" />
                 : <XCircle    className="w-4 h-4 text-muted-foreground shrink-0" />}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-mono break-all">{w.wallet_address}</p>
+                <p className="text-sm font-mono break-all">{w.walletAddress}</p>
                 <div className="flex items-center gap-2 mt-0.5">
                   {w.label && <span className="text-xs text-muted-foreground">{w.label}</span>}
-                  <span className="text-xs text-muted-foreground">Added {new Date(w.created_at).toLocaleDateString()}</span>
+                  <span className="text-xs text-muted-foreground">Added {new Date(w.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => toggleWallet(w.id, w.is_active)} className="text-xs">
-                  {w.is_active ? "Deactivate" : "Activate"}
+                <Button variant="ghost" size="sm" onClick={() => toggleWallet(w.id, w.isActive)} className="text-xs">
+                  {w.isActive ? "Deactivate" : "Activate"}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => removeWallet(w.id, w.wallet_address)} className="text-destructive hover:text-destructive">
+                <Button variant="ghost" size="sm" onClick={() => removeWallet(w.id, w.walletAddress)} className="text-destructive hover:text-destructive">
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>

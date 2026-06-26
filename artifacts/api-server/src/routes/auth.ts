@@ -8,7 +8,7 @@ import { eq, sql } from "drizzle-orm";
 import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
-const JWT_SECRET = process.env.API_SECRET_KEY || "gyds-change-me-secret";
+const JWT_SECRET = process.env.API_SECRET_KEY!;
 
 // POST /auth/nonce — request a nonce for wallet signing
 router.post("/nonce", async (req, res) => {
