@@ -4,6 +4,7 @@ import {
   ArrowLeft, Shield, UserPlus, Trash2, Wallet, Loader2,
   CheckCircle, XCircle, RefreshCw, Settings, Network,
   Server, Wifi, WifiOff, Copy, RotateCcw, Save, Activity,
+  Coins, Plus, ExternalLink, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 
 const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL || "http://localhost:3002";
 
-type Tab = "wallets" | "node";
+type Tab = "wallets" | "node" | "tokens";
 
 interface AdminWallet {
   id: number;
@@ -406,6 +407,406 @@ function AdminWalletsTab() {
   );
 }
 
+// ── Tokens Tab ────────────────────────────────────────────────────────────────
+const SOLIDITY_TEMPLATE = (name: string, symbol: string, decimals: number, supply: string, mintable: boolean) => `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract ${name.replace(/\s+/g, "")}Token {
+    string  public name     = "${name}";
+    string  public symbol   = "${symbol}";
+    uint8   public decimals = ${decimals};
+    uint256 public totalSupply;
+    address public owner;
+    bool    public mintable = ${mintable};
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    modifier onlyOwner() { require(msg.sender == owner, "Not owner"); _; }
+
+    constructor() {
+        owner = msg.sender;
+        uint256 raw = ${supply} * (10 ** uint256(decimals));
+        totalSupply           = raw;
+        balanceOf[msg.sender] = raw;
+        emit Transfer(address(0), msg.sender, raw);
+    }
+
+    function transfer(address to, uint256 amount) public returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to]         += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+    function approve(address spender, uint256 amount) public returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+    function transferFrom(address from, address to, uint256 amount) public returns (bool) {
+        require(balanceOf[from] >= amount, "Insufficient balance");
+        require(allowance[from][msg.sender] >= amount, "Insufficient allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to]   += amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }${mintable ? `
+    function mint(address to, uint256 amount) public onlyOwner {
+        uint256 raw = amount * (10 ** uint256(decimals));
+        totalSupply   += raw;
+        balanceOf[to] += raw;
+        emit Transfer(address(0), to, raw);
+    }` : ""}
+    function burn(uint256 amount) public {
+        require(balanceOf[msg.sender] >= amount, "Insufficient balance");
+        balanceOf[msg.sender] -= amount;
+        totalSupply           -= amount;
+        emit Transfer(msg.sender, address(0), amount);
+    }
+}`;
+
+interface DeployedToken {
+  address: string;
+  name: string;
+  symbol: string;
+  supply: string;
+  decimals: number;
+  deployedAt: string;
+}
+
+function TokensTab() {
+  const { primaryRpc } = useNetwork();
+  const rpcUrl = primaryRpc || import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+
+  // Form state
+  const [tokenName,     setTokenName]     = useState("My GYDS Token");
+  const [tokenSymbol,   setTokenSymbol]   = useState("MGT");
+  const [tokenDecimals, setTokenDecimals] = useState("18");
+  const [tokenSupply,   setTokenSupply]   = useState("1000000");
+  const [mintable,      setMintable]      = useState(false);
+  const [showCode,      setShowCode]      = useState(false);
+
+  // Deployed tokens registry (localStorage)
+  const [deployedTokens, setDeployedTokens] = useState<DeployedToken[]>(() => {
+    try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
+    catch { return []; }
+  });
+  const [newTokenAddr, setNewTokenAddr] = useState("");
+  const [newTokenLabel, setNewTokenLabel] = useState("");
+
+  const solidityCode = SOLIDITY_TEMPLATE(
+    tokenName || "MyToken",
+    tokenSymbol || "MTK",
+    parseInt(tokenDecimals) || 18,
+    tokenSupply || "1000000",
+    mintable,
+  );
+
+  const copyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
+  const addToken = () => {
+    if (!newTokenAddr.startsWith("0x") || newTokenAddr.length !== 42) {
+      toast.error("Enter a valid 0x contract address (42 chars).");
+      return;
+    }
+    const entry: DeployedToken = {
+      address:    newTokenAddr.trim(),
+      name:       newTokenLabel || "Unknown Token",
+      symbol:     "",
+      supply:     "",
+      decimals:   18,
+      deployedAt: new Date().toISOString(),
+    };
+    const updated = [entry, ...deployedTokens];
+    setDeployedTokens(updated);
+    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    setNewTokenAddr("");
+    setNewTokenLabel("");
+    toast.success("Token address saved.");
+  };
+
+  const removeToken = (addr: string) => {
+    const updated = deployedTokens.filter((t) => t.address !== addr);
+    setDeployedTokens(updated);
+    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+  };
+
+  const remixUrl =
+    `https://remix.ethereum.org/#lang=en&optimize=true&evmVersion=paris&version=soljson-v0.8.24+commit.e11b9ed9.js`;
+
+  const deployStep = `// ── Run on your node server (geth console) ──────────────────
+// 1. Compile token-contract.sol in Remix (https://remix.ethereum.org)
+// 2. Copy the compiled bytecode from Remix → Compilation Details
+// 3. Then in the geth console (run: gyds-console):
+
+personal.unlockAccount(eth.coinbase, "YOUR_PASSWORD", 300)
+
+var bytecode = "0x..."; // paste Remix bytecode here
+var tx = eth.sendTransaction({
+  from:  eth.coinbase,
+  data:  bytecode,
+  gas:   3000000
+});
+
+// Wait for mining, then get the address:
+eth.getTransactionReceipt(tx).contractAddress`;
+
+  const metaMaskSetup = `Network name:  GYDS Network
+RPC URL:       ${rpcUrl}
+Chain ID:      29987
+Currency:      GYDS
+Explorer URL:  (your explorer URL)`;
+
+  return (
+    <div className="space-y-6">
+      {/* Token Builder */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-border bg-secondary/30">
+          <Coins className="w-4 h-4 text-primary" />
+          <h2 className="font-semibold text-sm">ERC-20 Token Builder</h2>
+        </div>
+        <div className="p-5 space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Configure your token parameters, then deploy to the GYDS network using Remix IDE or the geth console.
+          </p>
+
+          {/* Token params grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Token Name</label>
+              <Input value={tokenName} onChange={(e) => setTokenName(e.target.value)} placeholder="My GYDS Token" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Symbol</label>
+              <Input value={tokenSymbol} onChange={(e) => setTokenSymbol(e.target.value.toUpperCase())} placeholder="MGT" maxLength={10} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Decimals</label>
+              <Input type="number" min={0} max={18} value={tokenDecimals} onChange={(e) => setTokenDecimals(e.target.value)} placeholder="18" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Initial Supply (whole tokens)</label>
+              <Input type="number" min={1} value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="1000000" />
+            </div>
+          </div>
+
+          {/* Mintable toggle */}
+          <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/20">
+            <button
+              onClick={() => setMintable((m) => !m)}
+              className={`relative w-10 h-5 rounded-full transition-colors ${mintable ? "bg-primary" : "bg-muted"}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${mintable ? "translate-x-5" : "translate-x-0"}`} />
+            </button>
+            <div>
+              <p className="text-sm font-medium">Mintable</p>
+              <p className="text-xs text-muted-foreground">Owner can create additional tokens after deployment</p>
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="rounded-lg bg-secondary/30 border border-border p-4 space-y-1">
+            <p className="text-xs font-mono text-muted-foreground">Token summary</p>
+            <p className="text-sm font-mono">
+              <span className="text-primary">{tokenName || "—"}</span>
+              {" "}({tokenSymbol || "—"}) · {tokenDecimals} decimals ·{" "}
+              {Number(tokenSupply || 0).toLocaleString()} initial supply
+              {mintable ? " · mintable" : " · fixed supply"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Raw total supply: {tokenSupply && tokenDecimals
+                ? (BigInt(tokenSupply || 0) * 10n ** BigInt(tokenDecimals || 18)).toString()
+                : "—"} units
+            </p>
+          </div>
+
+          {/* Solidity code */}
+          <div>
+            <button
+              onClick={() => setShowCode((s) => !s)}
+              className="flex items-center gap-2 text-sm font-medium text-primary hover:underline mb-2"
+            >
+              {showCode ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showCode ? "Hide" : "Show"} Solidity contract code
+            </button>
+            {showCode && (
+              <div className="relative">
+                <pre className="text-xs font-mono bg-secondary/50 border border-border rounded-lg p-4 overflow-auto max-h-80 leading-relaxed">
+                  {solidityCode}
+                </pre>
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => copyText(solidityCode, "Solidity contract")}
+                  className="absolute top-2 right-2 h-7 text-xs gap-1"
+                >
+                  <Copy className="w-3 h-3" /> Copy
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Deployment Guide */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-border bg-secondary/30">
+          <Server className="w-4 h-4 text-primary" />
+          <h2 className="font-semibold text-sm">Deployment Guide</h2>
+        </div>
+        <div className="p-5 space-y-5">
+
+          {/* Option A: Remix */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option A</span>
+              <span className="text-sm font-semibold">Deploy via Remix IDE (easiest)</span>
+            </div>
+            <ol className="text-sm text-muted-foreground space-y-2 pl-4 list-decimal">
+              <li>
+                Open{" "}
+                <a href={remixUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-primary hover:underline inline-flex items-center gap-1">
+                  remix.ethereum.org <ExternalLink className="w-3 h-3" />
+                </a>
+              </li>
+              <li>Create a new file <code className="text-xs bg-secondary px-1 rounded">MyToken.sol</code> and paste the contract code above</li>
+              <li>Compile with Solidity <strong>0.8.20+</strong> and enable optimizer</li>
+              <li>Add GYDS Network to MetaMask:
+                <div className="relative mt-1.5">
+                  <pre className="text-xs font-mono bg-secondary/50 border border-border rounded p-3 overflow-auto">{metaMaskSetup}</pre>
+                  <Button variant="ghost" size="sm" onClick={() => copyText(metaMaskSetup, "MetaMask config")}
+                    className="absolute top-1.5 right-1.5 h-6 text-xs gap-1">
+                    <Copy className="w-3 h-3" /> Copy
+                  </Button>
+                </div>
+              </li>
+              <li>In Remix → Deploy tab, select <strong>Injected Provider – MetaMask</strong></li>
+              <li>Deploy — MetaMask will prompt you to confirm. Copy the contract address after mining.</li>
+            </ol>
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* Option B: geth console */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option B</span>
+              <span className="text-sm font-semibold">Deploy via geth console (server-side)</span>
+            </div>
+            <p className="text-sm text-muted-foreground">Run on your node server after getting the bytecode from Remix:</p>
+            <div className="relative">
+              <pre className="text-xs font-mono bg-secondary/50 border border-border rounded-lg p-4 overflow-auto max-h-56 leading-relaxed">{deployStep}</pre>
+              <Button variant="ghost" size="sm" onClick={() => copyText(deployStep, "Deploy script")}
+                className="absolute top-2 right-2 h-7 text-xs gap-1">
+                <Copy className="w-3 h-3" /> Copy
+              </Button>
+            </div>
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* Option C: deploy-token.js */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option C</span>
+              <span className="text-sm font-semibold">deploy-token.js helper script</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              A <code className="text-xs bg-secondary px-1 rounded">deploy-token.js</code> script is included in the project root.
+              It generates the exact geth console commands and Remix instructions for your token parameters:
+            </p>
+            <div className="relative">
+              <pre className="text-xs font-mono bg-secondary/50 border border-border rounded p-3 overflow-auto">{`cd /var/www/gyds-explorer
+node deploy-token.js \\
+  --name "${tokenName || "My GYDS Token"}" \\
+  --symbol "${tokenSymbol || "MGT"}" \\
+  --supply ${tokenSupply || "1000000"} \\
+  --decimals ${tokenDecimals || "18"} \\
+  --private-key 0xYOUR_PRIVATE_KEY`}</pre>
+              <Button variant="ghost" size="sm"
+                onClick={() => copyText(`node deploy-token.js --name "${tokenName}" --symbol "${tokenSymbol}" --supply ${tokenSupply} --decimals ${tokenDecimals} --private-key 0xYOUR_KEY`, "deploy command")}
+                className="absolute top-1.5 right-1.5 h-6 text-xs gap-1">
+                <Copy className="w-3 h-3" /> Copy
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Deployed Tokens Registry */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-border bg-secondary/30">
+          <Activity className="w-4 h-4 text-primary" />
+          <h2 className="font-semibold text-sm">Deployed Tokens Registry</h2>
+          <span className="ml-auto text-xs text-muted-foreground">Saved locally in your browser</span>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Add token */}
+          <div className="flex gap-2">
+            <Input
+              value={newTokenLabel}
+              onChange={(e) => setNewTokenLabel(e.target.value)}
+              placeholder="Token name / label"
+              className="w-40 shrink-0"
+            />
+            <Input
+              value={newTokenAddr}
+              onChange={(e) => setNewTokenAddr(e.target.value)}
+              placeholder="0x contract address"
+              className="font-mono text-xs flex-1"
+            />
+            <Button onClick={addToken} size="sm" className="gap-1 shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Add
+            </Button>
+          </div>
+
+          {/* Token list */}
+          {deployedTokens.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No tokens registered yet. Deploy a token and paste its contract address here.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {deployedTokens.map((t) => (
+                <div key={t.address} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/20">
+                  <Coins className="w-4 h-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{t.name}</p>
+                    <p className="text-xs font-mono text-muted-foreground break-all">{t.address}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Added {new Date(t.deployedAt).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                      onClick={() => copyText(t.address, "Address")}>
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Link to={`/address/${t.address}`}>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={() => removeToken(t.address)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const AdminDashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -440,6 +841,7 @@ const AdminDashboard = () => {
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "node",    label: "Node Settings",  icon: <Settings className="w-3.5 h-3.5" /> },
+    { id: "tokens",  label: "Tokens",         icon: <Coins    className="w-3.5 h-3.5" /> },
     { id: "wallets", label: "Admin Wallets",  icon: <Shield   className="w-3.5 h-3.5" /> },
   ];
 
@@ -479,6 +881,7 @@ const AdminDashboard = () => {
         </div>
 
         {activeTab === "node"    && <NodeSettingsTab />}
+        {activeTab === "tokens"  && <TokensTab />}
         {activeTab === "wallets" && <AdminWalletsTab />}
       </motion.div>
     </div>
