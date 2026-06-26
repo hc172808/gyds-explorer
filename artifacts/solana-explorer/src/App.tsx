@@ -18,6 +18,7 @@ import SimD296 from "./pages/SimD296";
 import FeatureGates from "./pages/FeatureGates";
 import AdminDashboard from "./pages/AdminDashboard";
 import TermsOfService from "./pages/TermsOfService";
+import TokenBalances from "./pages/TokenBalances";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,8 @@ const App = () => (
                 <Route path="/simd-296" element={<SimD296 />} />
                 <Route path="/feature-gates" element={<FeatureGates />} />
                 <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/tokens" element={<TokenBalances />} />
+                <Route path="/tokens/:address" element={<TokenBalances />} />
                 <Route path="/terms" element={<TermsOfService />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

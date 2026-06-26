@@ -4,8 +4,9 @@ import {
   ArrowLeft, Shield, UserPlus, Trash2, Wallet, Loader2,
   CheckCircle, XCircle, RefreshCw, Settings, Network,
   Server, Wifi, WifiOff, Copy, RotateCcw, Save, Activity,
-  Coins, Plus, ExternalLink, ChevronDown, ChevronUp,
+  Coins, Plus, ExternalLink, ChevronDown, ChevronUp, Zap, AlertCircle,
 } from "lucide-react";
+import { useTokenDeploy, type DeployResult } from "@/lib/useTokenDeploy";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -490,13 +491,17 @@ function TokensTab() {
   const [tokenSupply,   setTokenSupply]   = useState("1000000");
   const [mintable,      setMintable]      = useState(false);
   const [showCode,      setShowCode]      = useState(false);
+  const [showManual,    setShowManual]    = useState(false);
+
+  // Deploy hook
+  const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(rpcUrl);
 
   // Deployed tokens registry (localStorage)
   const [deployedTokens, setDeployedTokens] = useState<DeployedToken[]>(() => {
     try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
     catch { return []; }
   });
-  const [newTokenAddr, setNewTokenAddr] = useState("");
+  const [newTokenAddr,  setNewTokenAddr]  = useState("");
   const [newTokenLabel, setNewTokenLabel] = useState("");
 
   const solidityCode = SOLIDITY_TEMPLATE(
@@ -509,6 +514,42 @@ function TokensTab() {
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
+  };
+
+  const saveTokenToRegistry = (result: DeployResult) => {
+    const entry: DeployedToken = {
+      address:    result.contractAddress,
+      name:       result.name,
+      symbol:     result.symbol,
+      supply:     result.supply,
+      decimals:   result.decimals,
+      deployedAt: result.deployedAt,
+    };
+    const updated = [entry, ...deployedTokens.filter((t) => t.address !== result.contractAddress)];
+    setDeployedTokens(updated);
+    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+  };
+
+  const handleDeploy = async () => {
+    if (!tokenName.trim() || !tokenSymbol.trim()) {
+      toast.error("Token name and symbol are required.");
+      return;
+    }
+    if (!tokenSupply || Number(tokenSupply) <= 0) {
+      toast.error("Initial supply must be greater than 0.");
+      return;
+    }
+    const result = await deploy({
+      name:          tokenName.trim(),
+      symbol:        tokenSymbol.trim(),
+      decimals:      parseInt(tokenDecimals) || 18,
+      initialSupply: tokenSupply,
+      mintable,
+    });
+    if (result) {
+      saveTokenToRegistry(result);
+      toast.success(`${result.name} (${result.symbol}) deployed at ${result.contractAddress.slice(0, 10)}…`);
+    }
   };
 
   const addToken = () => {
@@ -538,31 +579,21 @@ function TokensTab() {
     localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
   };
 
-  const remixUrl =
-    `https://remix.ethereum.org/#lang=en&optimize=true&evmVersion=paris&version=soljson-v0.8.24+commit.e11b9ed9.js`;
+  const isDeploying = ["connecting","switching","deploying","confirming"].includes(deployStatus);
 
-  const deployStep = `// ── Run on your node server (geth console) ──────────────────
-// 1. Compile token-contract.sol in Remix (https://remix.ethereum.org)
-// 2. Copy the compiled bytecode from Remix → Compilation Details
-// 3. Then in the geth console (run: gyds-console):
-
-personal.unlockAccount(eth.coinbase, "YOUR_PASSWORD", 300)
-
-var bytecode = "0x..."; // paste Remix bytecode here
-var tx = eth.sendTransaction({
-  from:  eth.coinbase,
-  data:  bytecode,
-  gas:   3000000
-});
-
-// Wait for mining, then get the address:
-eth.getTransactionReceipt(tx).contractAddress`;
+  const deployStepLabels: Record<string, string> = {
+    connecting:  "Connecting to MetaMask…",
+    switching:   "Switching to GYDS Network…",
+    deploying:   "Sending transaction…",
+    confirming:  "Waiting for confirmation…",
+    success:     "Deployed!",
+    error:       "Deployment failed",
+  };
 
   const metaMaskSetup = `Network name:  GYDS Network
 RPC URL:       ${rpcUrl}
 Chain ID:      29987
-Currency:      GYDS
-Explorer URL:  (your explorer URL)`;
+Currency:      GYDS`;
 
   return (
     <div className="space-y-6">
@@ -654,88 +685,151 @@ Explorer URL:  (your explorer URL)`;
         </div>
       </div>
 
-      {/* Deployment Guide */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-border bg-secondary/30">
-          <Server className="w-4 h-4 text-primary" />
-          <h2 className="font-semibold text-sm">Deployment Guide</h2>
+      {/* Deploy on GYDS Chain */}
+      <div className="rounded-xl border border-primary/40 bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-primary/20 bg-primary/5">
+          <Zap className="w-4 h-4 text-primary" />
+          <h2 className="font-semibold text-sm">Deploy on GYDS Chain</h2>
+          <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">Requires MetaMask</span>
         </div>
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Deploy the token above directly to the GYDS network. MetaMask will add the GYDS network automatically if needed.
+          </p>
 
-          {/* Option A: Remix */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option A</span>
-              <span className="text-sm font-semibold">Deploy via Remix IDE (easiest)</span>
+          {/* Status display */}
+          {deployStatus === "idle" && (
+            <Button
+              onClick={handleDeploy}
+              className="w-full gap-2 h-11 text-sm font-semibold"
+            >
+              <Zap className="w-4 h-4" />
+              Deploy {tokenName || "Token"} ({tokenSymbol || "???"}) with MetaMask
+            </Button>
+          )}
+
+          {isDeploying && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <p className="text-sm font-medium">{deployStepLabels[deployStatus]}</p>
+              {txHash && (
+                <p className="text-xs font-mono text-muted-foreground break-all text-center">
+                  Tx: {txHash}
+                </p>
+              )}
             </div>
-            <ol className="text-sm text-muted-foreground space-y-2 pl-4 list-decimal">
-              <li>
-                Open{" "}
-                <a href={remixUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1">
-                  remix.ethereum.org <ExternalLink className="w-3 h-3" />
-                </a>
-              </li>
-              <li>Create a new file <code className="text-xs bg-secondary px-1 rounded">MyToken.sol</code> and paste the contract code above</li>
-              <li>Compile with Solidity <strong>0.8.20+</strong> and enable optimizer</li>
-              <li>Add GYDS Network to MetaMask:
-                <div className="relative mt-1.5">
-                  <pre className="text-xs font-mono bg-secondary/50 border border-border rounded p-3 overflow-auto">{metaMaskSetup}</pre>
-                  <Button variant="ghost" size="sm" onClick={() => copyText(metaMaskSetup, "MetaMask config")}
-                    className="absolute top-1.5 right-1.5 h-6 text-xs gap-1">
-                    <Copy className="w-3 h-3" /> Copy
+          )}
+
+          {deployStatus === "success" && contractAddress && (
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-primary shrink-0" />
+                <p className="text-sm font-semibold text-primary">Token deployed successfully!</p>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Contract address</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono bg-secondary px-2 py-1 rounded flex-1 break-all">{contractAddress}</code>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => copyText(contractAddress, "Contract address")}>
+                    <Copy className="w-3.5 h-3.5" />
                   </Button>
+                  <Link to={`/address/${contractAddress}`}>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Button>
+                  </Link>
                 </div>
-              </li>
-              <li>In Remix → Deploy tab, select <strong>Injected Provider – MetaMask</strong></li>
-              <li>Deploy — MetaMask will prompt you to confirm. Copy the contract address after mining.</li>
-            </ol>
-          </div>
-
-          <div className="border-t border-border" />
-
-          {/* Option B: geth console */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option B</span>
-              <span className="text-sm font-semibold">Deploy via geth console (server-side)</span>
+              </div>
+              {txHash && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Transaction hash</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono bg-secondary px-2 py-1 rounded flex-1 break-all">{txHash}</code>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => copyText(txHash, "Tx hash")}>
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Link to={`/tx/${txHash}`}>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">✓ Saved to Deployed Tokens Registry below</p>
+              <Button variant="outline" size="sm" onClick={resetDeploy} className="gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Deploy another token
+              </Button>
             </div>
-            <p className="text-sm text-muted-foreground">Run on your node server after getting the bytecode from Remix:</p>
+          )}
+
+          {deployStatus === "error" && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-destructive">Deployment failed</p>
+                  <p className="text-xs text-muted-foreground mt-1">{deployError}</p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={resetDeploy} className="gap-1.5">
+                <RotateCcw className="w-3.5 h-3.5" /> Try again
+              </Button>
+            </div>
+          )}
+
+          {/* MetaMask network config (always visible) */}
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium">Add GYDS network to MetaMask manually if needed:</p>
             <div className="relative">
-              <pre className="text-xs font-mono bg-secondary/50 border border-border rounded-lg p-4 overflow-auto max-h-56 leading-relaxed">{deployStep}</pre>
-              <Button variant="ghost" size="sm" onClick={() => copyText(deployStep, "Deploy script")}
-                className="absolute top-2 right-2 h-7 text-xs gap-1">
+              <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto">{metaMaskSetup}</pre>
+              <Button variant="ghost" size="sm" onClick={() => copyText(metaMaskSetup, "MetaMask config")}
+                className="absolute top-1 right-1 h-6 text-xs gap-1">
                 <Copy className="w-3 h-3" /> Copy
               </Button>
             </div>
           </div>
 
-          <div className="border-t border-border" />
-
-          {/* Option C: deploy-token.js */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-primary bg-primary/10 rounded px-2 py-0.5">Option C</span>
-              <span className="text-sm font-semibold">deploy-token.js helper script</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              A <code className="text-xs bg-secondary px-1 rounded">deploy-token.js</code> script is included in the project root.
-              It generates the exact geth console commands and Remix instructions for your token parameters:
-            </p>
-            <div className="relative">
-              <pre className="text-xs font-mono bg-secondary/50 border border-border rounded p-3 overflow-auto">{`cd /var/www/gyds-explorer
+          {/* Manual deployment fallback */}
+          <div>
+            <button
+              onClick={() => setShowManual((s) => !s)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showManual ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {showManual ? "Hide" : "Show"} manual deployment options (Remix / geth console / deploy-token.js)
+            </button>
+            {showManual && (
+              <div className="mt-3 space-y-4 pl-3 border-l border-border">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Remix IDE</p>
+                  <p className="text-xs text-muted-foreground">
+                    Open{" "}
+                    <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
+                      remix.ethereum.org <ExternalLink className="w-3 h-3" />
+                    </a>
+                    , paste the Solidity code above, compile with 0.8.20+, connect MetaMask → Injected Provider, deploy.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Server-side (deploy-token.js)</p>
+                  <div className="relative">
+                    <pre className="text-xs font-mono bg-secondary/50 border border-border rounded p-3 overflow-auto">{`cd /var/www/gyds-explorer
 node deploy-token.js \\
   --name "${tokenName || "My GYDS Token"}" \\
   --symbol "${tokenSymbol || "MGT"}" \\
   --supply ${tokenSupply || "1000000"} \\
   --decimals ${tokenDecimals || "18"} \\
   --private-key 0xYOUR_PRIVATE_KEY`}</pre>
-              <Button variant="ghost" size="sm"
-                onClick={() => copyText(`node deploy-token.js --name "${tokenName}" --symbol "${tokenSymbol}" --supply ${tokenSupply} --decimals ${tokenDecimals} --private-key 0xYOUR_KEY`, "deploy command")}
-                className="absolute top-1.5 right-1.5 h-6 text-xs gap-1">
-                <Copy className="w-3 h-3" /> Copy
-              </Button>
-            </div>
+                    <Button variant="ghost" size="sm"
+                      onClick={() => copyText(`node deploy-token.js --name "${tokenName}" --symbol "${tokenSymbol}" --supply ${tokenSupply} --decimals ${tokenDecimals} --private-key 0xYOUR_KEY`, "deploy command")}
+                      className="absolute top-1.5 right-1.5 h-6 text-xs gap-1">
+                      <Copy className="w-3 h-3" /> Copy
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
