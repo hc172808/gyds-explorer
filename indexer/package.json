@@ -1,0 +1,14 @@
+{
+  "name": "gyds-block-indexer",
+  "version": "1.0.0",
+  "description": "GYDS Network block indexer — syncs blocks and transactions from RPC into PostgreSQL",
+  "main": "indexer.js",
+  "scripts": {
+    "start": "node indexer.js",
+    "dev": "node --watch indexer.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "pg": "^8.12.0"
+  }
+}

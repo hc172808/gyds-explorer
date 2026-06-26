@@ -84,6 +84,53 @@ VALIDATOR_ADDRESS=""
 VALIDATOR_PASSWORD=""
 MAIN_ACCOUNT=""
 
+# ---- Load settings from .env if present --------------------
+# Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
+# with any of these variables pre-filled to skip the interactive prompts:
+#   NODE_TYPE           main | full | lite | validator
+#   MAIN_NODE_IP        IP of the main node
+#   MAIN_NODE_ENODE     enode://... URL of the main node
+#   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
+#   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
+#   VALIDATOR_ADDRESS   0x... signing account address (validator only)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for ENV_FILE in \
+    "${SCRIPT_DIR}/.env" \
+    "${SCRIPT_DIR}/node.env" \
+    "/var/www/gyds-explorer/.env" \
+    "/etc/gyds/node.env"; do
+  if [ -f "$ENV_FILE" ]; then
+    info "Loading configuration from ${ENV_FILE} ..."
+    # Source only key=value lines (skip comments, blanks, complex shell)
+    while IFS='=' read -r key val; do
+      [[ "$key" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "$key" ]] && continue
+      val="${val%%#*}"       # strip inline comments
+      val="${val%"${val##*[![:space:]]}"}"  # rtrim
+      val="${val#\"}" ; val="${val%\"}"     # strip surrounding quotes
+      val="${val#\'}" ; val="${val%\'}"
+      case "$key" in
+        NODE_TYPE)          [ -z "$NODE_TYPE"         ] && NODE_TYPE="$val" ;;
+        MAIN_NODE_IP)       [ -z "$MAIN_NODE_IP"      ] && MAIN_NODE_IP="$val" ;;
+        MAIN_NODE_ENODE)    [ -z "$MAIN_NODE_ENODE"   ] && MAIN_NODE_ENODE="$val" ;;
+        BOOTNODE_ENODE)     [ -z "$MAIN_NODE_ENODE"   ] && MAIN_NODE_ENODE="$val" ;;
+        FULL_NODE_IPS)      [ -z "$FULL_NODE_IPS"     ] && FULL_NODE_IPS="$val" ;;
+        VALIDATOR_ADDRESS)  [ -z "$VALIDATOR_ADDRESS" ] && VALIDATOR_ADDRESS="$val" ;;
+        CHAIN_ID)           CHAIN_ID="$val" ;;
+        NETWORK_ID)         NETWORK_ID="${val:-$CHAIN_ID}" ;;
+        RPC_PORT)           RPC_PORT="$val" ;;
+        WS_PORT)            WS_PORT="$val" ;;
+        P2P_PORT)           P2P_PORT="$val" ;;
+      esac
+    done < "$ENV_FILE"
+    break
+  fi
+done
+
+if [ -n "$NODE_TYPE" ]; then
+  info "Pre-loaded NODE_TYPE=${NODE_TYPE} from .env"
+fi
+
 echo ""
 echo "╔════════════════════════════════════════════════╗"
 echo "║       GYDS Network - Node Setup Script         ║"
@@ -106,15 +153,21 @@ echo "║                  (syncs from Main, seals)      ║"
 echo "║                                                ║"
 echo "╚════════════════════════════════════════════════╝"
 echo ""
-read -p "Enter choice [1-4]: " NODE_TYPE_CHOICE
-
-case "$NODE_TYPE_CHOICE" in
-  1) NODE_TYPE="main" ;;
-  2) NODE_TYPE="full" ;;
-  3) NODE_TYPE="lite" ;;
-  4) NODE_TYPE="validator" ;;
-  *) err "Invalid choice. Please enter 1, 2, 3, or 4." ;;
-esac
+if [ -z "$NODE_TYPE" ]; then
+  read -p "Enter choice [1-4]: " NODE_TYPE_CHOICE
+  case "$NODE_TYPE_CHOICE" in
+    1) NODE_TYPE="main" ;;
+    2) NODE_TYPE="full" ;;
+    3) NODE_TYPE="lite" ;;
+    4) NODE_TYPE="validator" ;;
+    *) err "Invalid choice. Please enter 1, 2, 3, or 4." ;;
+  esac
+else
+  case "$NODE_TYPE" in
+    main|full|lite|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
+    *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, or validator." ;;
+  esac
+fi
 
 NODE_NAME="gyds-${NODE_TYPE}"
 
@@ -128,24 +181,48 @@ if [ "$NODE_TYPE" != "main" ]; then
   echo ""
   if [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "validator" ]; then
     info "Full/Validator nodes sync from the MAIN node."
-    read -p "Enter MAIN node IP address: " MAIN_NODE_IP
-    [ -z "$MAIN_NODE_IP" ] && err "Main node IP is required for ${NODE_TYPE} nodes."
-    read -p "Enter MAIN node enode URL (or press Enter to skip): " MAIN_NODE_ENODE
+    if [ -z "$MAIN_NODE_IP" ]; then
+      read -p "Enter MAIN node IP address: " MAIN_NODE_IP
+      [ -z "$MAIN_NODE_IP" ] && err "Main node IP is required for ${NODE_TYPE} nodes."
+    else
+      info "MAIN_NODE_IP=${MAIN_NODE_IP} (loaded from .env)"
+    fi
+    if [ -z "$MAIN_NODE_ENODE" ]; then
+      read -p "Enter MAIN node enode URL (or press Enter to skip): " MAIN_NODE_ENODE
+    else
+      info "MAIN_NODE_ENODE loaded from .env (bootnode configured automatically)"
+    fi
   elif [ "$NODE_TYPE" = "lite" ]; then
     info "Lite nodes sync from FULL nodes."
-    read -p "Enter FULL node IP address(es) (comma-separated for multiple): " FULL_NODE_IPS
-    [ -z "$FULL_NODE_IPS" ] && err "At least one Full node IP is required for lite nodes."
+    if [ -z "$FULL_NODE_IPS" ]; then
+      read -p "Enter FULL node IP address(es) (comma-separated for multiple): " FULL_NODE_IPS
+      [ -z "$FULL_NODE_IPS" ] && err "At least one Full node IP is required for lite nodes."
+    else
+      info "FULL_NODE_IPS=${FULL_NODE_IPS} (loaded from .env)"
+    fi
+    # Also accept a BOOTNODE_ENODE / MAIN_NODE_ENODE for lite nodes
+    if [ -z "$MAIN_NODE_ENODE" ]; then
+      read -p "Enter a FULL node enode URL for peering (or press Enter to skip): " MAIN_NODE_ENODE
+    else
+      info "Bootnode enode loaded from .env"
+    fi
   fi
 fi
 
 if [ "$NODE_TYPE" = "validator" ]; then
   echo ""
   info "Validator nodes need a signing account."
-  read -p "Enter validator account address (0x...): " VALIDATOR_ADDRESS
-  [ -z "$VALIDATOR_ADDRESS" ] && err "Validator account address is required."
-  read -s -p "Enter validator account password: " VALIDATOR_PASSWORD
-  echo ""
-  [ -z "$VALIDATOR_PASSWORD" ] && err "Validator account password is required."
+  if [ -z "$VALIDATOR_ADDRESS" ]; then
+    read -p "Enter validator account address (0x...): " VALIDATOR_ADDRESS
+    [ -z "$VALIDATOR_ADDRESS" ] && err "Validator account address is required."
+  else
+    info "VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS} (loaded from .env)"
+  fi
+  if [ -z "$VALIDATOR_PASSWORD" ]; then
+    read -s -p "Enter validator account password: " VALIDATOR_PASSWORD
+    echo ""
+    [ -z "$VALIDATOR_PASSWORD" ] && err "Validator account password is required."
+  fi
 fi
 
 # ============================================================
@@ -615,7 +692,99 @@ geth attach --exec "admin.peers.length" "http://127.0.0.1:${RPC_PORT}" 2>/dev/nu
   || echo "Node not running or RPC not available."
 MGMT
 
-chmod +x /usr/local/bin/gyds-{start,stop,restart,status,logs,console,enode,peers}
+# Add / remove bootnode enodes in static-nodes.json at runtime
+cat > /usr/local/bin/gyds-add-bootnode <<'MGMT'
+#!/bin/bash
+# Usage: gyds-add-bootnode "enode://PUBKEY@IP:30303"
+#        gyds-add-bootnode --list
+#        gyds-add-bootnode --clear
+
+source /etc/gyds/node.env 2>/dev/null || true
+STATIC_NODES="${DATA_DIR:-/var/lib/gyds}/geth/static-nodes.json"
+
+if [ "$1" = "--list" ]; then
+  echo "=== Current static-nodes.json ==="
+  cat "$STATIC_NODES" 2>/dev/null || echo "(file not found)"
+  exit 0
+fi
+
+if [ "$1" = "--clear" ]; then
+  echo "[]" > "$STATIC_NODES"
+  echo "Cleared all static nodes."
+  echo "Restart the node for changes to take effect: gyds-restart"
+  exit 0
+fi
+
+ENODE="$1"
+if [ -z "$ENODE" ]; then
+  echo "Usage: gyds-add-bootnode \"enode://PUBKEY@IP:30303\""
+  echo "       gyds-add-bootnode --list"
+  echo "       gyds-add-bootnode --clear"
+  exit 1
+fi
+
+if [[ ! "$ENODE" =~ ^enode:// ]]; then
+  echo "Error: enode must start with 'enode://'"
+  exit 1
+fi
+
+mkdir -p "$(dirname "$STATIC_NODES")"
+
+# Read existing file or start with empty array
+if [ -f "$STATIC_NODES" ] && [ -s "$STATIC_NODES" ]; then
+  EXISTING=$(cat "$STATIC_NODES")
+else
+  EXISTING="[]"
+fi
+
+# Check if already present
+if echo "$EXISTING" | grep -qF "$ENODE"; then
+  echo "Enode already in static-nodes.json — no change."
+  exit 0
+fi
+
+# Append the new enode (simple JSON manipulation without jq dependency)
+if [ "$EXISTING" = "[]" ]; then
+  NEW="[\n  \"${ENODE}\"\n]"
+else
+  # Insert before the closing ]
+  NEW=$(echo "$EXISTING" | sed "s|]$|,\n  \"${ENODE}\"\n]|")
+fi
+
+printf "%b" "$NEW" > "$STATIC_NODES"
+echo "Added bootnode: ${ENODE}"
+echo ""
+echo "Restart the node for changes to take effect:"
+echo "  gyds-restart"
+echo ""
+echo "Verify peers after restart:"
+echo "  gyds-peers"
+MGMT
+
+# Update also writes to BOOTNODE_ENODE in the env file and geth static-nodes
+cat > /usr/local/bin/gyds-set-bootnode <<'MGMT'
+#!/bin/bash
+# Usage: gyds-set-bootnode "enode://PUBKEY@IP:30303"
+# Sets the bootnode in both static-nodes.json AND /etc/gyds/node.env
+
+ENODE="$1"
+if [ -z "$ENODE" ]; then
+  echo "Usage: gyds-set-bootnode \"enode://PUBKEY@IP:30303\""
+  exit 1
+fi
+
+gyds-add-bootnode "$ENODE" || exit 1
+
+# Update node.env
+if grep -q "MAIN_NODE_ENODE=" /etc/gyds/node.env 2>/dev/null; then
+  sed -i "s|^MAIN_NODE_ENODE=.*|MAIN_NODE_ENODE=${ENODE}|" /etc/gyds/node.env
+else
+  echo "MAIN_NODE_ENODE=${ENODE}" >> /etc/gyds/node.env
+fi
+echo "Updated /etc/gyds/node.env with new bootnode enode."
+MGMT
+
+chmod +x /usr/local/bin/gyds-{start,stop,restart,status,logs,console,enode,peers,add-bootnode,set-bootnode}
 log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-status, gyds-logs, gyds-console, gyds-enode, gyds-peers"
 
 # ============================================================
