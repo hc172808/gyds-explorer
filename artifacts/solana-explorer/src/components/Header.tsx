@@ -6,7 +6,6 @@ import { useNetwork, NetworkType } from "@/contexts/NetworkContext";
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
   { label: "Mainnet", value: "mainnet", color: "bg-primary" },
   { label: "Testnet", value: "testnet", color: "bg-amber" },
-  { label: "Devnet", value: "devnet", color: "bg-cyan" },
   { label: "Custom RPC", value: "custom", color: "bg-muted-foreground" },
 ];
 

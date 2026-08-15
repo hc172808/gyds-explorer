@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
-export type NetworkType = "mainnet" | "testnet" | "devnet" | "custom";
+export type NetworkType = "mainnet" | "testnet" | "custom";
 
 interface NetworkConfig {
   name: string;
@@ -42,7 +42,10 @@ const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [networkType, setNetworkTypeState] = useState<NetworkType>(
-    () => (lsGet(LS_KEY_NETWORK, "mainnet") as NetworkType)
+    () => {
+      const stored = lsGet(LS_KEY_NETWORK, "mainnet");
+      return stored === "testnet" || stored === "custom" ? stored : "mainnet";
+    }
   );
   const [customRpcUrl, setCustomRpcUrlState] = useState("");
   const [primaryRpc, setPrimaryRpcState]     = useState(() => lsGet(LS_KEY_RPC1, ENV_RPC1));
@@ -76,7 +79,6 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const NETWORKS: Record<NetworkType, NetworkConfig> = {
     mainnet: { name: "Mainnet", type: "mainnet", rpcEndpoints: [primaryRpc, secondaryRpc] },
     testnet: { name: "Testnet", type: "testnet", rpcEndpoints: [primaryRpc, secondaryRpc] },
-    devnet:  { name: "Devnet",  type: "devnet",  rpcEndpoints: [primaryRpc, secondaryRpc] },
     custom:  { name: "Custom RPC", type: "custom", rpcEndpoints: [customRpcUrl || primaryRpc] },
   };
 
