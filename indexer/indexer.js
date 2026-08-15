@@ -23,7 +23,7 @@ const { Pool } = require("pg");
 
 // ---- Config -----------------------------------------------
 const PRIMARY_RPC   = process.env.VITE_RPC_URL   || process.env.RPC_URL   || "https://rpc.netlifegy.com";
-const SECONDARY_RPC = process.env.VITE_RPC_URL_2  || process.env.RPC_URL_2 || "https://rpc2.netlifegy.com";
+const SECONDARY_RPC = process.env.VITE_RPC_URL_2  || process.env.RPC_URL_2 || "https://boost.netlifegy.com";
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || "5", 10) * 1000;
 const BATCH_SIZE    = parseInt(process.env.BATCH_SIZE    || "10", 10);
 

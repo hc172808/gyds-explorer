@@ -22,6 +22,10 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
+RPC_URL = "https://rpc.netlifegy.com"
+RPC_URL_2 = "https://boost.netlifegy.com"
+VITE_RPC_URL = "https://rpc.netlifegy.com"
+VITE_RPC_URL_2 = "https://boost.netlifegy.com"
 
 [nix]
 channel = "stable-25_05"

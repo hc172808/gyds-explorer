@@ -169,7 +169,7 @@ BOOTNODE_ENODE=${boot}` : ""}`;
             <Input
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
-              placeholder="https://rpc2.netlifegy.com"
+              placeholder="https://boost.netlifegy.com"
               className="font-mono text-xs"
             />
             {status2 && <div className="mt-1.5"><RpcStatusBadge s={status2} /></div>}

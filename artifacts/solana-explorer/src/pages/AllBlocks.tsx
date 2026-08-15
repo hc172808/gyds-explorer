@@ -3,18 +3,18 @@ import { motion } from "framer-motion";
 import { Link, useSearchParams } from "react-router-dom";
 import { Blocks, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 import { getBlock, hexToNumber, timeAgo, formatAddress, rpcCall } from "@/lib/rpc";
+import type { Block } from "@/lib/types";
 
 const BLOCKS_PER_PAGE = 25;
 
-async function getBlocksPage(page: number, latestBlock: number) {
+async function getBlocksPage(page: number, latestBlock: number): Promise<Block[]> {
   const start = latestBlock - (page - 1) * BLOCKS_PER_PAGE;
   const promises = Array.from({ length: BLOCKS_PER_PAGE }, (_, i) => {
     const num = start - i;
     if (num < 0) return null;
     return getBlock("0x" + num.toString(16), false);
-  }).filter(Boolean);
-  const blocks = await Promise.all(promises);
-  return blocks.filter(Boolean);
+  }).filter((promise): promise is Promise<Block> => promise !== null);
+  return Promise.all(promises);
 }
 
 const AllBlocks = () => {

@@ -4,7 +4,7 @@ const Footer = () => (
       <p>© 2026 GYDS Network Explorer. All rights reserved.</p>
       <div className="flex items-center gap-4">
         <span className="font-mono">RPC: rpc.netlifegy.com</span>
-        <span className="font-mono">RPC2: rpc2.netlifegy.com</span>
+        <span className="font-mono">RPC2: boost.netlifegy.com</span>
       </div>
     </div>
   </footer>

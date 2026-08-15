@@ -5,9 +5,11 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 ## Run & Operate
 
 - `pnpm --filter @workspace/solana-explorer run dev` — run the frontend (workflow: `artifacts/solana-explorer: web`)
+- `pnpm --filter @workspace/api-server run dev` — run the optional API service (workflow: `artifacts/api-server: API Server`)
 - `pnpm run typecheck` — full typecheck across all packages
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
-- Required env: `VITE_RPC_URL_2` — secondary RPC endpoint (default: https://rpc2.netlifegy.com)
+- Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
+- API service env: `API_SECRET_KEY` — required JWT signing secret; the API workflow will not start without it
 
 ## Stack
 
@@ -29,9 +31,10 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 ## Architecture decisions
 
 - Pure frontend app — no backend needed; calls Solana/GYDS RPC endpoints directly from the browser
+- The API service is only needed for authenticated admin and feature-gate routes; do not invent `API_SECRET_KEY` or reuse another secret
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
-- RPC endpoints configurable via `VITE_RPC_URL` / `VITE_RPC_URL_2` env vars
+- RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
 
 ## Product
 

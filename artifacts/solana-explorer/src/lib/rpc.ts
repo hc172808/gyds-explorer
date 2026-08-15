@@ -2,7 +2,7 @@ import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 
 const RPC_ENDPOINTS = [
   import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
-  import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com",
+  import.meta.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
 ].filter(Boolean);
 
 let currentEndpoint = 0;
@@ -25,6 +25,7 @@ export async function rpcCall(method: string, params: unknown[] = []): Promise<u
       currentEndpoint = (currentEndpoint + 1) % RPC_ENDPOINTS.length;
     }
   }
+  throw new Error(`RPC call failed for method "${method}"`);
 }
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
