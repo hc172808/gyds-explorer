@@ -65,3 +65,53 @@ If you are deploying the full explorer plus an RPC node, the external ports are:
 22, 80, 443, 30303 TCP, 30303 UDP, 8545, 8546
 
 Only expose 8545 and 8546 publicly if wallets or external websites need to access this RPC node. Otherwise, restrict them to trusted IP addresses.
+
+cd /var/www/gyds-explorer
+sudo chmod +x check-services.sh update.sh
+sudo ./check-services.sh
+
+It checks:
+
+Nginx and website ports 80 and 443
+API port 3001
+PostgreSQL status
+GYDS node service
+P2P ports 30303 TCP/UDP
+RPC ports 8545 and 8546 for MAIN, FULL, LITE, or RPC nodes
+RPC response using eth_chainId
+PM2 API status
+Pull updates from Git and restart services
+cd /var/www/gyds-explorer
+sudo ./update.sh
+
+The update script now:
+
+Pulls the latest Git changes.
+Temporarily stashes local changes if necessary.
+Installs npm dependencies.
+Builds the frontend using the correct npm workspace.
+Copies the frontend to /var/www/gyds-explorer/dist.
+Restarts PM2 services.
+Reloads Nginx.
+Runs the port and service health check.
+Useful options:
+
+sudo ./update.sh --branch main
+sudo ./update.sh --skip-deps
+sudo ./update.sh --no-restart
+
+Test access from another computer
+Replace YOUR_SERVER_IP with your server IP:
+
+nc -vz YOUR_SERVER_IP 80
+nc -vz YOUR_SERVER_IP 443
+nc -vz YOUR_SERVER_IP 30303
+
+For a public RPC node:
+
+nc -vz YOUR_SERVER_IP 8545
+nc -vz YOUR_SERVER_IP 8546
+
+A port can be listening locally but still blocked by your cloud provider firewall, so both the local health check and the external nc test are useful.
+
+The API workflow failure shown by Replit is unrelated to the Ubuntu deployment scripts; the server uses PM2 and Nginx instead.
