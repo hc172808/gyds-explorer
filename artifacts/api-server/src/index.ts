@@ -1,8 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
-if (!process.env.API_SECRET_KEY) {
-  logger.error("API_SECRET_KEY environment variable is required. Set it in your Replit secrets.");
+if (!process.env.API_SECRET_KEY && !process.env.JWT_SECRET_KEY) {
+  logger.error("API_SECRET_KEY or JWT_SECRET_KEY environment variable is required. Set it in your Replit secrets.");
   process.exit(1);
 }
 

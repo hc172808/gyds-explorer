@@ -1,9 +1,9 @@
 import { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const raw = process.env.API_SECRET_KEY;
+const raw = process.env.API_SECRET_KEY || process.env.JWT_SECRET_KEY;
 if (!raw) {
-  throw new Error("API_SECRET_KEY environment variable is required but was not provided.");
+  throw new Error("API_SECRET_KEY or JWT_SECRET_KEY environment variable is required but was not provided.");
 }
 const JWT_SECRET: string = raw;
 
