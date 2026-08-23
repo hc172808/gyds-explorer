@@ -3,7 +3,7 @@
 # GYDS Explorer — Update Script
 # ============================================================
 # Pulls latest code from git, installs any new dependencies,
-# rebuilds the frontend, and restarts all services.
+# rebuilds the frontend, restarts all services, and checks health.
 #
 # Usage:
 #   chmod +x update.sh
@@ -21,6 +21,8 @@ set -e
 # ---------- Configuration ----------
 APP_DIR="/var/www/gyds-explorer"
 API_DIR="${APP_DIR}/api"
+FRONTEND_BUILD_DIR="${APP_DIR}/artifacts/solana-explorer/dist/public"
+HEALTH_CHECK="${APP_DIR}/check-services.sh"
 LOG_FILE="/var/log/gyds-explorer-update.log"
 
 # ---------- Flags ----------
@@ -131,7 +133,7 @@ fi
 # STEP 3: Install / update dependencies
 # ============================================================
 if [ "${SKIP_DEPS}" = "false" ]; then
-  log "Installing/updating frontend dependencies..."
+  log "Installing/updating workspace dependencies..."
   npm install --legacy-peer-deps
 
   if [ -d "${API_DIR}" ]; then
@@ -164,11 +166,14 @@ fi
 if [ "${SKIP_BUILD}" = "false" ]; then
   log "Building frontend..."
   cd "${APP_DIR}"
-  npm run build
+  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+    npm run build --workspace=@workspace/solana-explorer
 
-  if [ ! -d "${APP_DIR}/dist" ]; then
-    err "Build failed — 'dist' directory not found."
+  if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
+    err "Build failed — frontend output not found in ${FRONTEND_BUILD_DIR}."
   fi
+  rm -rf "${APP_DIR}/dist"
+  cp -R "${FRONTEND_BUILD_DIR}" "${APP_DIR}/dist"
   log "Frontend built successfully → ${APP_DIR}/dist"
 else
   info "Skipping frontend build (--skip-build)."
@@ -203,6 +208,13 @@ if [ "${NO_RESTART}" = "false" ]; then
   if command -v nginx &>/dev/null; then
     nginx -t 2>/dev/null && systemctl reload nginx && log "Nginx reloaded." \
       || warn "Nginx config test failed — not reloaded. Check: nginx -t"
+  fi
+
+  if [ -x "${HEALTH_CHECK}" ]; then
+    log "Running service and port health check..."
+    "${HEALTH_CHECK}" || warn "Health check reported failures. Review the output above."
+  else
+    warn "Health checker not found at ${HEALTH_CHECK}."
   fi
 else
   info "Skipping service restart (--no-restart)."

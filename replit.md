@@ -7,6 +7,8 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
 - `npm run dev --workspace=@workspace/api-server` — run the optional API service (workflow: `artifacts/api-server: API Server`)
 - `npm run typecheck` — full typecheck across all packages
+- `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
+- `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
