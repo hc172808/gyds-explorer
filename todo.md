@@ -511,3 +511,243 @@ verified before a production deployment.
       bundle.
 - [ ] Testnet and mainnet addresses are clearly separated.
 - [ ] Supply, peg, reserve, and admin controls are documented for users.
+
+---
+
+# Authority, asset controls, wallet limits, and user transactions
+
+This section records the authority and product controls needed for both the
+native `GYDS` coin and the `GYD` token. Admin controls must be explicit,
+audited, role-protected, and fail closed. Disabling an asset in the explorer
+must not falsely imply that already-deployed blockchain contracts or native
+protocol balances have been erased.
+
+## 22. Define authority and roles
+
+- [ ] Define the authority model for the network and both assets:
+  - Network/protocol authority for native GYDS issuance, fees, validators, and
+    genesis settings.
+  - GYD token owner/minter authority for minting, burning, pausing, and supply
+    controls.
+  - Explorer administrator for listings, metadata, feature flags, and UI
+    availability.
+  - Compliance or operations role for reviewing purchases, limits, freezes,
+    and support cases, if legally required.
+  - Read-only auditor role for viewing settings, logs, and balances without
+    changing them.
+- [ ] Decide whether authority is held by a multisig, timelock, DAO, or another
+      approved control system. Do not rely on one personal hot-wallet key for
+      irreversible production actions.
+- [ ] Separate on-chain authority from off-chain explorer administration.
+      An explorer admin must not be able to secretly change the blockchain's
+      native supply or bypass a token contract's on-chain permissions.
+- [ ] Use least privilege: each role can perform only the actions it needs.
+- [ ] Require wallet-based authentication with signed, expiring messages for
+      admin access. Never use a wallet address alone as proof of authority.
+- [ ] Protect admin APIs with server-side authorization checks; do not trust
+      hidden buttons, browser state, or client-supplied role fields.
+- [ ] Add two-person approval or a timelock for high-risk actions:
+      minting, changing limits, pausing transfers, changing peg settings,
+      changing contract addresses, and changing treasury destinations.
+- [ ] Add session expiry, replay protection, nonce tracking, origin checks,
+      rate limits, and audit logging for administrative actions.
+- [ ] Define emergency recovery, key rotation, lost-admin-wallet, and
+      compromised-key procedures before mainnet.
+- [ ] Never put private keys, seed phrases, signing secrets, or multisig
+      credentials in `.env`, source control, or browser-exposed variables.
+
+## 23. Admin enable/disable controls for GYDS and GYD
+
+- [ ] Add separate controls for the two assets:
+  - `GYDS` native coin: visible/hidden in the explorer, wallet actions
+    enabled/disabled, and purchase/send availability.
+  - `GYD` token: listed/unlisted, transfers enabled/disabled where technically
+    enforceable, purchases enabled/disabled, sends enabled/disabled, and
+    contract address active/inactive.
+- [ ] Define the meaning of each switch:
+  - **Visible** controls explorer display only.
+  - **Listed** controls whether the official asset appears in searches and
+        token lists.
+  - **Buy enabled** controls whether the application starts new purchase
+        orders.
+  - **Send enabled** controls whether the page offers a send flow.
+  - **Transfers paused** must be enforced by the token contract or protocol,
+        not only by hiding a UI button.
+- [ ] Make disable actions fail closed:
+  - Block new purchases and sends at the server/API and UI layers.
+  - Re-check the current flag immediately before signing or submitting.
+  - Explain why the action is unavailable and whether pending transactions are
+        still processing.
+  - Do not cancel, reverse, or claim to reverse confirmed blockchain
+        transactions.
+- [ ] Decide whether GYD requires an on-chain pause mechanism. If so, document
+      who can pause, what events trigger it, how users are notified, and how
+      it is resumed.
+- [ ] Add an emergency global pause and separate per-asset pause, with
+      prominent status display and an immutable audit trail.
+- [ ] Prevent an admin from silently changing an official token address:
+      require a new approval, chain/metadata validation, timelock, and visible
+      change history.
+- [ ] Show the current status, effective time, actor role, reason, and last
+      change in the admin dashboard and relevant user pages.
+- [ ] Add tests proving disabled assets cannot start a purchase or send flow,
+      while read-only balances and confirmed transaction history remain
+      available.
+
+## 24. Configure wallet holding limits
+
+- [ ] Define whether limits apply to:
+  - Maximum native `GYDS` balance per wallet.
+  - Maximum `GYD` balance per wallet.
+  - Maximum amount per transfer.
+  - Maximum daily/rolling-period sent amount.
+  - Maximum daily/rolling-period purchased amount.
+  - Maximum amount held by an unverified or restricted wallet.
+- [ ] Add admin-configurable limits independently for `GYDS` and `GYD`, with
+      optional global, wallet, role, jurisdiction, and risk-tier overrides.
+- [ ] Store limits in integer base units with explicit decimals and never use
+      floating-point comparisons for monetary values.
+- [ ] Define the value `0` clearly; use an explicit enabled/disabled field so
+      zero cannot be confused with “unlimited.”
+- [ ] Define whether a limit is checked against pre-transaction balance,
+      post-transaction balance, gross balance, or net balance after fees.
+- [ ] Decide whether limits are enforced:
+  - On chain in the native protocol or GYD contract.
+  - In the purchase/send service before a transaction is signed.
+  - In both places for defense in depth.
+- [ ] Do not claim that an explorer-only limit prevents transfers made directly
+      through another wallet or RPC. Enforce any mandatory limit on chain or
+      through an authoritative transaction gateway.
+- [ ] Reject transactions that would exceed a limit before collecting payment
+      or requesting a wallet signature.
+- [ ] Handle pending transactions and concurrent purchases without allowing
+      users to bypass limits through parallel requests.
+- [ ] Define an approved exception process with expiry, reason, approver, and
+      audit record.
+- [ ] Show users their current limit, remaining allowance, reset time, and a
+      clear reason when an action is rejected.
+- [ ] Add tests for exact-limit success, one-unit-over-limit failure, decimals,
+      daily reset, concurrent requests, admin changes, and disabled assets.
+
+## 25. Let users buy GYDS and GYD safely
+
+- [ ] Decide what “buy” means for each asset:
+  - Native GYDS sale, faucet, treasury distribution, or exchange order.
+  - GYD purchase/mint against USD or another approved payment asset.
+- [ ] Choose and document the payment provider, on-ramp, exchange, or
+      treasury service. Do not build a fake balance update or mark an order
+      paid without an authoritative payment confirmation.
+- [ ] Before implementation, define price source, quote expiry, fees, spread,
+      minimum/maximum purchase, slippage, settlement asset, and refund rules.
+- [ ] Define whether GYD is minted on purchase, transferred from treasury
+      inventory, or obtained through an exchange. Only an authorized on-chain
+      minter may mint.
+- [ ] Require identity, sanctions, fraud, age, jurisdiction, and transaction
+      monitoring controls where applicable to the chosen product and location.
+- [ ] Use a server-side order state machine:
+      quoted → payment pending → payment confirmed → blockchain submitted →
+      confirmed → failed/refunded.
+- [ ] Make order processing idempotent so retries cannot deliver duplicate
+      coins or tokens.
+- [ ] Re-check asset enabled status, wallet limits, destination address, quote
+      expiry, and available inventory/reserves at settlement time.
+- [ ] Show users the quote, amount, fees, destination wallet, network, token
+      contract (for GYD), and final confirmation before payment/signature.
+- [ ] Never ask users to send funds to an address shown only in client-side
+      code. Use verified server configuration and display the exact network.
+- [ ] Add payment webhooks with signature verification, replay protection, and
+      reconciliation against provider records.
+- [ ] Do not expose payment-provider secrets, treasury private keys, or
+      signing credentials to the browser.
+- [ ] Add purchase receipts, transaction hashes, status polling, failure
+      handling, refunds, support references, and exportable audit records.
+- [ ] Test underpayment, overpayment, expired quote, duplicate webhook,
+      rejected wallet signature, wrong network, failed transaction, RPC outage,
+      and disabled-asset conditions.
+
+## 26. Let users send GYDS and GYD from the page
+
+- [ ] Add a wallet-connected send form with:
+  - Asset selector limited to enabled/official assets.
+  - Checksummed destination address validation.
+  - Amount and decimal validation.
+  - Max available balance and fee preview.
+  - Current network/chain ID confirmation.
+  - GYD contract-address and token-symbol confirmation.
+  - Optional memo only if the network actually supports it.
+- [ ] Clearly label the asset before signing:
+  - Native coin: `GYDSChain (GYDS)`.
+  - Token: `GYD` plus the verified contract address.
+- [ ] Use native transaction submission for GYDS and the verified ERC-20
+      `transfer` call for GYD. Never send an ERC-20 amount as native currency
+      or use an unverified token contract.
+- [ ] Re-check admin enable/disable state, holding limits, balance, network,
+      destination, and current gas fee immediately before submission.
+- [ ] Require the user's wallet to approve the transaction; the page must not
+      hold or request the user's private key.
+- [ ] Show a review step and transaction simulation or preflight where
+      available, then display the exact transaction details being signed.
+- [ ] Track submitted, pending, confirmed, failed, and replaced transactions
+      by hash. Do not show “sent” until the receipt is confirmed.
+- [ ] Prevent duplicate submissions from double-clicks, retries, refreshes, or
+      repeated wallet events.
+- [ ] Show a receipt with sender, recipient, asset, amount, fee, network,
+      transaction hash, block, timestamp, and explorer link.
+- [ ] Warn users that blockchain transfers are generally irreversible and that
+      sending to the wrong address or network may permanently lose funds.
+- [ ] Handle insufficient balance, insufficient gas, rejected signature,
+      wrong-chain wallet, token approval errors, paused asset, limit exceeded,
+      invalid recipient, RPC timeout, and reorg/replacement cases.
+- [ ] Add tests for native sends, ERC-20 sends, exact decimals, zero address,
+      self-send policy, insufficient funds, disabled assets, limits, and
+      confirmation polling.
+
+## 27. Admin screens, API, data, and audit records
+
+- [ ] Extend the existing admin dashboard with dedicated sections for:
+  - Asset status and metadata.
+  - Native GYDS controls.
+  - GYD token controls and verified contract address.
+  - Wallet holding and transaction limits.
+  - Purchase settings and settlement status.
+  - Pending/confirmed/failed transactions.
+  - Admin roles, approvals, and emergency pause.
+- [ ] Add server-side endpoints for reading and changing settings; do not
+      persist authoritative admin settings only in browser local storage.
+- [ ] Persist versioned settings with actor, role, timestamp, reason, previous
+      value, new value, approval status, and effective time.
+- [ ] Persist wallet limits, overrides, purchase orders, payment references,
+      blockchain transaction hashes, and audit events with idempotency keys.
+- [ ] Add database constraints and server validation for addresses, asset
+      identifiers, decimal precision, nonnegative amounts, and valid status
+      transitions.
+- [ ] Add role-based authorization to every read/write endpoint, including
+      direct API calls that bypass the UI.
+- [ ] Add rate limiting, abuse monitoring, structured logs, alerting, and
+      retention/deletion rules appropriate for financial activity.
+- [ ] Separate testnet and mainnet configuration, databases, treasury
+      addresses, token addresses, and admin roles.
+- [ ] Add reconciliation jobs that compare purchase records, payment records,
+      on-chain receipts, treasury balances, and GYD total supply.
+
+## 28. Authority and transaction acceptance criteria
+
+- [ ] An authorized admin can independently enable or disable GYDS and GYD,
+      and the result is enforced by every relevant API and user flow.
+- [ ] Disabling an asset does not alter confirmed blockchain history or falsely
+      promise reversal of completed transfers.
+- [ ] An authorized admin can set and review separate holding, purchase, and
+      transfer limits for GYDS and GYD.
+- [ ] A wallet cannot exceed a mandatory limit through concurrent requests,
+      retries, or direct alternate UI paths.
+- [ ] Users can buy only through a verified payment/order flow and receive
+      assets only after authoritative settlement.
+- [ ] Users can send native GYDS and official GYD from the page after reviewing
+      and signing the correct transaction in their own wallet.
+- [ ] Every administrative change and financial action has an auditable actor,
+      timestamp, reason/status, and transaction or payment reference.
+- [ ] Emergency pause, key compromise, RPC outage, payment failure, refund,
+      and wrong-address support procedures are documented and tested.
+- [ ] Legal, custody, stablecoin, consumer-protection, and compliance review
+      is complete before enabling real-money purchases or describing GYD as
+      USD-pegged.
