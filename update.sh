@@ -24,6 +24,8 @@ API_DIR="${APP_DIR}/api"
 FRONTEND_BUILD_DIR="${APP_DIR}/artifacts/solana-explorer/dist/public"
 HEALTH_CHECK="${APP_DIR}/check-services.sh"
 LOG_FILE="/var/log/gyds-explorer-update.log"
+MIN_NODE_VERSION="22.18.0"
+NPM_REGISTRY="https://registry.npmjs.org/"
 
 # ---------- Flags ----------
 SKIP_DEPS=false
@@ -53,6 +55,35 @@ warn() { local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [⚠] $1"; echo -e "${YELLOW}
 err()  { local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [✗] $1"; echo -e "${RED}${msg}${NC}";    echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true; exit 1; }
 info() { local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ℹ] $1"; echo -e "${CYAN}${msg}${NC}";  echo "$msg" >> "${LOG_FILE}" 2>/dev/null || true; }
 
+version_at_least() {
+  local current="$1"
+  local minimum="$2"
+  local current_major current_minor current_patch
+  local minimum_major minimum_minor minimum_patch
+  IFS=. read -r current_major current_minor current_patch <<< "${current%%-*}"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<< "${minimum%%-*}"
+  current_minor="${current_minor:-0}"
+  current_patch="${current_patch:-0}"
+  minimum_minor="${minimum_minor:-0}"
+  minimum_patch="${minimum_patch:-0}"
+  if [ "${current_major:-0}" -ne "${minimum_major:-0}" ]; then
+    [ "${current_major:-0}" -gt "${minimum_major:-0}" ]
+  elif [ "${current_minor:-0}" -ne "${minimum_minor:-0}" ]; then
+    [ "${current_minor:-0}" -gt "${minimum_minor:-0}" ]
+  else
+    [ "${current_patch:-0}" -ge "${minimum_patch:-0}" ]
+  fi
+}
+
+check_node_version() {
+  command -v node >/dev/null 2>&1 || err "Node.js ${MIN_NODE_VERSION} or newer is required."
+  local current_node
+  current_node="$(node -v | sed 's/^v//')"
+  version_at_least "${current_node}" "${MIN_NODE_VERSION}" || \
+    err "Node.js ${MIN_NODE_VERSION} or newer is required; found v${current_node}."
+  command -v npm >/dev/null 2>&1 || err "npm is required."
+}
+
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
   err "Please run as root: sudo ./update.sh"
@@ -75,6 +106,11 @@ echo "╚═══════════════════════�
 echo ""
 
 cd "${APP_DIR}"
+check_node_version
+export npm_config_registry="${NPM_REGISTRY}"
+if [ "$(npm config get registry)" != "${NPM_REGISTRY}" ]; then
+  err "npm registry must be ${NPM_REGISTRY}; found $(npm config get registry)."
+fi
 
 # Never attempt to stash or pull while Git has unresolved merge entries.
 # This commonly happens when the repository was migrated away from pnpm

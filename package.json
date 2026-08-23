@@ -2,6 +2,10 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0",
+    "npm": ">=10"
+  },
   "workspaces": [
     "artifacts/*",
     "lib/*",

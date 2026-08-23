@@ -27,7 +27,9 @@ APP_DIR="/var/www/${APP_NAME}"
 API_DIR="${APP_DIR}/api"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
 DOMAIN=""
-NODE_VERSION="20"
+NODE_VERSION="22"
+MIN_NODE_VERSION="22.18.0"
+NPM_REGISTRY="https://registry.npmjs.org/"
 DEPLOY_WEB=true
 NODE_ONLY=false
 NODE_TYPE_OVERRIDE="${NODE_TYPE:-}"
@@ -84,6 +86,35 @@ log()  { echo -e "${GREEN}[✓ STEP]${NC} $1"; }
 warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
 err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
+
+version_at_least() {
+  local current="$1"
+  local minimum="$2"
+  local current_major current_minor current_patch
+  local minimum_major minimum_minor minimum_patch
+  IFS=. read -r current_major current_minor current_patch <<< "${current%%-*}"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<< "${minimum%%-*}"
+  current_minor="${current_minor:-0}"
+  current_patch="${current_patch:-0}"
+  minimum_minor="${minimum_minor:-0}"
+  minimum_patch="${minimum_patch:-0}"
+  if [ "${current_major:-0}" -ne "${minimum_major:-0}" ]; then
+    [ "${current_major:-0}" -gt "${minimum_major:-0}" ]
+  elif [ "${current_minor:-0}" -ne "${minimum_minor:-0}" ]; then
+    [ "${current_minor:-0}" -gt "${minimum_minor:-0}" ]
+  else
+    [ "${current_patch:-0}" -ge "${minimum_patch:-0}" ]
+  fi
+}
+
+check_node_version() {
+  command -v node >/dev/null 2>&1 || err "Node.js ${MIN_NODE_VERSION} or newer is required."
+  local current_node
+  current_node="$(node -v | sed 's/^v//')"
+  version_at_least "${current_node}" "${MIN_NODE_VERSION}" || \
+    err "Node.js ${MIN_NODE_VERSION} or newer is required; found v${current_node}."
+  command -v npm >/dev/null 2>&1 || err "npm is required."
+}
 
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
@@ -188,8 +219,8 @@ if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
   apt-get install -y nodejs
 else
-  CURRENT_NODE=$(node -v | cut -dv -f2 | cut -d. -f1)
-  if [ "$CURRENT_NODE" -lt "$NODE_VERSION" ]; then
+  CURRENT_NODE=$(node -v | sed 's/^v//')
+  if ! version_at_least "$CURRENT_NODE" "$MIN_NODE_VERSION"; then
     curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
     apt-get install -y nodejs
   else
@@ -202,7 +233,12 @@ if ! command -v npm &> /dev/null; then
   apt-get install -y npm
 fi
 
-info "Node: $(node -v) | npm: $(npm -v)"
+check_node_version
+export npm_config_registry="${NPM_REGISTRY}"
+if [ "$(npm config get registry)" != "${NPM_REGISTRY}" ]; then
+  err "npm registry must be ${NPM_REGISTRY}; found $(npm config get registry)."
+fi
+info "Node: $(node -v) | npm: $(npm -v) | registry: $(npm config get registry)"
 
 # ============================================================
 # STEP 3: Install & Configure PostgreSQL
