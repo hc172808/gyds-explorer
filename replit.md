@@ -9,6 +9,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `pnpm run typecheck` — full typecheck across all packages
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
+- Network chain ID: `198282` (hex: `0x3068a`)
 - API service env: `API_SECRET_KEY` or `JWT_SECRET_KEY` — required JWT signing secret; the API workflow will not start without one
 
 ## Stack

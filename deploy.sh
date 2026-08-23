@@ -294,7 +294,7 @@ VITE_RPC_URL_2=https://boost.netlifegy.com
 # ---------- Application Settings ----------
 VITE_PORT=8080
 VITE_APP_TITLE=GYDS Explorer
-VITE_CHAIN_ID=1
+VITE_CHAIN_ID=198282
 VITE_BASE_URL=${BASE_URL}
 
 # ---------- PostgreSQL Database ----------
@@ -395,6 +395,43 @@ const limiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
 });
 app.use("/api/", limiter);
+
+// ---------- JSON-RPC Proxy ----------
+const rpcEndpoints = [
+  process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
+  process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
+];
+
+app.post("/api/rpc", async (req, res) => {
+  const { method, params = [], id = Date.now() } = req.body || {};
+  if (typeof method !== "string" || !Array.isArray(params)) {
+    return res.status(400).json({
+      jsonrpc: "2.0",
+      error: { code: -32600, message: "Invalid JSON-RPC request" },
+      id,
+    });
+  }
+
+  for (const endpoint of rpcEndpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method, params, id }),
+      });
+      const payload = await response.json();
+      if (response.ok) return res.status(200).json(payload);
+    } catch (error) {
+      console.warn(`[RPC] ${endpoint} unavailable: ${error.message}`);
+    }
+  }
+
+  res.status(502).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Configured RPC endpoints are unavailable" },
+    id,
+  });
+});
 
 // ---------- Health Check ----------
 app.get("/api/health", async (req, res) => {

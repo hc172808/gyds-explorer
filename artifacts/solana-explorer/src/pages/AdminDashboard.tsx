@@ -101,7 +101,7 @@ BOOTNODE_ENODE=${boot}` : ""}`;
   const reset = () => {
     resetToDefaults();
     const envRpc1 = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com";
+    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com";
     setRpc1(envRpc1);
     setRpc2(envRpc2);
     setBoot("");
@@ -592,7 +592,7 @@ function TokensTab() {
 
   const metaMaskSetup = `Network name:  GYDS Network
 RPC URL:       ${rpcUrl}
-Chain ID:      29987
+Chain ID:      198282
 Currency:      GYDS`;
 
   return (

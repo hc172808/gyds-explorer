@@ -2,8 +2,8 @@ import { useState } from "react";
 import { BrowserProvider, ContractFactory, JsonRpcProvider, Contract } from "ethers";
 import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
 
-export const GYDS_CHAIN_ID   = 29987n;
-export const GYDS_CHAIN_HEX  = "0x7523";
+export const GYDS_CHAIN_ID   = 198282n;
+export const GYDS_CHAIN_HEX  = "0x3068a";
 
 export type DeployStatus = "idle" | "connecting" | "switching" | "deploying" | "confirming" | "success" | "error";
 

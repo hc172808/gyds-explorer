@@ -1,31 +1,16 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 
-const RPC_ENDPOINTS = [
-  import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
-  import.meta.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
-].filter(Boolean);
-
-let currentEndpoint = 0;
-
 export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
-  const maxRetries = RPC_ENDPOINTS.length;
-  for (let i = 0; i < maxRetries; i++) {
-    const url = RPC_ENDPOINTS[(currentEndpoint + i) % RPC_ENDPOINTS.length];
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      return data.result;
-    } catch (err) {
-      if (i === maxRetries - 1) throw err;
-      currentEndpoint = (currentEndpoint + 1) % RPC_ENDPOINTS.length;
-    }
+  const res = await fetch("/api/rpc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data.error?.message || `RPC call failed for method "${method}"`);
   }
-  throw new Error(`RPC call failed for method "${method}"`);
+  return data.result;
 }
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);

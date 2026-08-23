@@ -66,8 +66,8 @@ GETH_VERSION="1.13.15-c2ad2fa2"
 DATA_DIR="/var/lib/gyds"
 CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
-CHAIN_ID=29987
-NETWORK_ID=29987
+CHAIN_ID=198282
+NETWORK_ID=198282
 NODE_NAME="gyds-node"
 
 # Ports
@@ -385,7 +385,7 @@ else
       cat > "${CONFIG_DIR}/genesis.json" <<'PLACEHOLDER'
 {
   "config": {
-    "chainId": 29987,
+    "chainId": 198282,
     "homesteadBlock": 0,
     "eip150Block": 0,
     "eip155Block": 0,

@@ -174,7 +174,7 @@ export default function TokenBalances() {
               <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">G</div>
               <div className="flex-1">
                 <p className="text-sm font-medium">GYDS (Native Coin)</p>
-                <p className="text-xs text-muted-foreground font-mono">Native chain currency · Chain ID 29987</p>
+                <p className="text-xs text-muted-foreground font-mono">Native chain currency · Chain ID 198282</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold font-mono">{fmt(nativeBalance, 18)} <span className="text-sm text-muted-foreground">GYDS</span></p>

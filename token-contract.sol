@@ -15,7 +15,7 @@
 //   1. Open https://remix.ethereum.org
 //   2. Paste this file
 //   3. Compile with Solidity 0.8.20+
-//   4. Connect MetaMask to GYDS Network (RPC: https://rpc.netlifegy.com, Chain ID: 29987)
+//   4. Connect MetaMask to GYDS Network (RPC: https://rpc.netlifegy.com, Chain ID: 198282)
 //   5. Deploy with your desired constructor arguments
 // ============================================================
 pragma solidity ^0.8.20;

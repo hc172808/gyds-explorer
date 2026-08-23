@@ -177,7 +177,7 @@ function generateGethScript(deployerAddress, supply) {
   console.log(`5. Add your GYDS network to MetaMask:`);
   console.log(`     Network name: GYDS Network`);
   console.log(`     RPC URL:      ${RPC_URL}`);
-  console.log(`     Chain ID:     29987`);
+  console.log(`     Chain ID:     198282`);
   console.log(`     Currency:     GYDS`);
   console.log("6. Deploy with constructor args:");
   console.log(`     name_:         ${TOKEN_NAME}`);
