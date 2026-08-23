@@ -84,7 +84,7 @@ generate_secret() {
 }
 
 DB_PASSWORD=$(generate_password)
-API_SECRET=$(generate_secret)
+API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-$(generate_secret)}}"
 
 # ============================================================
 # OPTIONAL: Run node-setup.sh first
@@ -289,7 +289,7 @@ cat > "${APP_DIR}/.env" <<EOF
 
 # ---------- RPC Configuration ----------
 VITE_RPC_URL=https://rpc.netlifegy.com
-VITE_RPC_URL_2=https://rpc2.netlifegy.com
+VITE_RPC_URL_2=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------
 VITE_PORT=8080
