@@ -255,6 +255,36 @@ been reviewed.
 - Results:
 - Remaining warnings:
 
+### Deployment milestone status — 2026-08-23
+
+- [x] Added Node.js `>=22.18.0` and npm `>=10` engine requirements to the
+      root, explorer, API, and indexer package manifests.
+- [x] Added the public npm registry to `.npmrc`.
+- [x] Regenerated `package-lock.json` with npm against
+      `https://registry.npmjs.org/`; verified there are no internal
+      `replit.local` URLs in the lockfile.
+- [x] Updated `deploy.sh` to install Node 22 and validate the full
+      `22.18.0` minimum instead of checking only the major version.
+- [x] Updated `update.sh` to enforce Node `22.18.0+` and the public npm registry.
+- [x] `bash -n deploy.sh`, `bash -n update.sh`, and package JSON parsing pass.
+- [x] Explorer and mockup preview workflows start successfully after npm
+      dependencies were installed.
+- [ ] Run the final clean Ubuntu verification on Node `22.18.0+`; this Replit
+      environment currently has Node `v20.20.0`, so engine warnings are expected
+      here.
+- [ ] The optional API workflow requires `API_SECRET_KEY` or `JWT_SECRET_KEY`;
+      do not reuse `SESSION_SECRET` without explicit approval. The API package
+      builds successfully but will not start without its required secret.
+- [ ] The npm install reported four moderate audit vulnerabilities and one
+      deprecated dependency warning; review them on Node 22 before production.
+- [x] Added default `PORT` and `BASE_PATH` values to the explorer and mockup
+      build/preview scripts so `npm run build` works without Replit-only
+      environment injection.
+- [x] Full `npm run build` passed, including library typechecks, API build,
+      mockup build, and explorer build.
+- [x] Explorer and mockup workflows were restarted successfully after the
+      build-script changes.
+
 ---
 
 # GYDSChain and GYD token product TODO

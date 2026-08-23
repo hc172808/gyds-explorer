@@ -1,1 +1,2 @@
 - [npm workspace migration](npm-workspace-migration.md) — npm cannot resolve pnpm catalog or workspace protocols; use concrete versions and local file links.
+- [npm lockfile registry refresh](npm-lockfile-registry-refresh.md) — npm preserves stale resolved URLs; full lockfile regeneration is required to remove internal registries.
