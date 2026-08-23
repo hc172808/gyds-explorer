@@ -1,0 +1,59 @@
+GNU nano 6.2                         /root/.npm/_logs/2026-08-23T14_17_32_839Z-debug-0.log                                  
+0 verbose cli /usr/bin/node /usr/bin/npm
+1 info using npm@10.8.2
+2 info using node@v20.20.2
+3 silly config load:file:/usr/lib/node_modules/npm/npmrc
+4 silly config load:file:/var/www/gyds-explorer/.npmrc
+5 silly config load:file:/root/.npmrc
+6 silly config load:file:/usr/etc/npmrc
+7 verbose title npm install
+8 verbose argv "install" "--legacy-peer-deps"
+9 verbose logfile logs-max:10 dir:/root/.npm/_logs/2026-08-23T14_17_32_839Z-
+10 verbose logfile /root/.npm/_logs/2026-08-23T14_17_32_839Z-debug-0.log
+11 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+12 silly logfile done cleaning log files
+13 silly idealTree buildDeps
+14 silly fetch manifest prettier@^3.8.4
+15 silly packumentCache full:https://registry.npmjs.org/prettier cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/prettier 421ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/prettier set size:undefined disposed:false
+18 silly fetch manifest typescript@~5.9.3
+19 silly packumentCache full:https://registry.npmjs.org/typescript cache-miss
+20 http fetch GET 200 https://registry.npmjs.org/npm 662ms
+21 http fetch GET 200 https://registry.npmjs.org/typescript 653ms (cache miss)
+22 silly packumentCache full:https://registry.npmjs.org/typescript set size:undefined disposed:false
+23 silly placeDep ROOT prettier@3.9.6 OK for: workspace@0.0.0 want: ^3.8.4
+24 silly placeDep ROOT typescript@5.9.3 OK for: workspace@0.0.0 want: ~5.9.3
+25 silly reify moves {}
+26 silly audit bulk request { prettier: [ '3.9.6' ], typescript: [ '5.9.3' ] }
+27 silly tarball no local data for typescript@https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz. Extracting by man>
+28 silly tarball no local data for prettier@https://registry.npmjs.org/prettier/-/prettier-3.9.6.tgz. Extracting by manifest.
+29 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 280ms 30 silly audit report {}
+31 http fetch GET 200 https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz 1179ms (cache miss)
+32 http fetch GET 200 https://registry.npmjs.org/prettier/-/prettier-3.9.6.tgz 1258ms (cache miss)
+33 verbose stack Error: command failed
+33 verbose stack     at promiseSpawn (/usr/lib/node_modules/npm/node_modules/@npmcli/promise-spawn/lib/index.js:22:22)
+33 verbose stack     at spawnWithShell (/usr/lib/node_modules/npm/node_modules/@npmcli/promise-spawn/lib/index.js:124:10)
+33 verbose stack     at promiseSpawn (/usr/lib/node_modules/npm/node_modules/@npmcli/promise-spawn/lib/index.js:12:12)
+33 verbose stack     at runScriptPkg (/usr/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/run-script-pkg.js:77:13)
+33 verbose stack     at runScript (/usr/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/run-script.js:12:10)
+33 verbose stack     at async Install.exec (/usr/lib/node_modules/npm/lib/commands/install.js:163:9)
+33 verbose stack     at async Npm.exec (/usr/lib/node_modules/npm/lib/npm.js:207:9)
+33 verbose stack     at async module.exports (/usr/lib/node_modules/npm/lib/cli/entry.js:74:5)
+34 verbose pkgid workspace@0.0.0
+35 error code 1
+36 error path /var/www/gyds-explorer
+37 error command failed
+38 error command sh -c sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnp>
+39 verbose cwd /var/www/gyds-explorer
+40 verbose os Linux 6.8.12-27-pve
+41 verbose node v20.20.2
+42 verbose npm  v10.8.2
+43 notice
+43 notice New ^[[31mmajor^[[39m version of npm available! ^[[31m10.8.2^[[39m -> ^[[34m12.0.2^[[39m
+43 notice Changelog: ^[[34mhttps://github.com/npm/cli/releases/tag/v12.0.2^[[39m
+43 notice To update run: ^[[4mnpm install -g npm@12.0.2^[[24m
+43 notice  { force: true, [Symbol(proc-log.meta)]: true }
+44 verbose exit 1
+45 verbose code 1
+46 error A complete log of this run can be found in: /root/.npm/_logs/2026-08-23T14_17_32_839Z-debug-0.log

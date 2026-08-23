@@ -4,9 +4,9 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/solana-explorer run dev` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `pnpm --filter @workspace/api-server run dev` — run the optional API service (workflow: `artifacts/api-server: API Server`)
-- `pnpm run typecheck` — full typecheck across all packages
+- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
+- `npm run dev --workspace=@workspace/api-server` — run the optional API service (workflow: `artifacts/api-server: API Server`)
+- `npm run typecheck` — full typecheck across all packages
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
@@ -14,7 +14,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- npm workspaces, Node.js 20+, TypeScript 5.9
 - Frontend: React + Vite, Tailwind v3, shadcn/ui
 - Routing: react-router-dom v7 with `basename={import.meta.env.BASE_URL}`
 - Charts: recharts, framer-motion
@@ -47,10 +47,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-- Do NOT run `pnpm dev` at workspace root — use the workflow or `pnpm --filter @workspace/solana-explorer run dev`
+- Do NOT run `npm run dev` at workspace root — use the workflow or `npm run dev --workspace=@workspace/solana-explorer`
 - Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
 - The app talks directly to RPC nodes — no api-server is used by this app
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- The root `package.json` defines the npm workspace structure, TypeScript setup, and package details

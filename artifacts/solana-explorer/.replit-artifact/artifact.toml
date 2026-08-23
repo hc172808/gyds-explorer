@@ -15,10 +15,10 @@ paths = [ "/" ]
 localPort = 18680
 
 [services.development]
-run = "pnpm --filter @workspace/solana-explorer run dev"
+run = "npm run dev --workspace=@workspace/solana-explorer"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/solana-explorer", "run", "build" ]
+build = [ "npm", "run", "build", "--workspace=@workspace/solana-explorer" ]
 publicDir = "artifacts/solana-explorer/dist/public"
 serve = "static"
 

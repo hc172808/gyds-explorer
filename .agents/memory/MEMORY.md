@@ -1,0 +1,1 @@
+- [npm workspace migration](npm-workspace-migration.md) — npm cannot resolve pnpm catalog or workspace protocols; use concrete versions and local file links.

@@ -13,6 +13,8 @@
 # Usage:
 #   chmod +x deploy.sh
 #   sudo ./deploy.sh [domain.com]
+#   sudo ./deploy.sh --node-only --node-type=rpc
+#   sudo ./deploy.sh --no-web [domain.com]
 #
 # Prerequisites: Ubuntu 22.04 with root/sudo access
 # ============================================================
@@ -26,6 +28,9 @@ API_DIR="${APP_DIR}/api"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
 DOMAIN=""
 NODE_VERSION="20"
+DEPLOY_WEB=true
+NODE_ONLY=false
+NODE_TYPE_OVERRIDE="${NODE_TYPE:-}"
 
 # Database defaults (will be written to .env)
 DB_NAME="gyds_explorer"
@@ -33,9 +38,40 @@ DB_USER="gyds_admin"
 DB_PORT="5432"
 API_PORT="3001"
 
-if [ -n "$1" ]; then
-  DOMAIN="$1"
-fi
+for ARG in "$@"; do
+  case "$ARG" in
+    --node-only|--node)
+      NODE_ONLY=true
+      ;;
+    --rpc-node)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="rpc"
+      ;;
+    --no-web|--api-only)
+      DEPLOY_WEB=false
+      ;;
+    --with-web)
+      DEPLOY_WEB=true
+      ;;
+    --node-type=*)
+      NODE_TYPE_OVERRIDE="${ARG#*=}"
+      ;;
+    --help|-h)
+      echo "Usage: sudo ./deploy.sh [domain.com] [--node-only] [--node-type=main|full|lite|rpc|validator] [--no-web]"
+      exit 0
+      ;;
+    --*)
+      err "Unknown option: ${ARG}. Use --help for usage."
+      ;;
+    *)
+      if [ -z "$DOMAIN" ]; then
+        DOMAIN="$ARG"
+      else
+        err "Only one domain may be supplied: ${DOMAIN}"
+      fi
+      ;;
+  esac
+done
 
 # ---------- Colors ----------
 GREEN='\033[0;32m'
@@ -56,7 +92,7 @@ fi
 
 echo ""
 echo "╔════════════════════════════════════════════╗"
-echo "║   GYDS Explorer - Full Deployment Script   ║"
+echo "║   GYDS Explorer Deployment Script          ║"
 echo "║   Ubuntu 22.04                             ║"
 echo "╠════════════════════════════════════════════╣"
 echo "║   Steps:                                   ║"
@@ -94,10 +130,14 @@ echo "┌───────────────────────�
 echo "│   GYDS Blockchain Node Setup (Optional)             │"
 echo "│                                                     │"
 echo "│   Do you want to set up a GYDS blockchain node      │"
-echo "│   on this server? (main / full / lite / validator)  │"
+echo "│   on this server? (main / full / lite / rpc / validator) │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
-read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
+if [ "$NODE_ONLY" = true ]; then
+  SETUP_NODE_CHOICE="y"
+else
+  read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
+fi
 if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   NODE_SETUP_SCRIPT="${SCRIPT_DIR}/node-setup.sh"
@@ -109,10 +149,18 @@ if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
 
   if [ -f "${NODE_SETUP_SCRIPT}" ]; then
     chmod +x "${NODE_SETUP_SCRIPT}"
-    bash "${NODE_SETUP_SCRIPT}"
+    if [ -n "$NODE_TYPE_OVERRIDE" ]; then
+      NODE_TYPE="$NODE_TYPE_OVERRIDE" bash "${NODE_SETUP_SCRIPT}"
+    else
+      bash "${NODE_SETUP_SCRIPT}"
+    fi
     echo ""
-    log "Blockchain node setup complete. Continuing with explorer deployment..."
+    log "Blockchain node setup complete."
     echo ""
+    if [ "$NODE_ONLY" = true ]; then
+      log "Node-only mode selected. Web interface, API, database, and Nginx were skipped."
+      exit 0
+    fi
   else
     warn "node-setup.sh not found. Skipping node setup."
     warn "Place node-setup.sh in the same directory as deploy.sh and re-run to set up a node."
@@ -632,7 +680,7 @@ info "API server files created at ${API_DIR}"
 log "Step 7/11 — Installing dependencies and building..."
 cd "${APP_DIR}"
 
-# Frontend dependencies
+# Workspace dependencies
 npm install --legacy-peer-deps
 
 # API dependencies
@@ -654,14 +702,23 @@ if [ -d "${APP_DIR}/indexer" ]; then
   cd "${APP_DIR}"
 fi
 
-# Build frontend
-npm run build
+if [ "$DEPLOY_WEB" = true ]; then
+  # Build frontend
+  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+    npm run build --workspace=@workspace/solana-explorer
 
-if [ ! -d "${APP_DIR}/dist" ]; then
-  err "Build failed — 'dist' directory not found in ${APP_DIR}."
+  FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
+  if [ ! -d "${FRONTEND_DIST}" ]; then
+    err "Build failed — frontend output not found in ${FRONTEND_DIST}."
+  fi
+
+  rm -rf "${APP_DIR}/dist"
+  cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
+  info "Frontend built to ${APP_DIR}/dist"
+else
+  info "Web interface disabled. Building API only."
+  npm run build --workspace=@workspace/api-server
 fi
-
-info "Frontend built to ${APP_DIR}/dist"
 
 # ============================================================
 # STEP 8: Setup PM2 Process Manager
@@ -709,8 +766,9 @@ cd "${APP_DIR}"
 info "Services running via PM2. Use 'pm2 list' to check status."
 
 # ============================================================
-# STEP 9: Configure Nginx
+# STEP 9: Configure Nginx (optional web interface)
 # ============================================================
+if [ "$DEPLOY_WEB" = true ]; then
 log "Step 9/11 — Installing and configuring Nginx..."
 
 if ! command -v nginx &> /dev/null; then
@@ -797,10 +855,14 @@ nginx -t || err "Nginx config test failed! Check the config at ${NGINX_CONF}"
 systemctl reload nginx
 
 info "Nginx configured with API reverse proxy."
+else
+  info "Web interface disabled. Skipping Nginx configuration."
+fi
 
 # ============================================================
-# STEP 10: Install pgAdmin Web Interface
+# STEP 10: Install pgAdmin Web Interface (optional)
 # ============================================================
+if [ "$DEPLOY_WEB" = true ]; then
 log "Step 10/11 — Installing pgAdmin web interface..."
 
 if ! dpkg -l pgadmin4-web &>/dev/null; then
@@ -858,6 +920,9 @@ info "pgAdmin configured."
 info "  Access via: http://your-server/pgadmin4"
 info "  Email:      ${PGADMIN_EMAIL}"
 info "  Password:   ${PGADMIN_PASSWORD}  (also saved in ${APP_DIR}/.env)"
+else
+  info "Web interface disabled. Skipping pgAdmin installation."
+fi
 
 # ============================================================
 # STEP 11: SSL with Certbot (optional)
@@ -883,12 +948,18 @@ echo "║   ✅ GYDS Explorer deployed successfully!              ║"
 echo "╠════════════════════════════════════════════════════════╣"
 echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
-printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
+if [ "$DEPLOY_WEB" = true ]; then
+  printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
+else
+  echo "║   🌐 Web interface:  disabled                           ║"
+fi
 printf "║   🔌 API server:     %-35s║\n" "http://localhost:${API_PORT}/api"
 printf "║   🗄️  Database:       %-35s║\n" "${DB_NAME} @ localhost:${DB_PORT}"
 printf "║   👤 DB User:        %-35s║\n" "${DB_USER}"
 echo "║   🔑 DB Password:    saved in ${APP_DIR}/.env          ║"
-printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
+if [ "$DEPLOY_WEB" = true ]; then
+  printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
+fi
 echo "║                                                        ║"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
