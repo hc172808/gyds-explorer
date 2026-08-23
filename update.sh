@@ -76,6 +76,13 @@ echo ""
 
 cd "${APP_DIR}"
 
+# Never attempt to stash or pull while Git has unresolved merge entries.
+# This commonly happens when the repository was migrated away from pnpm
+# while an older update was already in progress.
+if git ls-files -u | grep -q .; then
+  err "Git has unresolved merge conflicts. Resolve them first with 'git merge --abort' or, if this server must exactly match origin, 'git fetch origin && git reset --hard origin/main'."
+fi
+
 # ============================================================
 # STEP 1: Snapshot current state
 # ============================================================
@@ -126,7 +133,9 @@ fi
 # Restore stash if we stashed
 if [ "${STASHED}" = "true" ]; then
   warn "Restoring your local changes from stash..."
-  git stash pop || warn "Stash pop failed — check 'git stash list' and resolve manually."
+  if ! git stash pop; then
+    err "Stash restore caused conflicts. Resolve them, then rerun the update."
+  fi
 fi
 
 # ============================================================
