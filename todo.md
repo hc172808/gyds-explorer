@@ -693,6 +693,73 @@ protocol balances have been erased.
 - [ ] Never put private keys, seed phrases, signing secrets, or multisig
       credentials in `.env`, source control, or browser-exposed variables.
 
+## 22A. Web3 user dashboard and public/admin routing
+
+- [ ] Define the public Web3 user journey:
+  - A visitor can open the live public explorer and view network, supply,
+        token, transaction, and project information without an admin account.
+  - A user can connect an EVM wallet from the public site and be redirected to
+        the user dashboard after a successful connection.
+  - Preserve the intended destination when a user connects from a specific
+        page, such as wallet setup, token balances, or an address page.
+  - Provide a clear disconnect action and never expose private keys or seed
+        phrases to the website.
+- [ ] Define the user dashboard contents:
+  - Connected wallet address and shortened display with copy action.
+  - Current network and wrong-network warning.
+  - Native GYDS balance and verified GYD balance.
+  - Transaction history and links to the live public explorer.
+  - Add-network and add-token actions.
+  - Buy/send actions only when the corresponding asset and account are
+        enabled and authorized.
+- [ ] Create explicit routes for the public site and authenticated user area.
+      A wallet connection alone is not proof of admin authority.
+- [ ] Add a wallet connection state machine:
+  - Disconnected, connecting, connected, wrong network, rejected, unavailable,
+        and session expired.
+  - Handle account changes, chain changes, wallet lock, and disconnect events.
+  - Re-check the connected chain and account before every sensitive action.
+- [ ] Redirect connected Web3 users to the live public user dashboard using
+      the final production URL. Do not hardcode a preview URL, localhost URL,
+      or an unverified domain.
+- [ ] Define public versus private data:
+  - Public: chain metadata, verified token metadata, confirmed on-chain data,
+        project documentation, and public transaction pages.
+  - Private/authenticated: wallet-specific dashboard data, pending orders,
+        limits, support cases, and account preferences.
+  - Admin-only: roles, asset switches, limits, treasury settings, approvals,
+        audit logs, and operational controls.
+- [ ] Protect admin routing separately:
+  - Use a dedicated “Admin dashboard” entry point that is not shown as a user
+        dashboard feature.
+  - Require wallet signature authentication with nonce, expiry, replay
+        protection, and server-side role verification.
+  - Redirect unauthorized users to the public explorer or a clear access-denied
+        page without leaking admin data.
+  - Enforce authorization on every admin API request; client-side route guards
+        and hidden buttons are not security controls.
+- [ ] Add safe redirect rules:
+  - Allow only same-origin internal paths or an explicit production allowlist.
+  - Reject arbitrary user-controlled redirect URLs to prevent open redirects.
+  - Use HTTPS in production and configure the canonical public origin.
+- [ ] Add session and privacy controls:
+  - Expiring signed sessions, logout, session revocation, and account switching.
+  - Do not persist sensitive wallet data beyond the minimum required session
+        state.
+  - Do not treat a wallet address as identity, legal verification, or proof of
+        ownership of off-chain funds.
+- [ ] Test the user and admin paths separately on desktop extensions, mobile
+      in-app browsers, unsupported wallets, wrong chains, rejected signatures,
+      changed accounts, expired sessions, and direct URL access.
+- [ ] Acceptance criteria:
+  - A public visitor can open the live dashboard without admin privileges.
+  - A connected Web3 user reaches the correct user dashboard and sees only
+        data authorized for that wallet.
+  - An authorized admin reaches the admin dashboard after signature and
+        server-side role verification.
+  - An unauthorized wallet cannot access admin data or mutate admin settings.
+  - Public links remain usable after redirect and no open redirect exists.
+
 ## 23. Admin enable/disable controls for GYDS and GYD
 
 - [ ] Add separate controls for the two assets:
