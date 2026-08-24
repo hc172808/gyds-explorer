@@ -503,6 +503,99 @@ verified before a production deployment.
 - [ ] Confirm the wallet displays the native `GYDS` balance and imported `GYD`
       balance from the same chain.
 
+## 19A. Build a broad wallet onboarding flow
+
+- [ ] Implement the standard EVM network-add request (`wallet_addEthereumChain`)
+      with the final production values:
+  - `chainId`: `0x3068a` / decimal `198282`.
+  - `chainName`: `GYDSChain`.
+  - Production HTTPS RPC URL(s).
+  - Native currency name `GYDSChain`, symbol `GYDS`, and verified decimals.
+  - Public HTTPS block explorer URL.
+  - `iconUrls` containing the official network icon where the wallet supports
+        this optional field.
+- [ ] Use the same user-facing “Add GYDSChain” button for injected wallets
+      such as MetaMask, Rabby, Coinbase Wallet, Brave Wallet, and compatible
+      EVM wallets.
+- [ ] Detect whether `window.ethereum` is available and show a clear fallback
+      when the user is on a mobile browser or a wallet that does not expose the
+      network-add method.
+- [ ] Add wallet-specific deep links or wallet-browser instructions only after
+      confirming each provider's current documented format. Do not claim one
+      web button can control every wallet.
+- [ ] Provide a QR code and copyable network details for wallets that require
+      manual setup:
+  - Network name, chain ID, RPC URL, native symbol/decimals, explorer URL.
+  - A warning to verify the chain ID and RPC domain before saving.
+- [ ] After the network request succeeds, offer “Add GYD token” as the next
+      action. Call `wallet_watchAsset` with the verified contract address,
+      symbol, decimals, and logo URL when supported.
+- [ ] Provide manual GYD import instructions for wallets that reject or do
+      not implement `wallet_watchAsset`.
+- [ ] Handle all onboarding states visibly: wallet not installed, mobile
+      wallet, request pending, user rejected, unsupported method, wrong chain,
+      invalid RPC, network added, and token added.
+- [ ] Never auto-submit a transaction, switch funds, or send GYDS/GYD as part
+      of onboarding. Adding a network or token must be a user-approved
+      metadata action only.
+- [ ] Maintain a tested wallet support matrix covering desktop extension,
+      mobile browser, in-app wallet browser, and manual setup behavior.
+
+## 19B. Publish wallet logos and metadata
+
+- [ ] Create official separate assets for:
+  - GYDSChain network/native coin logo.
+  - GYD token logo.
+  - Light and dark backgrounds if a registry requires them.
+- [ ] Export registry-compatible logo files:
+  - Square dimensions, crisp edges, and no accidental transparent padding.
+  - PNG and SVG versions where accepted; retain a PNG fallback.
+  - Consistent colors and branding across explorer, wallet prompts, and lists.
+- [ ] Host immutable public HTTPS logo URLs on a reliable domain or CDN. Do
+      not use localhost, a Replit preview URL, an expiring URL, or a URL that
+      requires authentication.
+- [ ] Add cache-safe asset versioning and keep old URLs available after an
+      update so previously cached wallet metadata does not break.
+- [ ] Add the logo URL to the network-add request's optional `iconUrls` field
+      and to the GYD token-import request.
+- [ ] Publish a machine-readable public metadata document containing the
+      chain name, chain ID, RPC, explorer, native currency, official links,
+      logo URLs, and verified GYD contract address.
+- [ ] Keep testnet and mainnet logos, metadata, RPC URLs, and token addresses
+      clearly separated.
+- [ ] Check every public asset URL from an external network and verify HTTPS,
+      correct content type, stable redirects, usable dimensions, and no
+      authentication requirement.
+
+## 19C. Submit GYDSChain and GYD to wallet registries
+
+- [ ] Prepare a registry submission packet containing:
+  - Final chain name and chain ID.
+  - Mainnet RPC endpoint(s) with reliable uptime and rate limits.
+  - Block explorer URL and verified chain data.
+  - Native currency name, symbol, decimals, and logo.
+  - Official website, documentation, terms, privacy page, support contact,
+        and project/social links.
+  - GYD contract address, token metadata, decimals, logo, and explorer link
+        after the contract is actually deployed and verified.
+- [ ] Submit GYDSChain to the relevant chain/network directories used by
+      wallets, such as Chainlist or other current EVM network registries.
+      Confirm each directory's current contribution and review requirements.
+- [ ] Submit the native coin and GYD token metadata to Trust Wallet's current
+      official asset/network repository or submission process. Follow its
+      exact folder, filename, image, checksumming, and pull-request rules at
+      the time of submission.
+- [ ] Track Trust Wallet review status and resolve validation feedback. Do not
+      represent a pending submission as approved or supported.
+- [ ] Submit GYD to other relevant token-list providers only after the
+      contract address, source verification, logo, decimals, and official
+      links are final.
+- [ ] Treat third-party listings as independent approvals: the explorer's
+      logo and one-click onboarding must continue to work even if a registry
+      has not approved the asset.
+- [ ] Re-check registry metadata after approval and after any chain, RPC,
+      explorer, logo, or token-contract change.
+
 ## 20. Explorer and API integration for both assets
 
 - [ ] Add native GYDS metadata to network info, supply, address, transaction,
@@ -522,6 +615,12 @@ verified before a production deployment.
       version-controlled and reviewable.
 - [ ] Add tests for wallet network payloads, token-add payloads, contract
       metadata validation, and wrong-chain rejection.
+- [ ] Add an automated wallet metadata smoke check that confirms:
+  - The network payload uses chain ID `198282` and the official production
+        endpoints.
+  - The network and token logo URLs are public HTTPS URLs.
+  - The GYD token address is present only after deployment verification.
+  - Testnet values cannot appear in the mainnet onboarding flow.
 
 ## 21. Acceptance checklist for the coin/token release
 
@@ -536,6 +635,14 @@ verified before a production deployment.
 - [ ] Adding GYDSChain to a compatible wallet shows native `GYDS`.
 - [ ] Adding the official GYD token shows `GYD` with the correct logo,
       decimals, and balance.
+- [ ] At least one injected desktop wallet completes the one-click network
+      add flow, and a wallet without that capability receives working QR and
+      manual setup instructions.
+- [ ] Trust Wallet submission has been made using its current official process,
+      and the release notes clearly state whether approval is pending or
+      complete.
+- [ ] The official network and token logos load from stable public HTTPS URLs
+      and are included in the applicable wallet/chain registries.
 - [ ] The explorer links to the correct contract and transaction pages.
 - [ ] No private keys or credentials are included in the repository or browser
       bundle.
