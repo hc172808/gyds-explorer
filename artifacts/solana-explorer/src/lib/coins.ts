@@ -1,7 +1,7 @@
 /**
  * Native coin configuration for the GYDS network.
  * 
- * GYDS - Primary native coin (18 decimals)
+ * GYDS - Primary native coin (9 decimals)
  * GYD  - Stablecoin (6 decimals)
  */
 
@@ -16,7 +16,7 @@ export interface NativeCoin {
 export const GYDS_COIN: NativeCoin = {
   symbol: "GYDS",
   name: "GYDS",
-  decimals: 18,
+  decimals: 9,
   isStablecoin: false,
   description: "Native coin of the GYDS network",
 };
@@ -56,7 +56,7 @@ export function formatCoinAmount(rawValue: string, coin: NativeCoin): string {
 }
 
 /**
- * Format wei (18 decimals) to GYDS amount
+ * Format raw GYDS units (9 decimals) to GYDS amount
  */
 export function weiToGyds(wei: string): string {
   return formatCoinAmount(wei, GYDS_COIN);

@@ -53,7 +53,7 @@ contract GYDSToken {
     /**
      * @param name_          Token name (e.g. "Gold Token")
      * @param symbol_        Token symbol (e.g. "GLD")
-     * @param decimals_      Decimal places (usually 18)
+     * @param decimals_      Decimal places (GYD uses 6)
      * @param initialSupply  Initial supply in whole tokens (scaled by 10^decimals internally)
      * @param mintable_      If true, the owner can mint additional tokens later
      */

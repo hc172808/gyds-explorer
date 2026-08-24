@@ -300,8 +300,8 @@ verified before a production deployment.
   - Full name: `GYDSChain`
   - Symbol: `GYDS`
   - Requested initial/max supply: `1,000,000,000 GYDS`
-  - Native decimals: confirm the chain's supported value, currently expected
-    to be 18 for EVM wallet compatibility.
+  - Native decimals: `9` (must be verified against the chain protocol and
+    genesis configuration).
 - [ ] Treat **GYD** as a separate token deployed on GYDSChain:
   - Token name: `GYD` or the final approved full name
   - Symbol: `GYD`
@@ -317,7 +317,9 @@ verified before a production deployment.
   - GYDS: fixed `1B` genesis supply, or a defined emission schedule.
   - GYD: fixed `10B` cap, or controlled minting against verified reserves.
 - [ ] Record the smallest unit and display precision for both assets, and use
-      integer base units for all balances and supply calculations.
+      integer base units for all balances and supply calculations:
+  - GYDS: 9 decimals (`1 GYDS = 1,000,000,000` base units).
+  - GYD: 6 decimals (`1 GYD = 1,000,000` base units).
 
 ## 14. Add coin logo and project information
 
@@ -354,13 +356,13 @@ verified before a production deployment.
 
       VITE_NATIVE_COIN_NAME=GYDSChain
       VITE_NATIVE_COIN_SYMBOL=GYDS
-      VITE_NATIVE_COIN_DECIMALS=18
+       VITE_NATIVE_COIN_DECIMALS=9
       VITE_NATIVE_COIN_SUPPLY=1000000000
-      VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.png
+       VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
       VITE_NATIVE_COIN_DESCRIPTION=
       VITE_GYD_NAME=GYD
       VITE_GYD_SYMBOL=GYD
-      VITE_GYD_DECIMALS=18
+       VITE_GYD_DECIMALS=6
       VITE_GYD_INITIAL_SUPPLY=10000000000
       VITE_GYD_MAX_SUPPLY=10000000000
       VITE_GYD_PEG_CURRENCY=USD
@@ -405,6 +407,58 @@ verified before a production deployment.
       in the explorer's supply page.
 - [ ] Add tests for base-unit conversion, total supply display, and rounding.
 
+## 16A. Build and operate the GYDSChain blockchain and nodes
+
+- [ ] Confirm the production consensus and execution stack:
+  - Geth/EVM version and supported hardfork.
+  - Consensus mode, validator authority, block time, gas limit, and chain ID.
+  - Native currency decimals fixed at `9` in the protocol configuration.
+  - Genesis file, alloc accounts, premines, validator set, and bootnodes.
+- [ ] Produce a reproducible genesis process:
+  - Keep a reviewed genesis template without private keys.
+  - Generate genesis artifacts from a clean, documented process.
+  - Hash and securely archive the exact production genesis file.
+  - Ensure every production node uses the same chain ID and genesis hash.
+- [ ] Define node roles and permissions:
+  - Public RPC/read node.
+  - Private validator/sealer node.
+  - Bootnode/peer-discovery node.
+  - Explorer/indexer node.
+  - Backup or disaster-recovery node.
+  - Never expose validator signing or admin RPC methods publicly.
+- [ ] Provision at least two geographically separate production nodes and one
+      recovery node with firewall rules, private peer networking, SSH hardening,
+      automatic security updates, encrypted disks, and restricted operators.
+- [ ] Configure peer discovery and static peers with authenticated,
+      documented enode identities. Do not put node private keys or enodes with
+      sensitive credentials in the repository.
+- [ ] Configure RPC security:
+  - HTTPS/TLS, domain allowlist, rate limits, request-size limits, and abuse
+        protection.
+  - Public methods only on public RPC nodes.
+  - Admin, debug, personal, miner, and signing namespaces disabled externally.
+  - Separate authenticated internal RPC for operations.
+- [ ] Configure transaction and gas policy:
+  - Minimum gas price, base-fee rules, gas limit, and fee recipient/burn rules.
+  - Verify how 9-decimal GYDS interacts with EVM wallet display and gas math.
+  - Document whether users need GYDS for gas before they can send tokens.
+- [ ] Run health checks for block height, peer count, consensus progress, RPC
+      latency, chain ID, genesis hash, disk space, memory, CPU, and clock drift.
+- [ ] Add monitoring and alerts for halted blocks, validator loss, peer loss,
+      RPC errors, reorgs, disk exhaustion, abnormal gas usage, and unauthorized
+      configuration changes.
+- [ ] Configure log rotation, metrics retention, encrypted backups, restore
+      drills, node resynchronization procedures, and documented rollback limits.
+- [ ] Define upgrade operations:
+  - Staging/testnet rehearsal.
+  - Version compatibility matrix.
+  - Governance/approval and maintenance window.
+  - Coordinated validator upgrade and rollback plan.
+  - Post-upgrade chain ID, block, RPC, and contract compatibility checks.
+- [ ] Test node restart, validator failure, bootnode failure, RPC failover,
+      database corruption recovery, chain re-sync, time drift, and network
+      partition scenarios before mainnet.
+
 ## 17. Design and deploy GYD
 
 - [ ] Decide the token standard supported by GYDSChain. The current code and
@@ -416,7 +470,7 @@ verified before a production deployment.
       compliance controls.
 - [ ] Create a production-specific GYD contract configuration:
   - Name and symbol fixed to the approved values.
-  - Decimals fixed and documented, normally 18.
+  - Decimals fixed to `6` and documented for GYD.
   - Initial supply and maximum supply set according to the approved tokenomics.
   - Minting disabled for a fixed-supply token, or strictly controlled if
       reserves-backed issuance is required.
@@ -424,6 +478,30 @@ verified before a production deployment.
   - Ownership and admin roles secured with a multisig or approved custody
       process rather than a personal hot wallet.
 - [ ] Add a hard maximum supply check if GYD must never exceed `10B`.
+- [ ] Implement the approved GYD minting model:
+  - Minting is on demand only through an authorized on-chain minter role.
+  - Admin minting requires a dedicated role, not unrestricted contract owner
+        access, and must be protected by multisig or approved custody.
+  - Every mint request records destination wallet, amount in 6-decimal base
+        units, reason, reserve/payment evidence, approver, timestamp, and
+        transaction hash.
+  - Support minting from the admin dashboard only after server-side role
+        verification, current asset status checks, wallet-limit checks, and
+        two-person approval or timelock where required.
+  - Provide a dry-run/preview that shows the exact amount, recipient, current
+        total supply, resulting supply, and remaining cap before signing.
+  - Enforce the maximum supply on chain; the UI and API must never be the only
+        minting control.
+  - Emit and index a clear `Mint` event and show it in the explorer and audit
+        log.
+  - Add emergency pause and revoke-minter procedures with recovery testing.
+- [ ] Decide whether user purchases mint GYD on demand or draw from treasury
+      inventory. Do not allow both paths without explicit supply accounting.
+- [ ] Add mint controls for per-transaction, daily, reserve-backed, and total
+      supply limits. Define whether a failed transaction consumes any quota.
+- [ ] Test unauthorized minting, zero address, zero amount, decimals,
+      over-cap minting, paused minting, revoked minter, duplicate request,
+      replayed approval, concurrent requests, and failed transaction recovery.
 - [ ] If GYD is intended to be USD-backed, define before deployment:
   - Who holds the USD or equivalent reserves.
   - How reserves are verified and reported.

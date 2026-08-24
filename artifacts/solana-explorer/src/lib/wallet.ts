@@ -6,7 +6,7 @@ export const GYDS_NETWORK = {
   nativeCurrency: {
     name: import.meta.env.VITE_NATIVE_COIN_NAME || "GYDSChain",
     symbol: import.meta.env.VITE_NATIVE_COIN_SYMBOL || "GYDS",
-    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 18),
+    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 9),
   },
   blockExplorerUrl: import.meta.env.VITE_EXPLORER_URL || window.location.origin,
   iconUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",
@@ -15,7 +15,7 @@ export const GYDS_NETWORK = {
 export const GYD_TOKEN = {
   address: import.meta.env.VITE_GYD_TOKEN_ADDRESS || "",
   symbol: import.meta.env.VITE_GYD_SYMBOL || "GYD",
-  decimals: Number(import.meta.env.VITE_GYD_DECIMALS || 18),
+  decimals: Number(import.meta.env.VITE_GYD_DECIMALS || 6),
   image: import.meta.env.VITE_GYD_LOGO_URL || "/assets/gyd-logo.svg",
 } as const;
 

@@ -487,7 +487,7 @@ function TokensTab() {
   // Form state
   const [tokenName,     setTokenName]     = useState("My GYDS Token");
   const [tokenSymbol,   setTokenSymbol]   = useState("MGT");
-  const [tokenDecimals, setTokenDecimals] = useState("18");
+  const [tokenDecimals, setTokenDecimals] = useState("6");
   const [tokenSupply,   setTokenSupply]   = useState("1000000");
   const [mintable,      setMintable]      = useState(false);
   const [showCode,      setShowCode]      = useState(false);
@@ -507,7 +507,7 @@ function TokensTab() {
   const solidityCode = SOLIDITY_TEMPLATE(
     tokenName || "MyToken",
     tokenSymbol || "MTK",
-    parseInt(tokenDecimals) || 18,
+    parseInt(tokenDecimals) || 6,
     tokenSupply || "1000000",
     mintable,
   );
@@ -542,7 +542,7 @@ function TokensTab() {
     const result = await deploy({
       name:          tokenName.trim(),
       symbol:        tokenSymbol.trim(),
-      decimals:      parseInt(tokenDecimals) || 18,
+      decimals:      parseInt(tokenDecimals) || 6,
       initialSupply: tokenSupply,
       mintable,
     });
@@ -562,7 +562,7 @@ function TokensTab() {
       name:       newTokenLabel || "Unknown Token",
       symbol:     "",
       supply:     "",
-      decimals:   18,
+      decimals:   6,
       deployedAt: new Date().toISOString(),
     };
     const updated = [entry, ...deployedTokens];
@@ -620,7 +620,7 @@ Currency:      GYDS`;
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Decimals</label>
-              <Input type="number" min={0} max={18} value={tokenDecimals} onChange={(e) => setTokenDecimals(e.target.value)} placeholder="18" />
+              <Input type="number" min={0} max={18} value={tokenDecimals} onChange={(e) => setTokenDecimals(e.target.value)} placeholder="6" />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Initial Supply (whole tokens)</label>
@@ -653,7 +653,7 @@ Currency:      GYDS`;
             </p>
             <p className="text-xs text-muted-foreground">
               Raw total supply: {tokenSupply && tokenDecimals
-                ? (BigInt(tokenSupply || 0) * 10n ** BigInt(tokenDecimals || 18)).toString()
+                ? (BigInt(tokenSupply || 0) * 10n ** BigInt(tokenDecimals || 6)).toString()
                 : "—"} units
             </p>
           </div>
@@ -819,7 +819,7 @@ node deploy-token.js \\
   --name "${tokenName || "My GYDS Token"}" \\
   --symbol "${tokenSymbol || "MGT"}" \\
   --supply ${tokenSupply || "1000000"} \\
-  --decimals ${tokenDecimals || "18"} \\
+  --decimals ${tokenDecimals || "6"} \\
   --private-key 0xYOUR_PRIVATE_KEY`}</pre>
                     <Button variant="ghost" size="sm"
                       onClick={() => copyText(`node deploy-token.js --name "${tokenName}" --symbol "${tokenSymbol}" --supply ${tokenSupply} --decimals ${tokenDecimals} --private-key 0xYOUR_KEY`, "deploy command")}
