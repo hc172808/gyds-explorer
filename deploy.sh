@@ -12,7 +12,13 @@
 #
 # Usage:
 #   chmod +x deploy.sh
-#   sudo ./deploy.sh [domain.com]
+#   sudo ./deploy.sh [domain.com] [--no-web] [--node-only] [--node-type TYPE]
+#
+# Modes:
+#   default             API, database, explorer UI, Nginx, and optional pgAdmin
+#   --no-web            API and database only; skip explorer UI, Nginx, pgAdmin
+#   --node-only         Install only the blockchain node; skip API, database, UI
+#   --node-type rpc     Configure an RPC-serving node without interactive selection
 #
 # Prerequisites: Ubuntu 22.04 with root/sudo access
 # ============================================================
@@ -26,6 +32,11 @@ API_DIR="${APP_DIR}/api"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
 DOMAIN=""
 NODE_VERSION="20"
+WEB_ENABLED=true
+PGADMIN_ENABLED=true
+NODE_ONLY=false
+NODE_TYPE_OVERRIDE=""
+SETUP_NODE=false
 
 # Database defaults (will be written to .env)
 DB_NAME="gyds_explorer"
@@ -33,9 +44,58 @@ DB_USER="gyds_admin"
 DB_PORT="5432"
 API_PORT="3001"
 
-if [ -n "$1" ]; then
-  DOMAIN="$1"
-fi
+i=1
+while [ "$i" -le "$#" ]; do
+  arg="${!i}"
+  case "$arg" in
+    --help|-h)
+      sed -n '1,25p' "$0"
+      exit 0
+      ;;
+    --no-web|--headless)
+      WEB_ENABLED=false
+      PGADMIN_ENABLED=false
+      ;;
+    --no-pgadmin)
+      PGADMIN_ENABLED=false
+      ;;
+    --node-only)
+      NODE_ONLY=true
+      WEB_ENABLED=false
+      PGADMIN_ENABLED=false
+      SETUP_NODE=true
+      ;;
+    --setup-node)
+      SETUP_NODE=true
+      ;;
+    --node-type)
+      i=$((i + 1))
+      if [ "$i" -gt "$#" ]; then
+        echo "Missing value for --node-type" >&2
+        exit 1
+      fi
+      NODE_TYPE_OVERRIDE="${!i}"
+      SETUP_NODE=true
+      ;;
+    --node-type=*)
+      NODE_TYPE_OVERRIDE="${arg#*=}"
+      SETUP_NODE=true
+      ;;
+    --*)
+      echo "Unknown option: ${arg}. Use --help for usage." >&2
+      exit 1
+      ;;
+    *)
+      if [ -z "$DOMAIN" ]; then
+        DOMAIN="$arg"
+      else
+        echo "Unexpected argument: ${arg}" >&2
+        exit 1
+      fi
+      ;;
+  esac
+  i=$((i + 1))
+done
 
 # ---------- Colors ----------
 GREEN='\033[0;32m'
@@ -69,7 +129,7 @@ echo "║   6.  Create API server                    ║"
 echo "║   7.  Install dependencies & build         ║"
 echo "║   8.  Setup PM2 process manager            ║"
 echo "║   9.  Configure Nginx                      ║"
-echo "║  10.  pgAdmin web interface                ║"
+echo "║  10.  pgAdmin web interface (optional)     ║"
 echo "║  11.  SSL certificate (optional)           ║"
 echo "╚════════════════════════════════════════════╝"
 echo ""
@@ -97,7 +157,11 @@ echo "│   Do you want to set up a GYDS blockchain node      │"
 echo "│   on this server? (main / full / lite / validator)  │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
-read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
+if [ "${SETUP_NODE}" = true ] || [ -n "${NODE_TYPE_OVERRIDE}" ]; then
+  SETUP_NODE_CHOICE="y"
+else
+  read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
+fi
 if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   NODE_SETUP_SCRIPT="${SCRIPT_DIR}/node-setup.sh"
@@ -109,9 +173,13 @@ if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
 
   if [ -f "${NODE_SETUP_SCRIPT}" ]; then
     chmod +x "${NODE_SETUP_SCRIPT}"
-    bash "${NODE_SETUP_SCRIPT}"
+    if [ -n "${NODE_TYPE_OVERRIDE}" ]; then
+      NODE_TYPE="${NODE_TYPE_OVERRIDE}" bash "${NODE_SETUP_SCRIPT}"
+    else
+      bash "${NODE_SETUP_SCRIPT}"
+    fi
     echo ""
-    log "Blockchain node setup complete. Continuing with explorer deployment..."
+    log "Blockchain node setup complete."
     echo ""
   else
     warn "node-setup.sh not found. Skipping node setup."
@@ -147,6 +215,11 @@ else
   else
     warn "Node.js $(node -v) already installed, skipping."
   fi
+fi
+
+if [ "${NODE_ONLY}" = true ]; then
+  log "Node-only mode selected. Skipping database, API, explorer UI, Nginx, and pgAdmin."
+  exit 0
 fi
 
 # Install npm if missing (bundled with nodejs from nodesource, but just in case)
@@ -290,6 +363,8 @@ cat > "${APP_DIR}/.env" <<EOF
 # ---------- RPC Configuration ----------
 VITE_RPC_URL=https://rpc.netlifegy.com
 VITE_RPC_URL_2=https://boost.netlifegy.com
+RPC_URL=https://rpc.netlifegy.com
+RPC_URL_2=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------
 VITE_PORT=8080
@@ -317,6 +392,10 @@ VITE_FEATURE_GATE_URL=http://localhost:3002
 # ---------- Optional ----------
 API_RATE_LIMIT=100
 API_CORS_ORIGINS=http://localhost:8080,${BASE_URL}
+
+# ---------- Indexer ----------
+POLL_INTERVAL=5
+BATCH_SIZE=10
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -655,13 +734,17 @@ if [ -d "${APP_DIR}/indexer" ]; then
 fi
 
 # Build frontend
-npm run build
+if [ "${WEB_ENABLED}" = true ]; then
+  PORT="${VITE_PORT:-8080}" BASE_PATH="/" npm run build
 
-if [ ! -d "${APP_DIR}/dist" ]; then
-  err "Build failed — 'dist' directory not found in ${APP_DIR}."
+  if [ ! -d "${APP_DIR}/dist/public" ]; then
+    err "Build failed — 'dist/public' directory not found in ${APP_DIR}."
+  fi
+
+  info "Frontend built to ${APP_DIR}/dist/public"
+else
+  warn "Web UI disabled; skipping frontend build."
 fi
-
-info "Frontend built to ${APP_DIR}/dist"
 
 # ============================================================
 # STEP 8: Setup PM2 Process Manager
@@ -711,6 +794,7 @@ info "Services running via PM2. Use 'pm2 list' to check status."
 # ============================================================
 # STEP 9: Configure Nginx
 # ============================================================
+if [ "${WEB_ENABLED}" = true ]; then
 log "Step 9/11 — Installing and configuring Nginx..."
 
 if ! command -v nginx &> /dev/null; then
@@ -727,7 +811,7 @@ server {
     listen 80;
     server_name ${SERVER_NAME};
 
-    root ${APP_DIR}/dist;
+    root ${APP_DIR}/dist/public;
     index index.html;
 
     # Gzip compression
@@ -797,10 +881,14 @@ nginx -t || err "Nginx config test failed! Check the config at ${NGINX_CONF}"
 systemctl reload nginx
 
 info "Nginx configured with API reverse proxy."
+else
+  warn "Web UI disabled; skipping Nginx configuration."
+fi
 
 # ============================================================
 # STEP 10: Install pgAdmin Web Interface
 # ============================================================
+if [ "${PGADMIN_ENABLED}" = true ] && [ "${WEB_ENABLED}" = true ]; then
 log "Step 10/11 — Installing pgAdmin web interface..."
 
 if ! dpkg -l pgadmin4-web &>/dev/null; then
@@ -858,16 +946,19 @@ info "pgAdmin configured."
 info "  Access via: http://your-server/pgadmin4"
 info "  Email:      ${PGADMIN_EMAIL}"
 info "  Password:   ${PGADMIN_PASSWORD}  (also saved in ${APP_DIR}/.env)"
+else
+  warn "pgAdmin disabled; skipping web database interface."
+fi
 
 # ============================================================
 # STEP 11: SSL with Certbot (optional)
 # ============================================================
-if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+if [ "${WEB_ENABLED}" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   log "Step 11/11 — Setting up SSL with Certbot..."
   apt-get install -y certbot python3-certbot-nginx
   certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos \
     --email "admin@${DOMAIN}" || warn "Certbot failed — run manually: certbot --nginx -d ${DOMAIN}"
-else
+elif [ "${WEB_ENABLED}" = true ]; then
   log "Step 11/11 — Skipping SSL (no domain provided)."
   warn "To add SSL later: sudo certbot --nginx -d yourdomain.com"
 fi
@@ -883,17 +974,27 @@ echo "║   ✅ GYDS Explorer deployed successfully!              ║"
 echo "╠════════════════════════════════════════════════════════╣"
 echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
-printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
+if [ "${WEB_ENABLED}" = true ]; then
+  printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist/public"
+else
+  printf "║   🌐 Web interface:  %-35s║\n" "disabled"
+fi
 printf "║   🔌 API server:     %-35s║\n" "http://localhost:${API_PORT}/api"
 printf "║   🗄️  Database:       %-35s║\n" "${DB_NAME} @ localhost:${DB_PORT}"
 printf "║   👤 DB User:        %-35s║\n" "${DB_USER}"
 echo "║   🔑 DB Password:    saved in ${APP_DIR}/.env          ║"
-printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
-echo "║                                                        ║"
-if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
-  printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
+if [ "${PGADMIN_ENABLED}" = true ] && [ "${WEB_ENABLED}" = true ]; then
+  printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
 else
+  printf "║   📊 pgAdmin:        %-35s║\n" "disabled"
+fi
+echo "║                                                        ║"
+if [ "${WEB_ENABLED}" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
+elif [ "${WEB_ENABLED}" = true ]; then
   printf "║   🌍 URL: %-47s║\n" "http://${SERVER_IP}"
+else
+  printf "║   🌍 URL: %-47s║\n" "not installed"
 fi
 echo "║                                                        ║"
 echo "╠════════════════════════════════════════════════════════╣"

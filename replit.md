@@ -31,11 +31,13 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Architecture decisions
 
-- Pure frontend app — no backend needed; calls Solana/GYDS RPC endpoints directly from the browser
-- The API service is only needed for authenticated admin and feature-gate routes; do not invent or reuse another secret
+- Explorer reads GYDS RPC through the same-origin `/api/rpc` proxy to avoid browser CORS failures; the API service is required for that proxy plus authenticated admin and feature-gate routes
+- The standalone deployment keeps the explorer UI optional: the API/database can run headlessly, or `--node-only` can install only the blockchain node
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
 - RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
+- Standalone deployment modes: `sudo ./deploy.sh [domain]` installs the web stack, `sudo ./deploy.sh --no-web` installs API/database without Explorer, and `sudo ./deploy.sh --node-only --node-type rpc` installs only an RPC-serving blockchain node
+- Node setup supports `main`, `full`, `lite`, `rpc`, and `validator`; RPC nodes expose HTTP on `8545` and WebSocket RPC on `8546` without installing the Explorer web interface
 
 ## Product
 
@@ -49,7 +51,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - Do NOT run `pnpm dev` at workspace root — use the workflow or `pnpm --filter @workspace/solana-explorer run dev`
 - Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
-- The app talks directly to RPC nodes — no api-server is used by this app
+- The app uses `/api/rpc`; if the API service is absent, configure the frontend to use an RPC endpoint that explicitly allows browser CORS
 
 ## Pointers
 

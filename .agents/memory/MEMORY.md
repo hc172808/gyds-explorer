@@ -1,0 +1,1 @@
+- [Standalone deployment constraints](standalone-deployment.md) — provide Vite build variables and serve the artifact from `dist/public`.
