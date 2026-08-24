@@ -869,6 +869,103 @@ protocol balances have been erased.
       rejected wallet signature, wrong network, failed transaction, RPC outage,
       and disabled-asset conditions.
 
+## 25A. Support purchases with ETH, SOL, and other payment assets
+
+- [ ] Define the initial GYDS launch price as:
+  - `1 GYDS = $0.00001 USD` at the approved launch sale, equivalent to
+        `100,000 GYDS per $1 USD` before fees.
+  - Treat this as an initial sale/quote parameter, not a guaranteed market
+        price, exchange rate, profit, or permanent USD value.
+  - Require admin approval, effective timestamp, supply allocation, sale
+        window, minimum purchase, maximum purchase, and pause state.
+- [ ] Store the authoritative launch price and quote logic server-side or in
+      an approved sale contract. Do not rely on a browser-only
+      `VITE_GYDS_INITIAL_PRICE_USD` value to calculate or settle purchases.
+- [ ] Add a public display-only configuration entry to `.env.example` if
+      needed:
+      `VITE_GYDS_INITIAL_PRICE_USD=0.00001`
+      and label it clearly as launch metadata until the authoritative sale
+      mechanism exists.
+- [ ] Support payment assets by their native network, not by symbol alone:
+  - ETH on the approved Ethereum network or supported EVM payment network.
+  - SOL on Solana mainnet through a Solana-compatible payment/on-ramp
+        provider.
+  - USDC/USDT only on explicitly supported networks and contract addresses.
+  - Add BTC or other assets later only with a provider that supplies reliable
+        quotes, confirmations, refunds, and compliance controls.
+- [ ] Choose one authoritative purchase architecture:
+  - A regulated on-ramp/payment provider that accepts ETH, SOL, and approved
+        stablecoins and settles to the treasury.
+  - A treasury-controlled swap/bridge service with audited contracts and
+        verified destination chains.
+  - A supported exchange or marketplace with a documented withdrawal and
+        delivery process.
+  - Do not ask users to send SOL directly to an EVM address or ETH directly
+        to a Solana address.
+- [ ] Show the payment network and exact deposit/payment destination for every
+      quote. Require the user to confirm the network before payment.
+- [ ] Require sufficient confirmations on the source chain before delivery and
+      define confirmation thresholds independently for Ethereum, Solana, and
+      each additional network.
+- [ ] Use a quote service that records:
+  - Source asset and source network.
+  - GYDS amount and destination wallet.
+  - USD reference price and conversion rate.
+  - Quote ID, creation time, expiry, block/transaction reference, and status.
+  - All fees, spread, slippage tolerance, and final delivered amount.
+- [ ] Expire quotes quickly, such as 5 minutes, and require a new quote when
+      price, inventory, limits, or fees change.
+- [ ] Define underpayment, overpayment, wrong-network, duplicate-payment,
+      chain reorganization, stuck transaction, and refund handling before
+      accepting production funds.
+- [ ] Never mark a purchase paid from a client callback. Reconcile provider
+      webhooks and source-chain transactions server-side with idempotency keys.
+- [ ] Deliver GYDS only after payment confirmation, compliance checks, wallet
+      limit checks, asset-enabled checks, and final quote validation pass.
+- [ ] Decide whether GYD is purchasable with the same assets. Do not imply that
+      buying GYD at `$1` is possible until reserves, redemption, minting,
+      custody, and legal backing are approved.
+
+## 25B. Recommended transparent launch fee schedule
+
+- [ ] Use this proposed default schedule unless governance approves a different
+      schedule:
+  - **GYDS purchase service fee:** `1.00%` of the payment value, with a
+        clearly displayed minimum of `$0.50` and maximum of `$25` per order.
+  - **Cross-chain conversion/bridge fee:** pass through the provider's actual
+        quoted fee; target a maximum disclosed estimate of `0.50%` when
+        selecting a provider.
+  - **Payment/on-ramp fee:** pass through the provider's actual fee and show it
+        before confirmation; do not add an undisclosed markup.
+  - **Source-chain gas/network fee:** pass through the actual quoted network
+        fee for ETH, SOL, or the selected payment network.
+  - **Exchange/DEX spread and price impact:** disclose separately in the quote;
+        do not hide it inside “service fee.”
+  - **GYDS/GYD send fee on GYDSChain:** no additional platform fee at launch;
+        charge only the network gas required by the protocol, unless an
+        approved future schedule is published.
+  - **Refund fee:** no extra application fee; deduct only unavoidable provider,
+        network, or conversion costs, with the exact amount shown in the refund
+        policy.
+- [ ] Display a fee breakdown before every purchase:
+      source amount, provider fee, cross-chain fee, network gas estimate,
+      service fee, spread/price impact, GYDS received, and total.
+- [ ] Never charge a fee twice when a quote retries or a webhook is delivered
+      more than once. Persist the fee calculation with the order.
+- [ ] Define fee destinations and accounting:
+  - Treasury/service-fee destination.
+  - Provider and network fee destination.
+  - Revenue/refund reserve, if applicable.
+  - Reconciliation report by order, asset, network, and date.
+- [ ] Put maximum fee caps and fee changes under admin approval, audit logging,
+      visible effective times, and a pause if the quote cannot be calculated.
+- [ ] Publish the fee schedule, refund policy, supported assets, supported
+      networks, minimums, maximums, and confirmation requirements in the user
+      dashboard and project documentation.
+- [ ] Test fee rounding with integer base units, very small orders, maximum
+      orders, volatile prices, zero/failed quotes, refunds, and provider
+      outages. Never use floating-point arithmetic for settlement.
+
 ## 26. Let users send GYDS and GYD from the page
 
 - [ ] Add a wallet-connected send form with:
