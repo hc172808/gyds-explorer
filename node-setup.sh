@@ -69,6 +69,8 @@ CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
 CHAIN_ID=198282
 NETWORK_ID=198282
+NATIVE_DECIMALS=9
+NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 
 # Ports
@@ -94,6 +96,8 @@ MAIN_ACCOUNT=""
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
+#   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for ENV_FILE in \
     "${SCRIPT_DIR}/.env" \
@@ -119,6 +123,8 @@ for ENV_FILE in \
         VALIDATOR_ADDRESS)  [ -z "$VALIDATOR_ADDRESS" ] && VALIDATOR_ADDRESS="$val" ;;
         CHAIN_ID)           CHAIN_ID="$val" ;;
         NETWORK_ID)         NETWORK_ID="${val:-$CHAIN_ID}" ;;
+        NATIVE_DECIMALS)    NATIVE_DECIMALS="$val" ;;
+        NATIVE_SUPPLY)      NATIVE_SUPPLY="$val" ;;
         RPC_PORT)           RPC_PORT="$val" ;;
         WS_PORT)            WS_PORT="$val" ;;
         P2P_PORT)           P2P_PORT="$val" ;;
@@ -131,6 +137,16 @@ done
 if [ -n "$NODE_TYPE" ]; then
   info "Pre-loaded NODE_TYPE=${NODE_TYPE} from .env"
 fi
+
+# ---------- Chain invariants ----------
+[[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
+[[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
+[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
+[[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
+[ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
+[ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
+NATIVE_SUPPLY_BASE_UNITS=$((NATIVE_SUPPLY * 1000000000))
+info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""
 echo "╔════════════════════════════════════════════════╗"
@@ -358,7 +374,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   "extradata": "${EXTRA_DATA}",
   "alloc": {
     "${MAIN_ACCOUNT}": {
-      "balance": "1000000000000000000000000000"
+      "balance": "${NATIVE_SUPPLY_BASE_UNITS}"
     }
   }
 }
@@ -383,34 +399,11 @@ else
       cp "$GENESIS_PATH" "${CONFIG_DIR}/genesis.json"
       log "Genesis file copied from ${GENESIS_PATH}."
     else
-      warn "Creating a placeholder genesis.json."
-      warn "⚠ You MUST replace ${CONFIG_DIR}/genesis.json with the real file from the MAIN node before syncing."
-      cat > "${CONFIG_DIR}/genesis.json" <<'PLACEHOLDER'
-{
-  "config": {
-    "chainId": 198282,
-    "homesteadBlock": 0,
-    "eip150Block": 0,
-    "eip155Block": 0,
-    "eip158Block": 0,
-    "byzantiumBlock": 0,
-    "constantinopleBlock": 0,
-    "petersburgBlock": 0,
-    "istanbulBlock": 0,
-    "berlinBlock": 0,
-    "londonBlock": 0,
-    "clique": {
-      "period": 5,
-      "epoch": 30000
-    }
-  },
-  "difficulty": "1",
-  "gasLimit": "30000000",
-  "extradata": "0x",
-  "alloc": {}
-}
-PLACEHOLDER
+      err "A verified genesis.json from the MAIN node is required. Refusing to initialize from a placeholder."
     fi
+
+    GENESIS_CHAIN_ID=$(jq -r '.config.chainId // empty' "${CONFIG_DIR}/genesis.json" 2>/dev/null || true)
+    [ "$GENESIS_CHAIN_ID" = "$CHAIN_ID" ] || err "Genesis chainId ${GENESIS_CHAIN_ID:-missing} does not match ${CHAIN_ID}."
 
     geth init --datadir "${DATA_DIR}" "${CONFIG_DIR}/genesis.json"
     log "Blockchain initialized with genesis."
@@ -438,6 +431,9 @@ NODE_IP=${SERVER_IP}
 # ---------- Chain Settings ----------
 CHAIN_ID=${CHAIN_ID}
 NETWORK_ID=${NETWORK_ID}
+NATIVE_DECIMALS=${NATIVE_DECIMALS}
+NATIVE_SUPPLY=${NATIVE_SUPPLY}
+NATIVE_SUPPLY_BASE_UNITS=${NATIVE_SUPPLY_BASE_UNITS}
 
 # ---------- Directories ----------
 DATA_DIR=${DATA_DIR}
@@ -491,11 +487,11 @@ GETH_ARGS+=" --log.file ${LOG_DIR}/node.log"
 
 case "$NODE_TYPE" in
   main)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    # Keep authority/admin RPC local; public wallets use a dedicated RPC node.
+    GETH_ARGS+=" --http --http.addr 127.0.0.1 --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool,debug,clique,admin"
-    GETH_ARGS+=" --http.corsdomain *"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts localhost"
+    GETH_ARGS+=" --ws --ws.addr 127.0.0.1 --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
     GETH_ARGS+=" --ws.origins *"
     GETH_ARGS+=" --mine --miner.etherbase ${MAIN_ACCOUNT}"
@@ -511,7 +507,6 @@ case "$NODE_TYPE" in
   full)
     GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.corsdomain *"
     GETH_ARGS+=" --http.vhosts *"
     GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
@@ -528,7 +523,6 @@ case "$NODE_TYPE" in
   rpc)
     GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.corsdomain *"
     GETH_ARGS+=" --http.vhosts *"
     GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
@@ -545,7 +539,6 @@ case "$NODE_TYPE" in
   lite)
     GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3"
-    GETH_ARGS+=" --http.corsdomain *"
     GETH_ARGS+=" --http.vhosts *"
     GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3"
@@ -589,7 +582,7 @@ STATIC
   log "static-nodes.json configured with MAIN node peer."
 fi
 
-# Write static-nodes.json placeholder for lite nodes (user fills in full node enodes)
+# Write an empty static-nodes.json for lite nodes (user fills in full node enodes)
 if [ "$NODE_TYPE" = "lite" ]; then
   mkdir -p "${DATA_DIR}/geth"
   if [ ! -f "${DATA_DIR}/geth/static-nodes.json" ]; then
