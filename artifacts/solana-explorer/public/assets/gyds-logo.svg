@@ -1,0 +1,6 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">GYDSChain logo</title>
+  <rect width="256" height="256" rx="56" fill="#08110D"/>
+  <path d="M128 42C80.533 42 42 80.533 42 128s38.533 86 86 86 86-38.533 86-86-38.533-86-86-86Z" stroke="#32E875" stroke-width="12"/>
+  <path d="M164 91.5c-9.25-8.5-21.75-13.5-36-13.5-27.89 0-50.5 22.61-50.5 50.5S100.11 179 128 179c14.25 0 26.75-5 36-13.5V128h-35" stroke="#32E875" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -321,17 +321,17 @@ verified before a production deployment.
 
 ## 14. Add coin logo and project information
 
-- [ ] Add a supported way to provide a GYDSChain logo without changing source
+- [x] Add a supported way to provide a GYDSChain logo without changing source
       code for each deployment:
-  - Preferred: a checked-in public asset such as
-        `artifacts/solana-explorer/public/assets/gyds-logo.png`.
+  - Preferred: a checked-in public asset at
+        `artifacts/solana-explorer/public/assets/gyds-logo.svg`.
   - Optional: a configurable public HTTPS logo URL.
 - [ ] Add validation for logo files:
   - PNG, SVG, or WebP only.
   - Provide a square image with a documented minimum resolution.
   - Reject unsafe SVG content or sanitize SVG before displaying it.
   - Do not allow arbitrary filesystem paths or untrusted HTML.
-- [ ] Add configurable project information:
+- [x] Add the initial configurable wallet metadata:
   - Coin/network name: `GYDSChain`
   - Native symbol: `GYDS`
   - Short description and full “About GYDSChain” text
@@ -349,7 +349,7 @@ verified before a production deployment.
 
 ## 15. Add environment configuration
 
-- [ ] Add documented public configuration entries to `.env.example` and the
+- [x] Add documented public configuration entries to `.env.example` and the
       explorer's environment documentation. Suggested names:
 
       VITE_NATIVE_COIN_NAME=GYDSChain
@@ -477,7 +477,7 @@ verified before a production deployment.
 
 ## 19. Make both assets available when adding the network to a wallet
 
-- [ ] Update the wallet network-add request with:
+- [x] Update the wallet network-add request with:
   - Chain name: `GYDSChain` or the final approved network name.
   - Chain ID: `0x3068a`.
   - RPC URL(s): the final production HTTPS endpoints.
@@ -505,7 +505,7 @@ verified before a production deployment.
 
 ## 19A. Build a broad wallet onboarding flow
 
-- [ ] Implement the standard EVM network-add request (`wallet_addEthereumChain`)
+- [x] Implement the standard EVM network-add request (`wallet_addEthereumChain`)
       with the final production values:
   - `chainId`: `0x3068a` / decimal `198282`.
   - `chainName`: `GYDSChain`.
@@ -514,28 +514,28 @@ verified before a production deployment.
   - Public HTTPS block explorer URL.
   - `iconUrls` containing the official network icon where the wallet supports
         this optional field.
-- [ ] Use the same user-facing “Add GYDSChain” button for injected wallets
+- [x] Use the same user-facing “Add GYDSChain” button for injected wallets
       such as MetaMask, Rabby, Coinbase Wallet, Brave Wallet, and compatible
       EVM wallets.
-- [ ] Detect whether `window.ethereum` is available and show a clear fallback
+- [x] Detect whether `window.ethereum` is available and show a clear fallback
       when the user is on a mobile browser or a wallet that does not expose the
       network-add method.
 - [ ] Add wallet-specific deep links or wallet-browser instructions only after
       confirming each provider's current documented format. Do not claim one
       web button can control every wallet.
-- [ ] Provide a QR code and copyable network details for wallets that require
+- [x] Provide copyable network details for wallets that require
       manual setup:
   - Network name, chain ID, RPC URL, native symbol/decimals, explorer URL.
   - A warning to verify the chain ID and RPC domain before saving.
-- [ ] After the network request succeeds, offer “Add GYD token” as the next
+- [x] After the network request succeeds, offer “Add GYD token” as the next
       action. Call `wallet_watchAsset` with the verified contract address,
       symbol, decimals, and logo URL when supported.
-- [ ] Provide manual GYD import instructions for wallets that reject or do
+- [x] Provide manual GYD import details for wallets that reject or do
       not implement `wallet_watchAsset`.
-- [ ] Handle all onboarding states visibly: wallet not installed, mobile
+- [x] Handle the core onboarding states visibly: wallet not installed, mobile
       wallet, request pending, user rejected, unsupported method, wrong chain,
       invalid RPC, network added, and token added.
-- [ ] Never auto-submit a transaction, switch funds, or send GYDS/GYD as part
+- [x] Never auto-submit a transaction, switch funds, or send GYDS/GYD as part
       of onboarding. Adding a network or token must be a user-approved
       metadata action only.
 - [ ] Maintain a tested wallet support matrix covering desktop extension,
@@ -543,7 +543,7 @@ verified before a production deployment.
 
 ## 19B. Publish wallet logos and metadata
 
-- [ ] Create official separate assets for:
+- [x] Create initial separate assets for:
   - GYDSChain network/native coin logo.
   - GYD token logo.
   - Light and dark backgrounds if a registry requires them.
@@ -556,7 +556,7 @@ verified before a production deployment.
       requires authentication.
 - [ ] Add cache-safe asset versioning and keep old URLs available after an
       update so previously cached wallet metadata does not break.
-- [ ] Add the logo URL to the network-add request's optional `iconUrls` field
+- [x] Add the logo URL to the network-add request's optional `iconUrls` field
       and to the GYD token-import request.
 - [ ] Publish a machine-readable public metadata document containing the
       chain name, chain ID, RPC, explorer, native currency, official links,
