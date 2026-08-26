@@ -42,6 +42,18 @@ DB_PORT="5432"
 API_PORT="3001"
 WEB_PORT="${WEB_PORT:-8080}"
 
+# ---------- Colors & logging (defined BEFORE argument parsing so err() exists) ----------
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[✓ STEP]${NC} $1"; }
+warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
+err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
+info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
+
 for ARG in "$@"; do
   case "$ARG" in
     --node-only|--node)
@@ -84,17 +96,6 @@ for ARG in "$@"; do
   esac
 done
 
-# ---------- Colors ----------
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-log()  { echo -e "${GREEN}[✓ STEP]${NC} $1"; }
-warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
-err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
-info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
 
 version_at_least() {
   local current="$1"
@@ -377,12 +378,16 @@ fi
 # ============================================================
 log "Step 5/11 — Generating .env configuration..."
 
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 BASE_URL="http://localhost:${WEB_PORT}"
-API_URL="http://localhost:${API_PORT}/api"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   BASE_URL="https://${DOMAIN}"
-  API_URL="https://${DOMAIN}/api"
+elif [ -n "${SERVER_IP}" ]; then
+  BASE_URL="http://${SERVER_IP}"
 fi
+# Frontend must use RELATIVE paths so the app works over the bare IP, over the
+# domain, and over both http and https. Absolute localhost URLs break the browser.
+API_URL="/api"
 
 cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
@@ -415,12 +420,13 @@ VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
 # ---------- Feature Gate Service ----------
+# Served through the nginx /fgate/ proxy — relative so it works from any host.
 FEATURE_GATE_PORT=3002
-VITE_FEATURE_GATE_URL=http://localhost:3002
+VITE_FEATURE_GATE_URL=/fgate
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
-API_CORS_ORIGINS=http://localhost:${WEB_PORT},${BASE_URL}
+API_CORS_ORIGINS=http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",http://${DOMAIN},https://${DOMAIN}" )
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -764,13 +770,20 @@ if [ "$DEPLOY_WEB" = true ]; then
     npm run build --workspace=@workspace/solana-explorer
 
   FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
-  if [ ! -d "${FRONTEND_DIST}" ]; then
-    err "Build failed — frontend output not found in ${FRONTEND_DIST}."
+  if [ ! -f "${FRONTEND_DIST}/index.html" ]; then
+    err "Build failed — no index.html in ${FRONTEND_DIST}. Run 'npm run build --workspace=@workspace/solana-explorer' manually to see the error."
   fi
 
   rm -rf "${APP_DIR}/dist"
   cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
-  info "Frontend built to ${APP_DIR}/dist"
+
+  # Nginx (www-data) must be able to traverse and read the web root, otherwise
+  # the browser gets a blank page / 403 even though the build succeeded.
+  chmod 755 /var/www "${APP_DIR}" 2>/dev/null || true
+  chown -R www-data:www-data "${APP_DIR}/dist"
+  find "${APP_DIR}/dist" -type d -exec chmod 755 {} \;
+  find "${APP_DIR}/dist" -type f -exec chmod 644 {} \;
+  info "Frontend built to ${APP_DIR}/dist ($(find "${APP_DIR}/dist" -type f | wc -l) files)"
 else
   info "Web interface disabled. Building API only."
   npm run build --workspace=@workspace/api-server
@@ -834,16 +847,22 @@ if ! command -v nginx &> /dev/null; then
 fi
 
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
-SERVER_NAME="${DOMAIN:-_}"
+# Match the bare IP, the domain, and anything else pointed at this box.
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  SERVER_NAME="${DOMAIN} www.${DOMAIN} _"
+else
+  SERVER_NAME="_"
+fi
 if [ "${WEB_PORT}" = "80" ]; then
   WEB_LISTEN_DIRECTIVE=""
 else
-  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT};"
+  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT} default_server;"
 fi
 
 cat > "${NGINX_CONF}" <<EOF
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
 ${WEB_LISTEN_DIRECTIVE}
     server_name ${SERVER_NAME};
 
@@ -913,8 +932,29 @@ EOF
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
+# Another enabled vhost claiming default_server would make nginx -t fail.
+for OTHER in /etc/nginx/sites-enabled/*; do
+  [ -e "$OTHER" ] || continue
+  case "$(readlink -f "$OTHER")" in
+    "$(readlink -f "${NGINX_CONF}")") continue ;;
+  esac
+  if grep -q "default_server" "$OTHER" 2>/dev/null; then
+    warn "Disabling conflicting vhost $(basename "$OTHER") (also declares default_server)."
+    rm -f "$OTHER"
+  fi
+done
+
 nginx -t || err "Nginx config test failed! Check the config at ${NGINX_CONF}"
-systemctl reload nginx
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl restart nginx || err "Nginx failed to start. Check: systemctl status nginx"
+
+# Verify the site actually answers locally before declaring success.
+sleep 2
+if curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1/" | grep -q '^200$'; then
+  info "Nginx is serving the explorer on port 80 (HTTP 200)."
+else
+  warn "http://127.0.0.1/ did not return 200. Check: nginx -t, ls ${APP_DIR}/dist, journalctl -u nginx -n 50, and tail /var/log/nginx/error.log"
+fi
 
 info "Nginx configured with API reverse proxy."
 else
@@ -990,8 +1030,15 @@ PGADMIN_PASSWORD=${PGADMIN_PASSWORD}
 PGADMIN_URL=http://your-server/pgadmin4
 EOF
 
-# Reload nginx so the /pgadmin4/ proxy block takes effect
-nginx -t && systemctl reload nginx
+# Reload nginx so the /pgadmin4/ proxy block takes effect. The pgAdmin install
+# pulls in Apache, which tries to grab port 80 — make sure nginx still owns it.
+if ss -ltnp 2>/dev/null | grep -q ':80 .*apache2'; then
+  warn "Apache grabbed port 80 — moving it off and restoring nginx."
+  systemctl stop apache2 || true
+  sed -i 's/^Listen 80$/Listen 8008/' /etc/apache2/ports.conf || true
+  systemctl start apache2 || true
+fi
+nginx -t && systemctl restart nginx
 
 info "pgAdmin configured."
 info "  Access via: http://your-server/pgadmin4"
@@ -1012,6 +1059,32 @@ if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
 else
   log "Step 11/11 — Skipping SSL (no domain provided)."
   warn "To add SSL later: sudo certbot --nginx -d yourdomain.com"
+fi
+
+# ============================================================
+# FINAL VERIFICATION — catch "nothing loads" before we claim success
+# ============================================================
+if [ "$DEPLOY_WEB" = true ]; then
+  log "Verifying the deployment..."
+  VERIFY_FAILED=false
+
+  [ -f "${APP_DIR}/dist/index.html" ] || { warn "Missing ${APP_DIR}/dist/index.html — the frontend was never copied."; VERIFY_FAILED=true; }
+  systemctl is-active --quiet nginx || { warn "nginx is not running: systemctl status nginx"; VERIFY_FAILED=true; }
+  ss -ltn 2>/dev/null | grep -q ':80 ' || { warn "Nothing is listening on port 80."; VERIFY_FAILED=true; }
+
+  HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1/" || echo "000")
+  [ "${HTTP_CODE}" = "200" ] || { warn "Local HTTP check returned ${HTTP_CODE} (expected 200). See /var/log/nginx/error.log"; VERIFY_FAILED=true; }
+
+  API_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${API_PORT}/api/health" || echo "000")
+  [ "${API_CODE}" = "200" ] || warn "API health check returned ${API_CODE} — check 'pm2 logs gyds-api'."
+
+  if [ "${VERIFY_FAILED}" = true ]; then
+    warn "Deployment finished with problems — the site may not load in a browser."
+    warn "Debug: nginx -t | systemctl status nginx | pm2 list | tail -50 /var/log/nginx/error.log"
+    warn "If the local check passed but the public IP/domain does not load, the port is blocked by your cloud provider's firewall (open 80/443) or DNS is not pointing here."
+  else
+    info "All local checks passed. If the public IP/domain still shows nothing, open ports 80/443 in your cloud firewall and confirm the DNS A record points to this server."
+  fi
 fi
 
 # ============================================================
