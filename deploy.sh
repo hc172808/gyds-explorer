@@ -847,16 +847,22 @@ if ! command -v nginx &> /dev/null; then
 fi
 
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
-SERVER_NAME="${DOMAIN:-_}"
+# Match the bare IP, the domain, and anything else pointed at this box.
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  SERVER_NAME="${DOMAIN} www.${DOMAIN} _"
+else
+  SERVER_NAME="_"
+fi
 if [ "${WEB_PORT}" = "80" ]; then
   WEB_LISTEN_DIRECTIVE=""
 else
-  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT};"
+  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT} default_server;"
 fi
 
 cat > "${NGINX_CONF}" <<EOF
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
 ${WEB_LISTEN_DIRECTIVE}
     server_name ${SERVER_NAME};
 
