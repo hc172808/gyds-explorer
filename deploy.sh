@@ -770,13 +770,20 @@ if [ "$DEPLOY_WEB" = true ]; then
     npm run build --workspace=@workspace/solana-explorer
 
   FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
-  if [ ! -d "${FRONTEND_DIST}" ]; then
-    err "Build failed — frontend output not found in ${FRONTEND_DIST}."
+  if [ ! -f "${FRONTEND_DIST}/index.html" ]; then
+    err "Build failed — no index.html in ${FRONTEND_DIST}. Run 'npm run build --workspace=@workspace/solana-explorer' manually to see the error."
   fi
 
   rm -rf "${APP_DIR}/dist"
   cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
-  info "Frontend built to ${APP_DIR}/dist"
+
+  # Nginx (www-data) must be able to traverse and read the web root, otherwise
+  # the browser gets a blank page / 403 even though the build succeeded.
+  chmod 755 /var/www "${APP_DIR}" 2>/dev/null || true
+  chown -R www-data:www-data "${APP_DIR}/dist"
+  find "${APP_DIR}/dist" -type d -exec chmod 755 {} \;
+  find "${APP_DIR}/dist" -type f -exec chmod 644 {} \;
+  info "Frontend built to ${APP_DIR}/dist ($(find "${APP_DIR}/dist" -type f | wc -l) files)"
 else
   info "Web interface disabled. Building API only."
   npm run build --workspace=@workspace/api-server
