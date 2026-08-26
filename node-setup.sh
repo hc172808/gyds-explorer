@@ -27,8 +27,9 @@
 #   └──────────────────────────────────────────────┘
 #
 #   VALIDATOR NODES:
-#   - Full nodes that also participate in consensus
-#   - Sync from MAIN node, submit sealed blocks
+#   - Full nodes that also participate in Clique authority consensus
+#   - Sync from MAIN node, submit sealed blocks after authorization
+#   - This network is Clique proof-of-authority, not proof-of-stake
 #
 # Usage:
 #   chmod +x node-setup.sh
@@ -232,8 +233,7 @@ if [ "$NODE_TYPE" = "validator" ]; then
   echo ""
   info "Validator nodes need a signing account."
   if [ -z "$VALIDATOR_ADDRESS" ]; then
-    read -p "Enter validator account address (0x...): " VALIDATOR_ADDRESS
-    [ -z "$VALIDATOR_ADDRESS" ] && err "Validator account address is required."
+    read -p "Enter validator account address (0x...), or press Enter to create one: " VALIDATOR_ADDRESS
   else
     info "VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS} (loaded from .env)"
   fi
@@ -299,6 +299,11 @@ else
   }
 fi
 
+if [ "$NODE_TYPE" = "validator" ]; then
+  [[ -z "${VALIDATOR_ADDRESS}" || "${VALIDATOR_ADDRESS}" =~ ^0x[a-fA-F0-9]{40}$ ]] || \
+    err "VALIDATOR_ADDRESS must be a 40-hex-character address beginning with 0x."
+fi
+
 if command -v geth &>/dev/null; then
   log "Geth installed: $(geth version 2>/dev/null | head -1)"
 else
@@ -324,6 +329,25 @@ chown -R root:root "${CONFIG_DIR}"
 chown -R gyds:gyds "${DATA_DIR}" "${LOG_DIR}"
 
 log "Directories ready: ${DATA_DIR}, ${CONFIG_DIR}, ${LOG_DIR}"
+
+if [ "$NODE_TYPE" = "validator" ]; then
+  # The node service signs blocks with a local geth keystore account. Never
+  # accept an address that is not actually available to the service.
+  printf '%s\n' "${VALIDATOR_PASSWORD}" > "${CONFIG_DIR}/validator-password.txt"
+  chmod 600 "${CONFIG_DIR}/validator-password.txt"
+
+  if [ -z "${VALIDATOR_ADDRESS}" ]; then
+    if geth account list --datadir "${DATA_DIR}" 2>/dev/null | grep -qE '0x[a-fA-F0-9]{40}'; then
+      err "A validator keystore already exists. Re-run with VALIDATOR_ADDRESS set to the existing account."
+    fi
+    ACCOUNT_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/validator-password.txt" 2>&1)
+    VALIDATOR_ADDRESS=$(echo "${ACCOUNT_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
+    [ -n "${VALIDATOR_ADDRESS}" ] || err "Failed to create the validator account. Output was:\n${ACCOUNT_OUTPUT}"
+    log "Validator account created: ${VALIDATOR_ADDRESS}"
+  elif ! geth account list --datadir "${DATA_DIR}" 2>/dev/null | grep -qi "${VALIDATOR_ADDRESS#0x}"; then
+    err "Validator account ${VALIDATOR_ADDRESS} is not in ${DATA_DIR}/keystore. Import the account there, then rerun."
+  fi
+fi
 
 # ============================================================
 # STEP 4: Genesis File Configuration
@@ -873,6 +897,7 @@ case "$NODE_TYPE" in
   validator)
     printf "║   Validator:  %-43s║\n" "${VALIDATOR_ADDRESS}"
     printf "║   MAIN node:  %-43s║\n" "${MAIN_NODE_IP}"
+    echo "║   Consensus:  Clique proof-of-authority (not PoS staking) ║"
     echo "║   Ask the MAIN node admin to authorize you:              ║"
     printf "║     clique.propose(\"%s\", true)%-18s║\n" "${VALIDATOR_ADDRESS}" ""
     ;;
@@ -922,8 +947,10 @@ case "$NODE_TYPE" in
   validator)
     echo "  1. Ask the MAIN node admin to run:"
     printf "       clique.propose(\"%s\", true)\n" "${VALIDATOR_ADDRESS}"
-    echo "  2. Wait for sync, then mining begins automatically"
-    echo "  3. Monitor:                 gyds-logs"
+    echo "  2. Wait for sync, then authority sealing begins automatically"
+    echo "  3. Confirm authorization on MAIN: clique.getSigners()"
+    echo "  4. Monitor:                 gyds-logs"
+    echo "  Note: this chain uses Clique authority, not proof-of-stake staking."
     ;;
 esac
 

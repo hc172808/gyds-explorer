@@ -14,6 +14,7 @@
 #   chmod +x deploy.sh
 #   sudo ./deploy.sh [domain.com]
 #   sudo ./deploy.sh --node-only --node-type=rpc
+#   sudo ./deploy.sh --web-port=8080 [domain.com]
 #   sudo ./deploy.sh --no-web [domain.com]
 #
 # Prerequisites: Ubuntu 22.04 with root/sudo access
@@ -39,6 +40,7 @@ DB_NAME="gyds_explorer"
 DB_USER="gyds_admin"
 DB_PORT="5432"
 API_PORT="3001"
+WEB_PORT="${WEB_PORT:-8080}"
 
 for ARG in "$@"; do
   case "$ARG" in
@@ -55,11 +57,18 @@ for ARG in "$@"; do
     --with-web)
       DEPLOY_WEB=true
       ;;
+    --web-port=*)
+      WEB_PORT="${ARG#*=}"
+      ;;
+    --validator)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="validator"
+      ;;
     --node-type=*)
       NODE_TYPE_OVERRIDE="${ARG#*=}"
       ;;
     --help|-h)
-      echo "Usage: sudo ./deploy.sh [domain.com] [--node-only] [--node-type=main|full|lite|rpc|validator] [--no-web]"
+      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|validator] [--validator] [--no-web]"
       exit 0
       ;;
     --*)
@@ -116,10 +125,20 @@ check_node_version() {
   command -v npm >/dev/null 2>&1 || err "npm is required."
 }
 
+check_port_number() {
+  local name="$1"
+  local value="$2"
+  [[ "$value" =~ ^[0-9]+$ ]] || err "${name} must be a numeric TCP port; found '${value}'."
+  [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || err "${name} must be between 1 and 65535; found '${value}'."
+}
+
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
   err "Please run as root: sudo ./deploy.sh"
 fi
+
+check_port_number "WEB_PORT" "${WEB_PORT}"
+[ "${WEB_PORT}" != "${API_PORT}" ] || err "WEB_PORT ${WEB_PORT} conflicts with API_PORT ${API_PORT}."
 
 echo ""
 echo "╔════════════════════════════════════════════╗"
@@ -358,7 +377,7 @@ fi
 # ============================================================
 log "Step 5/11 — Generating .env configuration..."
 
-BASE_URL="http://localhost:8080"
+BASE_URL="http://localhost:${WEB_PORT}"
 API_URL="http://localhost:${API_PORT}/api"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   BASE_URL="https://${DOMAIN}"
@@ -376,7 +395,8 @@ VITE_RPC_URL=https://rpc.netlifegy.com
 VITE_RPC_URL_2=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------
-VITE_PORT=8080
+VITE_PORT=${WEB_PORT}
+WEB_PORT=${WEB_PORT}
 VITE_APP_TITLE=GYDS Explorer
 VITE_CHAIN_ID=198282
 VITE_BASE_URL=${BASE_URL}
@@ -400,7 +420,7 @@ VITE_FEATURE_GATE_URL=http://localhost:3002
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
-API_CORS_ORIGINS=http://localhost:8080,${BASE_URL}
+API_CORS_ORIGINS=http://localhost:${WEB_PORT},${BASE_URL}
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -740,7 +760,7 @@ fi
 
 if [ "$DEPLOY_WEB" = true ]; then
   # Build frontend
-  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+    PORT=${WEB_PORT} BASE_PATH=/ NODE_ENV=production \
     npm run build --workspace=@workspace/solana-explorer
 
   FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
@@ -815,10 +835,16 @@ fi
 
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
 SERVER_NAME="${DOMAIN:-_}"
+if [ "${WEB_PORT}" = "80" ]; then
+  WEB_LISTEN_DIRECTIVE=""
+else
+  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT};"
+fi
 
 cat > "${NGINX_CONF}" <<EOF
 server {
     listen 80;
+${WEB_LISTEN_DIRECTIVE}
     server_name ${SERVER_NAME};
 
     root ${APP_DIR}/dist;
@@ -893,6 +919,21 @@ systemctl reload nginx
 info "Nginx configured with API reverse proxy."
 else
   info "Web interface disabled. Skipping Nginx configuration."
+fi
+
+# ============================================================
+# STEP 9b: Allow only the public web/node ports
+# ============================================================
+if [ "$DEPLOY_WEB" = true ] && command -v ufw &>/dev/null; then
+  log "Opening firewall ports for SSH and the explorer..."
+  ufw allow ssh >/dev/null 2>&1 || true
+  ufw allow 80/tcp >/dev/null 2>&1 || true
+  ufw allow "${WEB_PORT}/tcp" >/dev/null 2>&1 || true
+  if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+    ufw allow 443/tcp >/dev/null 2>&1 || true
+  fi
+  ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled; open the listed ports in your cloud firewall."
+  info "Web ports open: 80/tcp and ${WEB_PORT}/tcp. API/database ports remain private."
 fi
 
 # ============================================================
@@ -986,6 +1027,7 @@ echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
 if [ "$DEPLOY_WEB" = true ]; then
   printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
+  printf "║   🌐 Web ports:      %-35s║\n" "80 and ${WEB_PORT}"
 else
   echo "║   🌐 Web interface:  disabled                           ║"
 fi
@@ -1001,6 +1043,9 @@ if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
 else
   printf "║   🌍 URL: %-47s║\n" "http://${SERVER_IP}"
+fi
+if [ "$DEPLOY_WEB" = true ]; then
+  printf "║   🌍 Direct port: %-43s║\n" "http://${SERVER_IP}:${WEB_PORT}"
 fi
 echo "║                                                        ║"
 echo "╠════════════════════════════════════════════════════════╣"

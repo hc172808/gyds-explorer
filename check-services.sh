@@ -18,6 +18,12 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 FAILURES=0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WEB_PORT="${WEB_PORT:-}"
+if [ -z "${WEB_PORT}" ] && [ -f "${SCRIPT_DIR}/.env" ]; then
+  WEB_PORT="$(awk -F= '$1 == "WEB_PORT" {print $2; exit}' "${SCRIPT_DIR}/.env" 2>/dev/null || true)"
+fi
+WEB_PORT="${WEB_PORT:-8080}"
 
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[SKIP]${NC} $1"; }
@@ -114,6 +120,14 @@ else
   warn "TCP 80 is not listening (web deployment may be disabled)"
 fi
 
+if [ "${WEB_PORT}" != "80" ]; then
+  if listener "${WEB_PORT}"; then
+    check_http "Direct web port" "http://127.0.0.1:${WEB_PORT}/"
+  else
+    warn "TCP ${WEB_PORT} is not listening (check WEB_PORT/Nginx configuration)"
+  fi
+fi
+
 if listener 443; then
   if curl -kfsS --max-time 5 https://127.0.0.1/ >/dev/null 2>&1; then
     pass "HTTPS website: https://127.0.0.1/ responded"
@@ -126,7 +140,7 @@ fi
 
 echo ""
 echo "Listening sockets:"
-ss -ltnup 2>/dev/null | grep -E ':(22|80|443|3001|3002|30303|5432|6060|8008|8545|8546)\b' || true
+ss -ltnup 2>/dev/null | grep -E ":(${WEB_PORT}|22|80|443|3001|3002|30303|5432|6060|8008|8545|8546)\\b" || true
 echo ""
 
 if [ "${FAILURES}" -gt 0 ]; then
@@ -137,6 +151,7 @@ fi
 echo -e "${GREEN}All configured services passed their local checks.${NC}"
 echo "From another machine, also test the server firewall with:"
 echo "  nc -vz YOUR_SERVER_IP 80"
+echo "  nc -vz YOUR_SERVER_IP ${WEB_PORT}   # direct web port"
 echo "  nc -vz YOUR_SERVER_IP 443"
 echo "  nc -vz YOUR_SERVER_IP 30303"
 echo "  nc -vz YOUR_SERVER_IP 8545   # public RPC nodes only"

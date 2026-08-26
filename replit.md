@@ -8,12 +8,15 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
 - `npm run typecheck` — full typecheck across all packages
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
+- `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
 - API service env: `API_SECRET_KEY` or `JWT_SECRET_KEY` — required JWT signing secret; the API workflow will not start without one
 - Replit preview: the frontend and mockup workflows are the runnable preview targets; the optional API artifact remains available but requires an explicitly configured API/JWT secret and is not part of the frontend's normal runtime path
+- Ubuntu deployment: Nginx serves the static explorer on port 80 and port 8080 by default; `--web-port=PORT` changes the direct web port
+- Validator setup: `node-setup.sh` configures Clique proof-of-authority authority nodes. It does not implement proof-of-stake staking.
 
 ## Stack
 
