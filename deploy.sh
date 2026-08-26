@@ -1062,6 +1062,32 @@ else
 fi
 
 # ============================================================
+# FINAL VERIFICATION — catch "nothing loads" before we claim success
+# ============================================================
+if [ "$DEPLOY_WEB" = true ]; then
+  log "Verifying the deployment..."
+  VERIFY_FAILED=false
+
+  [ -f "${APP_DIR}/dist/index.html" ] || { warn "Missing ${APP_DIR}/dist/index.html — the frontend was never copied."; VERIFY_FAILED=true; }
+  systemctl is-active --quiet nginx || { warn "nginx is not running: systemctl status nginx"; VERIFY_FAILED=true; }
+  ss -ltn 2>/dev/null | grep -q ':80 ' || { warn "Nothing is listening on port 80."; VERIFY_FAILED=true; }
+
+  HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1/" || echo "000")
+  [ "${HTTP_CODE}" = "200" ] || { warn "Local HTTP check returned ${HTTP_CODE} (expected 200). See /var/log/nginx/error.log"; VERIFY_FAILED=true; }
+
+  API_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${API_PORT}/api/health" || echo "000")
+  [ "${API_CODE}" = "200" ] || warn "API health check returned ${API_CODE} — check 'pm2 logs gyds-api'."
+
+  if [ "${VERIFY_FAILED}" = true ]; then
+    warn "Deployment finished with problems — the site may not load in a browser."
+    warn "Debug: nginx -t | systemctl status nginx | pm2 list | tail -50 /var/log/nginx/error.log"
+    warn "If the local check passed but the public IP/domain does not load, the port is blocked by your cloud provider's firewall (open 80/443) or DNS is not pointing here."
+  else
+    info "All local checks passed. If the public IP/domain still shows nothing, open ports 80/443 in your cloud firewall and confirm the DNS A record points to this server."
+  fi
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 SERVER_IP=$(curl -sf --max-time 5 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
