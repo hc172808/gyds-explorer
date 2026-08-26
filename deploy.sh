@@ -420,12 +420,13 @@ VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
 # ---------- Feature Gate Service ----------
+# Served through the nginx /fgate/ proxy — relative so it works from any host.
 FEATURE_GATE_PORT=3002
-VITE_FEATURE_GATE_URL=http://localhost:3002
+VITE_FEATURE_GATE_URL=/fgate
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
-API_CORS_ORIGINS=http://localhost:${WEB_PORT},${BASE_URL}
+API_CORS_ORIGINS=http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",http://${DOMAIN},https://${DOMAIN}" )
 EOF
 
 chmod 600 "${APP_DIR}/.env"
