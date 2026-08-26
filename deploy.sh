@@ -378,12 +378,16 @@ fi
 # ============================================================
 log "Step 5/11 — Generating .env configuration..."
 
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 BASE_URL="http://localhost:${WEB_PORT}"
-API_URL="http://localhost:${API_PORT}/api"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   BASE_URL="https://${DOMAIN}"
-  API_URL="https://${DOMAIN}/api"
+elif [ -n "${SERVER_IP}" ]; then
+  BASE_URL="http://${SERVER_IP}"
 fi
+# Frontend must use RELATIVE paths so the app works over the bare IP, over the
+# domain, and over both http and https. Absolute localhost URLs break the browser.
+API_URL="/api"
 
 cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
