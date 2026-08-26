@@ -932,8 +932,29 @@ EOF
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
+# Another enabled vhost claiming default_server would make nginx -t fail.
+for OTHER in /etc/nginx/sites-enabled/*; do
+  [ -e "$OTHER" ] || continue
+  case "$(readlink -f "$OTHER")" in
+    "$(readlink -f "${NGINX_CONF}")") continue ;;
+  esac
+  if grep -q "default_server" "$OTHER" 2>/dev/null; then
+    warn "Disabling conflicting vhost $(basename "$OTHER") (also declares default_server)."
+    rm -f "$OTHER"
+  fi
+done
+
 nginx -t || err "Nginx config test failed! Check the config at ${NGINX_CONF}"
-systemctl reload nginx
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl restart nginx || err "Nginx failed to start. Check: systemctl status nginx"
+
+# Verify the site actually answers locally before declaring success.
+sleep 2
+if curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1/" | grep -q '^200$'; then
+  info "Nginx is serving the explorer on port 80 (HTTP 200)."
+else
+  warn "http://127.0.0.1/ did not return 200. Check: nginx -t, ls ${APP_DIR}/dist, journalctl -u nginx -n 50, and tail /var/log/nginx/error.log"
+fi
 
 info "Nginx configured with API reverse proxy."
 else
