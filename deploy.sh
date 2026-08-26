@@ -1030,8 +1030,15 @@ PGADMIN_PASSWORD=${PGADMIN_PASSWORD}
 PGADMIN_URL=http://your-server/pgadmin4
 EOF
 
-# Reload nginx so the /pgadmin4/ proxy block takes effect
-nginx -t && systemctl reload nginx
+# Reload nginx so the /pgadmin4/ proxy block takes effect. The pgAdmin install
+# pulls in Apache, which tries to grab port 80 — make sure nginx still owns it.
+if ss -ltnp 2>/dev/null | grep -q ':80 .*apache2'; then
+  warn "Apache grabbed port 80 — moving it off and restoring nginx."
+  systemctl stop apache2 || true
+  sed -i 's/^Listen 80$/Listen 8008/' /etc/apache2/ports.conf || true
+  systemctl start apache2 || true
+fi
+nginx -t && systemctl restart nginx
 
 info "pgAdmin configured."
 info "  Access via: http://your-server/pgadmin4"
