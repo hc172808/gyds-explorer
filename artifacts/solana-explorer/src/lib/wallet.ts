@@ -28,7 +28,9 @@ export function getEthereumProvider(): EthereumProvider | null {
 }
 
 export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] {
-  return [primaryRpc, secondaryRpc].filter((url, index, urls) => Boolean(url) && urls.indexOf(url) === index);
+  return [primaryRpc, secondaryRpc]
+    .filter((url): url is string => Boolean(url))
+    .filter((url, index, urls) => urls.indexOf(url) === index);
 }
 
 export async function addGydsNetwork(rpcUrls: string[], provider = getEthereumProvider()) {

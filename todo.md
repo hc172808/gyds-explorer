@@ -1130,3 +1130,21 @@ protocol balances have been erased.
 - [ ] Legal, custody, stablecoin, consumer-protection, and compliance review
       is complete before enabling real-money purchases or describing GYD as
       USD-pegged.
+### Deployment milestone status — 2026-08-27
+
+- [x] Removed the stale `package-firewall.replit.local` tarball URLs that
+      remained inside `package-lock.json` (they broke `ethers@6.17.0` installs);
+      all resolved URLs now point at `https://registry.npmjs.org/`.
+- [x] Dependency install completes and `ethers` + `dotenv` resolve correctly.
+- [x] Added root `dev` and `start` scripts so the explorer workspace can be
+      served with the required `PORT` / `BASE_PATH` variables (npm only).
+- [x] Fixed a TypeScript error in `artifacts/solana-explorer/src/lib/wallet.ts`
+      (`getRpcUrls` returned `(string | undefined)[]`) that blocked
+      `npm run build`.
+- [x] `npm run build` (typecheck + all workspace builds) now passes end to end.
+- [x] Preview/dev server verified serving HTTP 200 on port 8080.
+- [x] Final repo search: remaining `pnpm` / `replit.local` matches are only in
+      `todo.md`, `attached_assets/` (historical prompts), and
+      `.migration-backup/` — none affect npm install or production deploy.
+      `update.sh` sets `npm_config_registry` to the public registry, which is
+      intentional.
