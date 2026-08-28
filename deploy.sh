@@ -419,10 +419,22 @@ API_PORT=${API_PORT}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
-# ---------- Feature Gate Service ----------
-# Served through the nginx /fgate/ proxy — relative so it works from any host.
+# ---------- Admin / Feature Gate API ----------
+# Same-origin relative path — works on an IP, a domain, HTTP or HTTPS.
 FEATURE_GATE_PORT=3002
-VITE_FEATURE_GATE_URL=/fgate
+VITE_FEATURE_GATE_URL=/api
+
+# ---------- Wallet (Add network / Add token) ----------
+VITE_NATIVE_COIN_NAME=GYDSChain
+VITE_NATIVE_COIN_SYMBOL=GYDS
+VITE_NATIVE_COIN_DECIMALS=18
+VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
+VITE_EXPLORER_URL=${BASE_URL}
+# Set this to the deployed GYD token contract before "Add GYD to wallet" can work.
+VITE_GYD_TOKEN_ADDRESS=${GYD_TOKEN_ADDRESS:-}
+VITE_GYD_SYMBOL=GYD
+VITE_GYD_DECIMALS=6
+VITE_GYD_LOGO_URL=/assets/gyd-logo.svg
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
@@ -826,10 +838,29 @@ else
   fi
 fi
 
-pm2 save
+# ------------------------------------------------------------
+# Start everything automatically on server boot
+# ------------------------------------------------------------
+# `pm2 startup` only PRINTS the systemd command — it must be executed.
+PM2_STARTUP_CMD="$(env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>/dev/null | grep -E '^\s*sudo env' | tail -n 1 || true)"
+if [ -n "$PM2_STARTUP_CMD" ]; then
+  eval "${PM2_STARTUP_CMD#sudo }" || warn "Could not install the PM2 systemd unit automatically."
+fi
+systemctl enable pm2-root >/dev/null 2>&1 || true
 
-# Setup PM2 to start on boot
-env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>/dev/null || true
+# Persist the current process list so PM2 resurrects it after a reboot.
+pm2 save --force
+
+# Other services that must survive a reboot.
+systemctl enable postgresql >/dev/null 2>&1 || true
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl list-unit-files | grep -q '^gyds-node' && systemctl enable gyds-node >/dev/null 2>&1 || true
+
+if systemctl is-enabled pm2-root >/dev/null 2>&1; then
+  info "Auto-start on boot enabled (pm2-root, nginx, postgresql)."
+else
+  warn "PM2 boot service not enabled. Run manually: pm2 startup systemd -u root --hp /root"
+fi
 
 cd "${APP_DIR}"
 info "Services running via PM2. Use 'pm2 list' to check status."
