@@ -15,7 +15,8 @@ import { getStoredToken } from "@/lib/featureGateApi";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
 
-const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL ?? "";
+const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
+const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
 type Tab = "wallets" | "node" | "tokens";
 
@@ -269,7 +270,7 @@ function AdminWalletsTab() {
   const fetchWallets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/wallets`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/admin/wallets`, { headers: authHeaders() });
       if (!res.ok) {
         if (res.status === 401) { toast.error("Session expired — please login again."); return; }
         throw new Error("Failed to fetch wallets");
@@ -291,7 +292,7 @@ function AdminWalletsTab() {
     }
     setAdding(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/wallets`, {
+      const res = await fetch(`${API_BASE}/admin/wallets`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ walletAddress: newAddress, label: newLabel || null }),
@@ -310,7 +311,7 @@ function AdminWalletsTab() {
   const removeWallet = async (id: number, address: string) => {
     if (!confirm(`Remove admin wallet ${address.slice(0, 10)}...?`)) return;
     try {
-      const res = await fetch(`${API_BASE}/api/admin/wallets/${id}`, { method: "DELETE", headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/admin/wallets/${id}`, { method: "DELETE", headers: authHeaders() });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to remove"); }
       toast.success("Wallet removed");
       fetchWallets();
@@ -321,7 +322,7 @@ function AdminWalletsTab() {
 
   const toggleWallet = async (id: number, currentActive: boolean) => {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/wallets/${id}/toggle`, {
+      const res = await fetch(`${API_BASE}/admin/wallets/${id}/toggle`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify({ isActive: !currentActive }),

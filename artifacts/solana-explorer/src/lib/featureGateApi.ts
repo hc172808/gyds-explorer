@@ -3,7 +3,10 @@
  * Handles communication with the Feature Gate Service
  */
 
-const API_BASE = import.meta.env.VITE_FEATURE_GATE_URL ?? "";
+// Base URL for the API server. Defaults to the same-origin "/api" proxy so it
+// works on an IP, a domain, HTTP or HTTPS without rebuilding.
+const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
+const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
 const TOKEN_KEY = "gyds-admin-token";
 
@@ -27,7 +30,7 @@ function authHeaders(): HeadersInit {
 // ─── Auth ─────────────────────────────────────────────────────────
 
 export async function requestNonce(walletAddress: string): Promise<{ nonce: string; message: string }> {
-  const res = await fetch(`${API_BASE}/api/auth/nonce`, {
+  const res = await fetch(`${API_BASE}/auth/nonce`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress }),
@@ -40,7 +43,7 @@ export async function requestNonce(walletAddress: string): Promise<{ nonce: stri
 }
 
 export async function verifySignature(walletAddress: string, signature: string): Promise<{ token: string; walletAddress: string; label: string }> {
-  const res = await fetch(`${API_BASE}/api/auth/verify`, {
+  const res = await fetch(`${API_BASE}/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, signature }),
@@ -56,7 +59,7 @@ export async function getAdminInfo(): Promise<{ walletAddress: string; label: st
   const token = getStoredToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() });
+    const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
     if (!res.ok) {
       clearStoredToken();
       return null;
@@ -78,13 +81,13 @@ export interface FeatureGate {
 }
 
 export async function fetchFeatureGates(): Promise<FeatureGate[]> {
-  const res = await fetch(`${API_BASE}/api/feature-gates`);
+  const res = await fetch(`${API_BASE}/feature-gates`);
   if (!res.ok) throw new Error("Failed to fetch feature gates");
   return res.json();
 }
 
 export async function toggleFeatureGate(id: string, status: boolean): Promise<FeatureGate> {
-  const res = await fetch(`${API_BASE}/api/feature-gates/${id}`, {
+  const res = await fetch(`${API_BASE}/feature-gates/${id}`, {
     method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify({ status }),
