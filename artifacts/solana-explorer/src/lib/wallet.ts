@@ -33,11 +33,24 @@ export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] 
     .filter((url, index, urls) => urls.indexOf(url) === index);
 }
 
+function isWalletSafeRpc(url: string) {
+  // Wallets require HTTPS for public hosts but accept HTTP on localhost / plain IPs.
+  try {
+    const { protocol, hostname } = new URL(url);
+    if (protocol === "https:") return true;
+    if (protocol !== "http:") return false;
+    return hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function addGydsNetwork(rpcUrls: string[], provider = getEthereumProvider()) {
   if (!provider) throw new Error("No compatible wallet was detected. Use the manual setup details below.");
-  if (!rpcUrls.length || rpcUrls.some((url) => !/^https:\/\//i.test(url))) {
-    throw new Error("A public HTTPS RPC endpoint is required before adding the network.");
+  if (!rpcUrls.length || !rpcUrls.every(isWalletSafeRpc)) {
+    throw new Error("A reachable RPC endpoint is required (HTTPS, or HTTP on localhost/an IP address).");
   }
+
 
   await provider.request({
     method: "wallet_addEthereumChain",
