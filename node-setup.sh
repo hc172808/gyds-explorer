@@ -241,6 +241,27 @@ if [ "$NODE_TYPE" != "main" ]; then
   fi
 fi
 
+if [ "$NODE_TYPE" = "main" ]; then
+  echo ""
+  info "The MAIN node registers the first admin (founder) wallet for the explorer."
+  info "This wallet can sign in to the Admin Dashboard and authorize other admins."
+  if [ -n "$ADMIN_WALLET" ]; then
+    info "ADMIN_WALLET=${ADMIN_WALLET} (loaded from .env)"
+  else
+    read -p "Enter admin wallet address (0x...), or press Enter to create a new one: " ADMIN_WALLET
+  fi
+  ADMIN_WALLET="$(echo "${ADMIN_WALLET}" | tr -d '[:space:]')"
+  if [ -n "$ADMIN_WALLET" ] && ! [[ "$ADMIN_WALLET" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+    err "Invalid admin wallet address: ${ADMIN_WALLET} (expected 0x + 40 hex characters)"
+  fi
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "No address given — a new admin wallet will be created on this server."
+  fi
+  read -p "Label for this admin wallet [${ADMIN_WALLET_LABEL}]: " CUSTOM_ADMIN_LABEL
+  ADMIN_WALLET_LABEL="${CUSTOM_ADMIN_LABEL:-$ADMIN_WALLET_LABEL}"
+fi
+
+
 if [ "$NODE_TYPE" = "validator" ]; then
   echo ""
   info "Validator nodes need a signing account."
