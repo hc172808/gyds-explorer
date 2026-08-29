@@ -964,6 +964,13 @@ case "$NODE_TYPE" in
     echo "║                                                          ║"
     printf "║   Main account:   %-39s║\n" "${MAIN_ACCOUNT}"
     printf "║   Account key:    %-39s║\n" "${CONFIG_DIR}/account-password.txt"
+    echo "║                                                          ║"
+    printf "║   Admin wallet:   %-39s║\n" "${ADMIN_WALLET}"
+    printf "║   Admin label:    %-39s║\n" "${ADMIN_WALLET_LABEL}"
+    if [ "$ADMIN_WALLET_CREATED" = "yes" ]; then
+      printf "║   Admin key pass: %-39s║\n" "${CONFIG_DIR}/admin-password.txt"
+      printf "║   Admin keystore: %-39s║\n" "${DATA_DIR}/keystore"
+    fi
     ;;
   full)
     printf "║   Syncing from MAIN: %-37s║\n" "${MAIN_NODE_IP}"
