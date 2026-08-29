@@ -403,6 +403,34 @@ if [ "$NODE_TYPE" = "main" ]; then
 
   info "Main node authority account: ${MAIN_ACCOUNT}"
 
+  # ---------- Admin / founder wallet ----------
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "Creating a new admin (founder) wallet..."
+    ADMIN_PASSWORD=$(openssl rand -base64 16)
+    printf '%s\n' "${ADMIN_PASSWORD}" > "${CONFIG_DIR}/admin-password.txt"
+    chmod 600 "${CONFIG_DIR}/admin-password.txt"
+    ADMIN_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/admin-password.txt" 2>&1)
+    ADMIN_WALLET=$(echo "${ADMIN_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
+    [ -n "$ADMIN_WALLET" ] || err "Failed to create the admin wallet. Output was:\n${ADMIN_OUTPUT}"
+    ADMIN_WALLET_CREATED="yes"
+    log "Admin wallet created: ${ADMIN_WALLET}"
+    warn "Keystore: ${DATA_DIR}/keystore  •  Password: ${CONFIG_DIR}/admin-password.txt"
+    warn "Export this key and back it up — it controls the Admin Dashboard."
+  else
+    log "Using operator-supplied admin wallet: ${ADMIN_WALLET}"
+  fi
+
+  # Genesis allocation for the admin wallet (skipped when it's the authority account)
+  ADMIN_ALLOC_ENTRY=""
+  if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
+    ADMIN_SUPPLY_BASE_UNITS=$((ADMIN_SUPPLY * 1000000000))
+    ADMIN_ALLOC_ENTRY=",
+    \"${ADMIN_WALLET}\": {
+      \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
+    }"
+    info "Admin wallet genesis allocation: ${ADMIN_SUPPLY} GYDS"
+  fi
+
   # Build extradata: 32 zero bytes + 20-byte signer address (no 0x) + 65 zero bytes
   SIGNER_HEX="${MAIN_ACCOUNT:2}"   # strip leading 0x
   EXTRA_DATA="0x$(printf '0%.0s' {1..64})${SIGNER_HEX}$(printf '0%.0s' {1..130})"
@@ -432,7 +460,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   "alloc": {
     "${MAIN_ACCOUNT}": {
       "balance": "${NATIVE_SUPPLY_BASE_UNITS}"
-    }
+    }${ADMIN_ALLOC_ENTRY}
   }
 }
 GENESIS
