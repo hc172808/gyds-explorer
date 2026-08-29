@@ -17,7 +17,7 @@
     "build": "npm run typecheck && npm run build --workspaces --if-present",
     "build:dev": "npm run build --workspaces --if-present",
     "typecheck:libs": "tsc --build",
-    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
+    "typecheck": "bash scripts/typecheck-all.sh"
   },
   "private": true,
   "devDependencies": {
