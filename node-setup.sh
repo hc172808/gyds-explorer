@@ -88,6 +88,14 @@ VALIDATOR_ADDRESS=""
 VALIDATOR_PASSWORD=""
 MAIN_ACCOUNT=""
 
+# Admin / founder wallet (MAIN node only). Either supplied by the operator or
+# created here as a fresh geth keystore account.
+ADMIN_WALLET="${ADMIN_WALLET:-}"
+ADMIN_WALLET_LABEL="${ADMIN_WALLET_LABEL:-Founder}"
+ADMIN_WALLET_CREATED="no"
+ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
+EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
+
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
