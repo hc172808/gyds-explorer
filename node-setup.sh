@@ -539,6 +539,11 @@ FULL_NODE_IPS=${FULL_NODE_IPS}
 # ---------- Validator Settings ----------
 VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS}
 
+# ---------- Admin / Founder Wallet (main node) ----------
+MAIN_ACCOUNT=${MAIN_ACCOUNT}
+ADMIN_WALLET=${ADMIN_WALLET}
+ADMIN_WALLET_LABEL=${ADMIN_WALLET_LABEL}
+
 # ---------- Performance ----------
 CACHE_SIZE=1024
 MAX_PEERS=50
@@ -553,6 +558,32 @@ if [ "$NODE_TYPE" = "validator" ] && [ -n "$VALIDATOR_PASSWORD" ]; then
 fi
 
 log "Environment written to ${CONFIG_DIR}/node.env"
+
+# ---------- Register the admin wallet with the explorer ----------
+if [ "$NODE_TYPE" = "main" ] && [ -n "$ADMIN_WALLET" ]; then
+  info "Registering admin wallet with the explorer API (${EXPLORER_API_URL}) ..."
+  BOOTSTRAP_CODE=$(curl -s -o /tmp/gyds-bootstrap.json -w '%{http_code}' \
+    --max-time 10 -X POST "${EXPLORER_API_URL%/}/admin/wallets/bootstrap" \
+    -H 'Content-Type: application/json' \
+    -d "{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}" 2>/dev/null || echo "000")
+
+  case "$BOOTSTRAP_CODE" in
+    200|201) log "Admin wallet registered — sign in at /admin with this wallet." ;;
+    403|409)
+      warn "Explorer already has admin wallets configured."
+      warn "Add this one from the Admin Dashboard, or run directly on the DB host:"
+      echo "  psql \"\$DATABASE_URL\" -c \"INSERT INTO admin_wallets (wallet_address,label) VALUES ('${ADMIN_WALLET,,}','${ADMIN_WALLET_LABEL}') ON CONFLICT DO NOTHING;\""
+      ;;
+    *)
+      warn "Could not reach the explorer API (HTTP ${BOOTSTRAP_CODE}). Register later with:"
+      echo "  curl -X POST ${EXPLORER_API_URL%/}/admin/wallets/bootstrap \\"
+      echo "       -H 'Content-Type: application/json' \\"
+      echo "       -d '{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}'"
+      ;;
+  esac
+  rm -f /tmp/gyds-bootstrap.json
+fi
+
 
 # ============================================================
 # STEP 6: Build Geth Command & Create Systemd Service
