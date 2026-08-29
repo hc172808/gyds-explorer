@@ -88,6 +88,14 @@ VALIDATOR_ADDRESS=""
 VALIDATOR_PASSWORD=""
 MAIN_ACCOUNT=""
 
+# Admin / founder wallet (MAIN node only). Either supplied by the operator or
+# created here as a fresh geth keystore account.
+ADMIN_WALLET="${ADMIN_WALLET:-}"
+ADMIN_WALLET_LABEL="${ADMIN_WALLET_LABEL:-Founder}"
+ADMIN_WALLET_CREATED="no"
+ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
+EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
+
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
@@ -129,6 +137,10 @@ for ENV_FILE in \
         RPC_PORT)           RPC_PORT="$val" ;;
         WS_PORT)            WS_PORT="$val" ;;
         P2P_PORT)           P2P_PORT="$val" ;;
+        ADMIN_WALLET)       [ -z "$ADMIN_WALLET"       ] && ADMIN_WALLET="$val" ;;
+        ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
+        ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
+        EXPLORER_API_URL)   EXPLORER_API_URL="${val:-$EXPLORER_API_URL}" ;;
       esac
     done < "$ENV_FILE"
     break
@@ -228,6 +240,27 @@ if [ "$NODE_TYPE" != "main" ]; then
     fi
   fi
 fi
+
+if [ "$NODE_TYPE" = "main" ]; then
+  echo ""
+  info "The MAIN node registers the first admin (founder) wallet for the explorer."
+  info "This wallet can sign in to the Admin Dashboard and authorize other admins."
+  if [ -n "$ADMIN_WALLET" ]; then
+    info "ADMIN_WALLET=${ADMIN_WALLET} (loaded from .env)"
+  else
+    read -p "Enter admin wallet address (0x...), or press Enter to create a new one: " ADMIN_WALLET
+  fi
+  ADMIN_WALLET="$(echo "${ADMIN_WALLET}" | tr -d '[:space:]')"
+  if [ -n "$ADMIN_WALLET" ] && ! [[ "$ADMIN_WALLET" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+    err "Invalid admin wallet address: ${ADMIN_WALLET} (expected 0x + 40 hex characters)"
+  fi
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "No address given — a new admin wallet will be created on this server."
+  fi
+  read -p "Label for this admin wallet [${ADMIN_WALLET_LABEL}]: " CUSTOM_ADMIN_LABEL
+  ADMIN_WALLET_LABEL="${CUSTOM_ADMIN_LABEL:-$ADMIN_WALLET_LABEL}"
+fi
+
 
 if [ "$NODE_TYPE" = "validator" ]; then
   echo ""
@@ -370,6 +403,34 @@ if [ "$NODE_TYPE" = "main" ]; then
 
   info "Main node authority account: ${MAIN_ACCOUNT}"
 
+  # ---------- Admin / founder wallet ----------
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "Creating a new admin (founder) wallet..."
+    ADMIN_PASSWORD=$(openssl rand -base64 16)
+    printf '%s\n' "${ADMIN_PASSWORD}" > "${CONFIG_DIR}/admin-password.txt"
+    chmod 600 "${CONFIG_DIR}/admin-password.txt"
+    ADMIN_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/admin-password.txt" 2>&1)
+    ADMIN_WALLET=$(echo "${ADMIN_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
+    [ -n "$ADMIN_WALLET" ] || err "Failed to create the admin wallet. Output was:\n${ADMIN_OUTPUT}"
+    ADMIN_WALLET_CREATED="yes"
+    log "Admin wallet created: ${ADMIN_WALLET}"
+    warn "Keystore: ${DATA_DIR}/keystore  •  Password: ${CONFIG_DIR}/admin-password.txt"
+    warn "Export this key and back it up — it controls the Admin Dashboard."
+  else
+    log "Using operator-supplied admin wallet: ${ADMIN_WALLET}"
+  fi
+
+  # Genesis allocation for the admin wallet (skipped when it's the authority account)
+  ADMIN_ALLOC_ENTRY=""
+  if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
+    ADMIN_SUPPLY_BASE_UNITS=$((ADMIN_SUPPLY * 1000000000))
+    ADMIN_ALLOC_ENTRY=",
+    \"${ADMIN_WALLET}\": {
+      \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
+    }"
+    info "Admin wallet genesis allocation: ${ADMIN_SUPPLY} GYDS"
+  fi
+
   # Build extradata: 32 zero bytes + 20-byte signer address (no 0x) + 65 zero bytes
   SIGNER_HEX="${MAIN_ACCOUNT:2}"   # strip leading 0x
   EXTRA_DATA="0x$(printf '0%.0s' {1..64})${SIGNER_HEX}$(printf '0%.0s' {1..130})"
@@ -399,7 +460,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   "alloc": {
     "${MAIN_ACCOUNT}": {
       "balance": "${NATIVE_SUPPLY_BASE_UNITS}"
-    }
+    }${ADMIN_ALLOC_ENTRY}
   }
 }
 GENESIS
@@ -478,6 +539,11 @@ FULL_NODE_IPS=${FULL_NODE_IPS}
 # ---------- Validator Settings ----------
 VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS}
 
+# ---------- Admin / Founder Wallet (main node) ----------
+MAIN_ACCOUNT=${MAIN_ACCOUNT}
+ADMIN_WALLET=${ADMIN_WALLET}
+ADMIN_WALLET_LABEL=${ADMIN_WALLET_LABEL}
+
 # ---------- Performance ----------
 CACHE_SIZE=1024
 MAX_PEERS=50
@@ -492,6 +558,32 @@ if [ "$NODE_TYPE" = "validator" ] && [ -n "$VALIDATOR_PASSWORD" ]; then
 fi
 
 log "Environment written to ${CONFIG_DIR}/node.env"
+
+# ---------- Register the admin wallet with the explorer ----------
+if [ "$NODE_TYPE" = "main" ] && [ -n "$ADMIN_WALLET" ]; then
+  info "Registering admin wallet with the explorer API (${EXPLORER_API_URL}) ..."
+  BOOTSTRAP_CODE=$(curl -s -o /tmp/gyds-bootstrap.json -w '%{http_code}' \
+    --max-time 10 -X POST "${EXPLORER_API_URL%/}/admin/wallets/bootstrap" \
+    -H 'Content-Type: application/json' \
+    -d "{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}" 2>/dev/null || echo "000")
+
+  case "$BOOTSTRAP_CODE" in
+    200|201) log "Admin wallet registered — sign in at /admin with this wallet." ;;
+    403|409)
+      warn "Explorer already has admin wallets configured."
+      warn "Add this one from the Admin Dashboard, or run directly on the DB host:"
+      echo "  psql \"\$DATABASE_URL\" -c \"INSERT INTO admin_wallets (wallet_address,label) VALUES ('${ADMIN_WALLET,,}','${ADMIN_WALLET_LABEL}') ON CONFLICT DO NOTHING;\""
+      ;;
+    *)
+      warn "Could not reach the explorer API (HTTP ${BOOTSTRAP_CODE}). Register later with:"
+      echo "  curl -X POST ${EXPLORER_API_URL%/}/admin/wallets/bootstrap \\"
+      echo "       -H 'Content-Type: application/json' \\"
+      echo "       -d '{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}'"
+      ;;
+  esac
+  rm -f /tmp/gyds-bootstrap.json
+fi
+
 
 # ============================================================
 # STEP 6: Build Geth Command & Create Systemd Service
@@ -872,6 +964,13 @@ case "$NODE_TYPE" in
     echo "║                                                          ║"
     printf "║   Main account:   %-39s║\n" "${MAIN_ACCOUNT}"
     printf "║   Account key:    %-39s║\n" "${CONFIG_DIR}/account-password.txt"
+    echo "║                                                          ║"
+    printf "║   Admin wallet:   %-39s║\n" "${ADMIN_WALLET}"
+    printf "║   Admin label:    %-39s║\n" "${ADMIN_WALLET_LABEL}"
+    if [ "$ADMIN_WALLET_CREATED" = "yes" ]; then
+      printf "║   Admin key pass: %-39s║\n" "${CONFIG_DIR}/admin-password.txt"
+      printf "║   Admin keystore: %-39s║\n" "${DATA_DIR}/keystore"
+    fi
     ;;
   full)
     printf "║   Syncing from MAIN: %-37s║\n" "${MAIN_NODE_IP}"
