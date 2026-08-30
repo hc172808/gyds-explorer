@@ -11,6 +11,7 @@
     "dev": "export NODE_ENV=development && npm run build && npm run start",
     "build": "node ./build.mjs",
     "start": "node --env-file=../../.env --enable-source-maps ./dist/index.mjs",
+    "seed:admin": "node --env-file=../../.env ./scripts/seed-admin.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
