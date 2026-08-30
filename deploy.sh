@@ -498,7 +498,9 @@ cat > "${API_DIR}/package.json" <<'EOF'
     "pg": "^8.12.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.4"
+    "express-rate-limit": "^7.1.4",
+    "ethers": "^6.13.4",
+    "jsonwebtoken": "^9.0.2"
   }
 }
 EOF
