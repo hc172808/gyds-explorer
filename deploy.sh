@@ -343,7 +343,38 @@ CREATE TABLE IF NOT EXISTS network_stats (
     recorded_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Admin wallets (wallet-signature login)
+CREATE TABLE IF NOT EXISTS admin_wallets (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(42) UNIQUE NOT NULL,
+    label TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- One-time nonces for wallet signature auth
+CREATE TABLE IF NOT EXISTS auth_nonces (
+    wallet_address VARCHAR(42) PRIMARY KEY,
+    nonce TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Feature gates
+CREATE TABLE IF NOT EXISTS feature_gates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    status BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Seed the founder admin wallet (lowercase)
+INSERT INTO admin_wallets (wallet_address, label, is_active)
+VALUES ('0x6422d12bfaddee5142bfad21b3006a74d09017b1', 'Founder', TRUE)
+ON CONFLICT (wallet_address) DO UPDATE SET is_active = TRUE, label = EXCLUDED.label;
+
 -- Indexes for performance
+
 CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_number);
 CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address);
 CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address);
@@ -467,7 +498,9 @@ cat > "${API_DIR}/package.json" <<'EOF'
     "pg": "^8.12.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.4"
+    "express-rate-limit": "^7.1.4",
+    "ethers": "^6.13.4",
+    "jsonwebtoken": "^9.0.2"
   }
 }
 EOF
@@ -739,7 +772,171 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+// ---------- Admin Wallet Auth (SIWE-style signature login) ----------
+const jwt = require("jsonwebtoken");
+const { ethers } = require("ethers");
+
+const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET || "change-me";
+const AUTH_MESSAGE = (nonce) =>
+  `Sign this message to authenticate as GYDS admin:\n\nNonce: ${nonce}`;
+
+function requireAdmin(req, res, next) {
+  const header = req.headers.authorization || "";
+  if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "No token provided" });
+  try {
+    req.admin = jwt.verify(header.slice(7), JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+app.post("/api/auth/nonce", async (req, res) => {
+  try {
+    const { walletAddress } = req.body || {};
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    const address = walletAddress.toLowerCase();
+    const admin = await pool.query(
+      "SELECT 1 FROM admin_wallets WHERE LOWER(wallet_address) = $1 AND is_active = TRUE",
+      [address]
+    );
+    if (admin.rows.length === 0) {
+      return res.status(403).json({ error: "Wallet not authorized as admin" });
+    }
+    const nonce = require("crypto").randomBytes(32).toString("hex");
+    await pool.query(
+      `INSERT INTO auth_nonces (wallet_address, nonce, created_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (wallet_address) DO UPDATE SET nonce = EXCLUDED.nonce, created_at = NOW()`,
+      [address, nonce]
+    );
+    res.json({ nonce, message: AUTH_MESSAGE(nonce) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/auth/verify", async (req, res) => {
+  try {
+    const { walletAddress, signature } = req.body || {};
+    if (!walletAddress || !signature) {
+      return res.status(400).json({ error: "Missing walletAddress or signature" });
+    }
+    const address = walletAddress.toLowerCase();
+    const row = (
+      await pool.query("SELECT nonce, created_at FROM auth_nonces WHERE wallet_address = $1", [address])
+    ).rows[0];
+    if (!row) return res.status(400).json({ error: "No nonce found. Request a new one." });
+    if (Date.now() - new Date(row.created_at).getTime() > 5 * 60 * 1000) {
+      return res.status(400).json({ error: "Nonce expired. Request a new one." });
+    }
+    let recovered;
+    try {
+      recovered = ethers.verifyMessage(AUTH_MESSAGE(row.nonce), signature).toLowerCase();
+    } catch {
+      return res.status(401).json({ error: "Signature verification failed" });
+    }
+    if (recovered !== address) return res.status(401).json({ error: "Signature verification failed" });
+
+    const admin = (
+      await pool.query(
+        "SELECT label FROM admin_wallets WHERE LOWER(wallet_address) = $1 AND is_active = TRUE",
+        [address]
+      )
+    ).rows[0];
+    if (!admin) return res.status(403).json({ error: "Wallet not authorized" });
+
+    await pool.query("DELETE FROM auth_nonces WHERE wallet_address = $1", [address]);
+    const token = jwt.sign({ walletAddress: address, label: admin.label, role: "admin" }, JWT_SECRET, {
+      expiresIn: "24h",
+    });
+    res.json({ token, walletAddress: address, label: admin.label });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/auth/me", requireAdmin, (req, res) => {
+  res.json({ walletAddress: req.admin.walletAddress, label: req.admin.label, role: req.admin.role });
+});
+
+// ---------- Admin Wallet Management ----------
+app.get("/api/admin/wallets", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM admin_wallets ORDER BY id ASC");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/wallets", requireAdmin, async (req, res) => {
+  try {
+    const { walletAddress, label } = req.body || {};
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO admin_wallets (wallet_address, label, is_active) VALUES ($1, $2, TRUE)
+       ON CONFLICT (wallet_address) DO UPDATE SET label = EXCLUDED.label, is_active = TRUE RETURNING *`,
+      [walletAddress.toLowerCase(), label || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/admin/wallets/:id/toggle", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "UPDATE admin_wallets SET is_active = $1 WHERE id = $2 RETURNING *",
+      [Boolean(req.body?.is_active), req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Wallet not found" });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/wallets/:id", requireAdmin, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query("DELETE FROM admin_wallets WHERE id = $1", [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ error: "Wallet not found" });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Feature Gates ----------
+app.get("/api/feature-gates", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM feature_gates ORDER BY id ASC");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/feature-gates/:id", requireAdmin, async (req, res) => {
+  try {
+    const status = Boolean(req.body?.status);
+    const { rows } = await pool.query(
+      `INSERT INTO feature_gates (id, name, status, updated_at) VALUES ($1, $1, $2, NOW())
+       ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW() RETURNING *`,
+      [req.params.id, status]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------- Start Server ----------
+
 app.listen(PORT, () => {
   console.log(`[API] GYDS Explorer API running on port ${PORT}`);
   console.log(`[API] Health check: http://localhost:${PORT}/api/health`);
