@@ -802,6 +802,22 @@ else
 fi
 
 # ============================================================
+# STEP 7b: Database schema + seed test admin wallet
+# ============================================================
+cd "${APP_DIR}"
+# Push drizzle schema (creates admin_wallets, feature_gates, etc. if missing)
+if ! npm run push --workspace=@workspace/db; then
+  npm run push-force --workspace=@workspace/db || warn "Schema push failed — run 'npm run push-force --workspace=@workspace/db' manually."
+fi
+# Seed admin wallet. Override with ADMIN_WALLET / ADMIN_WALLET_LABEL env vars.
+# Defaults to the test founder wallet 0x6422D12BFADdEE5142BFaD21b3006a74D09017B1.
+if npm run seed:admin --workspace=@workspace/api-server; then
+  info "Admin wallet seeded (${ADMIN_WALLET:-0x6422D12BFADdEE5142BFaD21b3006a74D09017B1})."
+else
+  warn "Admin wallet seed failed — run 'npm run seed:admin --workspace=@workspace/api-server' manually."
+fi
+
+# ============================================================
 # STEP 8: Setup PM2 Process Manager
 # ============================================================
 log "Step 8/11 — Setting up PM2 process manager..."
