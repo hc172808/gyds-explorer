@@ -14,11 +14,25 @@ import { toast } from "sonner";
 import { getStoredToken } from "@/lib/featureGateApi";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
+import {
+  createNetworkNode,
+  deleteNetworkNode,
+  fetchAdminNetworkNodes,
+  fetchCoinSettings,
+  fetchNetworkNodes,
+  pingNetworkNode,
+  toggleNetworkNode,
+  updateCoinSetting,
+  type CoinSetting,
+  type NetworkNode,
+  type NetworkNodeType,
+} from "@/lib/networkApi";
+import { Textarea } from "@/components/ui/textarea";
 
 const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
 const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
-type Tab = "wallets" | "node" | "tokens";
+type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens";
 
 interface AdminWallet {
   id: number;
@@ -255,6 +269,198 @@ sudo systemctl reload nginx`}</pre>
         </div>
       </div>
 
+    </div>
+  );
+}
+
+// ── Network Nodes Tab ─────────────────────────────────────────────────────────
+function NodesTab() {
+  const [nodes, setNodes] = useState<NetworkNode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    type: "full" as NetworkNodeType,
+    rpcUrl: "",
+    enode: "",
+    status: "disconnected",
+  });
+  const [pingStates, setPingStates] = useState<Record<number, RpcStatus>>({});
+
+  const loadNodes = useCallback(async () => {
+    setLoading(true);
+    try {
+      setNodes(await fetchAdminNetworkNodes());
+    } catch (error) {
+      toast.error("Could not load network nodes", { description: error instanceof Error ? error.message : "API unavailable" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadNodes(); }, [loadNodes]);
+
+  const addNode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.name.trim() || !form.rpcUrl.trim()) {
+      toast.error("Name and RPC URL are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createNetworkNode({
+        name: form.name.trim(),
+        type: form.type,
+        rpcUrl: form.rpcUrl.trim(),
+        enode: form.enode.trim() || null,
+        status: form.status.trim() || "unknown",
+        isActive: true,
+      });
+      setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" });
+      toast.success("Network node added");
+      loadNodes();
+    } catch (error) {
+      toast.error("Could not add node", { description: error instanceof Error ? error.message : "Request failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggle = async (node: NetworkNode) => {
+    try {
+      await toggleNetworkNode(node.id, !node.isActive);
+      toast(node.isActive ? "Node disconnected" : "Node connected");
+      loadNodes();
+    } catch (error) {
+      toast.error("Could not change node connection", { description: error instanceof Error ? error.message : "Request failed" });
+    }
+  };
+
+  const remove = async (node: NetworkNode) => {
+    if (!confirm(`Remove ${node.name}?`)) return;
+    try {
+      await deleteNetworkNode(node.id);
+      toast.success("Node removed");
+      loadNodes();
+    } catch (error) {
+      toast.error("Could not remove node", { description: error instanceof Error ? error.message : "Request failed" });
+    }
+  };
+
+  const ping = async (node: NetworkNode) => {
+    setPingStates((current) => ({ ...current, [node.id]: { ok: false, error: "Checking…" } }));
+    const result = await pingNetworkNode(node.rpcUrl);
+    setPingStates((current) => ({ ...current, [node.id]: result }));
+  };
+
+  return (
+    <div className="space-y-5">
+      <form onSubmit={addNode} className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <Network className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold">Add network node</h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Node name" />
+          <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value as NetworkNodeType })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+            <option value="full">Full node</option>
+            <option value="lite">Lite node</option>
+            <option value="boot">Boot node</option>
+          </select>
+          <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder="https://rpc.example.com" className="font-mono text-xs" />
+          <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="enode://… (optional)" className="font-mono text-xs" />
+          <Input value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} placeholder="Status label (optional)" />
+          <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add node</Button>
+        </div>
+      </form>
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
+          <div><h2 className="text-sm font-semibold">Configured nodes</h2><p className="text-xs text-muted-foreground">Connected nodes are available to the public wallet balance view.</p></div>
+          <Button variant="ghost" size="sm" onClick={loadNodes} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
+        </div>
+        {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : nodes.length === 0 ? (
+          <p className="px-5 py-12 text-center text-sm text-muted-foreground">No nodes configured yet.</p>
+        ) : nodes.map((node) => {
+          const pingStatus = pingStates[node.id];
+          return (
+            <div key={node.id} className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4 last:border-0">
+              <span className={`h-2.5 w-2.5 rounded-full ${node.isActive ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{node.name}</p><span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] uppercase text-muted-foreground">{node.type}</span></div>
+                <p className="break-all font-mono text-xs text-muted-foreground">{node.rpcUrl}</p>
+                {node.enode && <p className="break-all font-mono text-[11px] text-muted-foreground">{node.enode}</p>}
+                {pingStatus && <p className={`mt-1 text-xs ${pingStatus.ok ? "text-primary" : "text-destructive"}`}>{pingStatus.ok ? `Online · block ${pingStatus.blockNumber?.toLocaleString()} · ${pingStatus.latencyMs}ms` : pingStatus.error}</p>}
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" onClick={() => ping(node)} className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Ping</Button>
+                <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disconnect" : "Connect"}</Button>
+                <Button variant="ghost" size="sm" onClick={() => remove(node)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Coin Settings Tab ──────────────────────────────────────────────────────────
+function CoinSettingsTab() {
+  const [coins, setCoins] = useState<CoinSetting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const loadCoins = useCallback(async () => {
+    setLoading(true);
+    try {
+      setCoins(await fetchCoinSettings());
+    } catch (error) {
+      toast.error("Could not load coin settings", { description: error instanceof Error ? error.message : "API unavailable" });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadCoins(); }, [loadCoins]);
+
+  const updateField = (symbol: string, field: keyof CoinSetting, value: string | number | null) => {
+    setCoins((current) => current.map((coin) => coin.symbol === symbol ? { ...coin, [field]: value } : coin));
+  };
+
+  const save = async (coin: CoinSetting) => {
+    setSaving(coin.symbol);
+    try {
+      await updateCoinSetting(coin.symbol, {
+        name: coin.name.trim(),
+        decimals: Number(coin.decimals),
+        logoUrl: coin.logoUrl?.trim() || null,
+        description: coin.description.trim(),
+      });
+      toast.success(`${coin.symbol} settings saved`);
+    } catch (error) {
+      toast.error("Could not save coin settings", { description: error instanceof Error ? error.message : "Request failed" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Coin information</h2><p className="text-xs text-muted-foreground">These public values power the About Coins page and wallet labels.</p></div><Button variant="ghost" size="sm" onClick={loadCoins} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button></div>
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : coins.length === 0 ? <p className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted-foreground">No coin settings found.</p> : coins.map((coin) => (
+        <div key={coin.symbol} className="rounded-xl border border-border bg-card p-5">
+          <div className="mb-4 flex items-center gap-3"><Coins className="h-5 w-5 text-primary" /><div><h3 className="font-semibold">{coin.symbol}</h3><p className="text-xs text-muted-foreground">Public coin metadata</p></div></div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div><label className="mb-1.5 block text-xs text-muted-foreground">Name</label><Input value={coin.name} onChange={(event) => updateField(coin.symbol, "name", event.target.value)} /></div>
+            <div><label className="mb-1.5 block text-xs text-muted-foreground">Symbol</label><Input value={coin.symbol} disabled className="font-mono" /></div>
+            <div><label className="mb-1.5 block text-xs text-muted-foreground">Decimals</label><Input type="number" min={0} max={36} value={coin.decimals} onChange={(event) => updateField(coin.symbol, "decimals", Number(event.target.value))} /></div>
+            <div><label className="mb-1.5 block text-xs text-muted-foreground">Logo URL</label><Input value={coin.logoUrl || ""} onChange={(event) => updateField(coin.symbol, "logoUrl", event.target.value)} placeholder="/assets/gyds-logo.svg" className="font-mono text-xs" /></div>
+            <div className="md:col-span-2"><label className="mb-1.5 block text-xs text-muted-foreground">About text</label><Textarea value={coin.description} onChange={(event) => updateField(coin.symbol, "description", event.target.value)} rows={4} placeholder="Describe this coin for the public About Coins page." /></div>
+          </div>
+          <div className="mt-4 flex justify-end"><Button onClick={() => save(coin)} disabled={saving === coin.symbol} className="gap-2">{saving === coin.symbol ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save {coin.symbol}</Button></div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -922,8 +1128,8 @@ const AdminDashboard = () => {
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <Shield className="w-12 h-12 text-muted-foreground" />
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-muted-foreground text-sm text-center max-w-md">
-              Connect your authorized GYDS wallet to manage node settings and admin wallets.
+              <p className="text-muted-foreground text-sm text-center max-w-md">
+                Connect your authorized GYDS wallet to manage nodes, coin information, and admin wallets.
             </p>
             <WalletLoginDialog
               onLoginSuccess={() => setIsAuthenticated(true)}
@@ -936,6 +1142,8 @@ const AdminDashboard = () => {
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "node",    label: "Node Settings",  icon: <Settings className="w-3.5 h-3.5" /> },
+    { id: "nodes",   label: "Nodes",          icon: <Network  className="w-3.5 h-3.5" /> },
+    { id: "coins",   label: "Coins",          icon: <Coins    className="w-3.5 h-3.5" /> },
     { id: "tokens",  label: "Tokens",         icon: <Coins    className="w-3.5 h-3.5" /> },
     { id: "wallets", label: "Admin Wallets",  icon: <Shield   className="w-3.5 h-3.5" /> },
   ];
@@ -976,6 +1184,8 @@ const AdminDashboard = () => {
         </div>
 
         {activeTab === "node"    && <NodeSettingsTab />}
+        {activeTab === "nodes"   && <NodesTab />}
+        {activeTab === "coins"   && <CoinSettingsTab />}
         {activeTab === "tokens"  && <TokensTab />}
         {activeTab === "wallets" && <AdminWalletsTab />}
       </motion.div>

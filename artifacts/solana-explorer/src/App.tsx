@@ -20,6 +20,8 @@ import AdminDashboard from "./pages/AdminDashboard";
 import TermsOfService from "./pages/TermsOfService";
 import TokenBalances from "./pages/TokenBalances";
 import WalletOnboarding from "./pages/WalletOnboarding";
+import MyWallet from "./pages/MyWallet";
+import AboutCoins from "./pages/AboutCoins";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,7 +50,9 @@ const App = () => (
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/tokens" element={<TokenBalances />} />
                 <Route path="/tokens/:address" element={<TokenBalances />} />
-                <Route path="/wallet" element={<WalletOnboarding />} />
+                <Route path="/wallet" element={<MyWallet />} />
+                <Route path="/wallet/setup" element={<WalletOnboarding />} />
+                <Route path="/about-coins" element={<AboutCoins />} />
                 <Route path="/terms" element={<TermsOfService />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

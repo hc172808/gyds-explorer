@@ -11,6 +11,7 @@ const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = 
 
 const NAV_LINKS = [
   { label: "Wallet", to: "/wallet" },
+  { label: "About Coins", to: "/about-coins" },
   { label: "Programs", to: "/programs" },
   { label: "Supply", to: "/supply" },
   { label: "Inspector", to: "/inspector" },
