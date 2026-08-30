@@ -343,7 +343,38 @@ CREATE TABLE IF NOT EXISTS network_stats (
     recorded_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Admin wallets (wallet-signature login)
+CREATE TABLE IF NOT EXISTS admin_wallets (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(42) UNIQUE NOT NULL,
+    label TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- One-time nonces for wallet signature auth
+CREATE TABLE IF NOT EXISTS auth_nonces (
+    wallet_address VARCHAR(42) PRIMARY KEY,
+    nonce TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Feature gates
+CREATE TABLE IF NOT EXISTS feature_gates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    status BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Seed the founder admin wallet (lowercase)
+INSERT INTO admin_wallets (wallet_address, label, is_active)
+VALUES ('0x6422d12bfaddee5142bfad21b3006a74d09017b1', 'Founder', TRUE)
+ON CONFLICT (wallet_address) DO UPDATE SET is_active = TRUE, label = EXCLUDED.label;
+
 -- Indexes for performance
+
 CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_number);
 CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address);
 CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address);
