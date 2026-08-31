@@ -1148,3 +1148,14 @@ protocol balances have been erased.
       `.migration-backup/` — none affect npm install or production deploy.
       `update.sh` sets `npm_config_registry` to the public registry, which is
       intentional.
+
+### Continuation log — 2026-08-31
+
+- [x] Split typechecking out of the default `npm run build` (now
+      `npm run build:check`) so the production/preview build finishes inside the
+      build deadline. Full typecheck still runs via `npm run typecheck`.
+- [x] Added a Vite dev proxy for `/api` (override with `API_PROXY_TARGET`,
+      defaults to `http://127.0.0.1:3001`) so local dev hits the API server.
+- [x] Hardened `featureGateApi.ts`: unreachable API now reports
+      "API server unreachable …" instead of a raw `Failed to fetch`, and
+      non-JSON error responses fall back to an `HTTP <status>` message.

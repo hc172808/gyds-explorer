@@ -27,31 +27,44 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE}${path}`, init);
+  } catch {
+    throw new Error(
+      "API server unreachable. Make sure the GYDS API service is running and reachable at " + API_BASE + ".",
+    );
+  }
+}
+
+async function parseError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    return (body && (body as { error?: string }).error) || fallback;
+  } catch {
+    return `${fallback} (HTTP ${res.status})`;
+  }
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────
 
 export async function requestNonce(walletAddress: string): Promise<{ nonce: string; message: string }> {
-  const res = await fetch(`${API_BASE}/auth/nonce`, {
+  const res = await apiFetch(`/auth/nonce`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Failed to request nonce");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Failed to request nonce"));
   return res.json();
 }
 
 export async function verifySignature(walletAddress: string, signature: string): Promise<{ token: string; walletAddress: string; label: string }> {
-  const res = await fetch(`${API_BASE}/auth/verify`, {
+  const res = await apiFetch(`/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, signature }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Verification failed");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Verification failed"));
   return res.json();
 }
 
@@ -59,7 +72,7 @@ export async function getAdminInfo(): Promise<{ walletAddress: string; label: st
   const token = getStoredToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+    const res = await apiFetch(`/auth/me`, { headers: authHeaders() });
     if (!res.ok) {
       clearStoredToken();
       return null;
@@ -81,20 +94,17 @@ export interface FeatureGate {
 }
 
 export async function fetchFeatureGates(): Promise<FeatureGate[]> {
-  const res = await fetch(`${API_BASE}/feature-gates`);
-  if (!res.ok) throw new Error("Failed to fetch feature gates");
+  const res = await apiFetch(`/feature-gates`);
+  if (!res.ok) throw new Error(await parseError(res, "Failed to fetch feature gates"));
   return res.json();
 }
 
 export async function toggleFeatureGate(id: string, status: boolean): Promise<FeatureGate> {
-  const res = await fetch(`${API_BASE}/feature-gates/${id}`, {
+  const res = await apiFetch(`/feature-gates/${id}`, {
     method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify({ status }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Failed to update feature gate");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Failed to update feature gate"));
   return res.json();
 }
