@@ -8,7 +8,52 @@
 const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
 const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
+export const API_BASE_URL = API_BASE;
+
 const TOKEN_KEY = "gyds-admin-token";
+
+export class ApiUnreachableError extends Error {
+  constructor(message?: string) {
+    super(
+      message ||
+        `API server unreachable. Make sure the GYDS API service is running and reachable at ${API_BASE}.`,
+    );
+    this.name = "ApiUnreachableError";
+  }
+}
+
+export function isApiUnreachable(err: unknown): boolean {
+  return err instanceof ApiUnreachableError || (err instanceof Error && err.name === "ApiUnreachableError");
+}
+
+export interface ApiHealth {
+  status: "healthy" | "unhealthy";
+  database?: string;
+  uptime?: number;
+  latencyMs?: number;
+  timestamp?: string;
+  error?: string;
+}
+
+/** Probe GET /api/health. Throws ApiUnreachableError when the server cannot be reached. */
+export async function checkApiHealth(timeoutMs = 6000): Promise<ApiHealth> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new ApiUnreachableError();
+  }
+  let body: ApiHealth | null = null;
+  try {
+    body = (await res.json()) as ApiHealth;
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    return body ?? { status: "unhealthy", error: `HTTP ${res.status}` };
+  }
+  return body ?? { status: "healthy" };
+}
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -31,9 +76,7 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   try {
     return await fetch(`${API_BASE}${path}`, init);
   } catch {
-    throw new Error(
-      "API server unreachable. Make sure the GYDS API service is running and reachable at " + API_BASE + ".",
-    );
+    throw new ApiUnreachableError();
   }
 }
 
