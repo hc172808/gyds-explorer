@@ -62,7 +62,8 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist"),
+    // Lovable's dist-check inspects the workspace-root dist directory.
+    outDir: path.resolve(import.meta.dirname, "../..", "dist"),
     emptyOutDir: true,
   },
   server: {
