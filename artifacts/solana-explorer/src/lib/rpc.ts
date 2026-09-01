@@ -1,24 +1,11 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 
-export const DEFAULT_RPC_PRIMARY =
-  import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-export const DEFAULT_RPC_SECONDARY =
-  import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com";
+export const EXPECTED_CHAIN_ID = 198282;
+const RPC_TIMEOUT_MS = 5000;
 
-const LS_KEY_RPC1 = "gyds_rpc_primary";
-const LS_KEY_RPC2 = "gyds_rpc_secondary";
-
-/** Ordered list of RPC endpoints: user overrides first, then the proxy fallback. */
+/** Use the same-origin proxy so public RPC servers do not need browser CORS headers. */
 export function getRpcEndpoints(): string[] {
-  let primary = DEFAULT_RPC_PRIMARY;
-  let secondary = DEFAULT_RPC_SECONDARY;
-  try {
-    primary = localStorage.getItem(LS_KEY_RPC1) || primary;
-    secondary = localStorage.getItem(LS_KEY_RPC2) || secondary;
-  } catch {
-    /* ignore (SSR / blocked storage) */
-  }
-  return [...new Set([primary, secondary, "/api/rpc"].filter(Boolean))];
+  return ["/api/rpc"];
 }
 
 async function callEndpoint(
@@ -30,10 +17,17 @@ async function callEndpoint(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   });
   const data = await res.json();
   if (!res.ok || data.error) {
     throw new Error(data.error?.message || `RPC call failed for method "${method}"`);
+  }
+  if (method === "eth_chainId") {
+    const chainId = hexToNumber(data.result as string);
+    if (chainId !== EXPECTED_CHAIN_ID) {
+      throw new Error(`Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainId}`);
+    }
   }
   return data.result;
 }
@@ -70,6 +64,11 @@ export async function checkRpcEndpoint(url: string): Promise<RpcEndpointHealth> 
       callEndpoint(url, "eth_blockNumber", []),
       callEndpoint(url, "eth_chainId", []),
     ]);
+    if (chainId !== `0x${EXPECTED_CHAIN_ID.toString(16)}`) {
+      throw new Error(
+        `Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${hexToNumber(chainId as string)}`,
+      );
+    }
     return {
       url,
       online: true,

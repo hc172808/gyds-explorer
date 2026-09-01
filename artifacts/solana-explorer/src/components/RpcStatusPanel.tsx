@@ -3,7 +3,7 @@ import { Activity, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { checkRpcEndpoint, getRpcEndpoints, getSyncStatus } from "@/lib/rpc";
 
 const RpcStatusPanel = () => {
-  const endpoints = getRpcEndpoints().filter((e) => e.startsWith("http"));
+  const endpoints = getRpcEndpoints();
 
   const { data: health, isFetching, refetch } = useQuery({
     queryKey: ["rpcHealth", endpoints],
@@ -37,7 +37,9 @@ const RpcStatusPanel = () => {
             key={h.url}
             className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-secondary/40 px-3 py-2"
           >
-            <span className="font-mono text-xs break-all">{h.url}</span>
+             <span className="font-mono text-xs break-all">
+               {h.url === "/api/rpc" ? "Same-origin RPC proxy" : h.url}
+             </span>
             <span className="flex items-center gap-3 text-xs text-muted-foreground">
               {"blockNumber" in h && h.blockNumber !== undefined && (
                 <span>#{h.blockNumber.toLocaleString()}</span>

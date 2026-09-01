@@ -8,7 +8,10 @@ import { eq, sql } from "drizzle-orm";
 import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
-const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET_KEY!;
+const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("API_SECRET_KEY, JWT_SECRET_KEY, or JWT_SECRET environment variable is required but was not provided.");
+}
 
 // POST /auth/nonce — request a nonce for wallet signing
 router.post("/nonce", async (req, res) => {

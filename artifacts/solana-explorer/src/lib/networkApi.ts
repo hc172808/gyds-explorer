@@ -1,4 +1,5 @@
 import { getStoredToken } from "./featureGateApi";
+import { EXPECTED_CHAIN_ID } from "./rpc";
 
 const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
 export const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
@@ -53,20 +54,32 @@ export async function fetchAdminNetworkNodes(): Promise<NetworkNode[]> {
   return response.json();
 }
 
-export async function pingNetworkNode(rpcUrl: string): Promise<{ ok: boolean; blockNumber?: number; latencyMs?: number; error?: string }> {
+export async function pingNetworkNode(rpcUrl: string): Promise<{ ok: boolean; blockNumber?: number; chainId?: number; latencyMs?: number; error?: string }> {
   const startedAt = Date.now();
   try {
-    const response = await fetch(rpcUrl, {
+    const request = (method: string) => fetch(rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
+      body: JSON.stringify({ jsonrpc: "2.0", method, params: [], id: 1 }),
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-    const json = await response.json() as { result?: string; error?: { message?: string } };
-    if (json.error) return { ok: false, error: json.error.message || "RPC error" };
-    if (!json.result) return { ok: false, error: "RPC returned no block number" };
-    return { ok: true, blockNumber: Number.parseInt(json.result, 16), latencyMs: Date.now() - startedAt };
+    const [chainResponse, blockResponse] = await Promise.all([
+      request("eth_chainId"),
+      request("eth_blockNumber"),
+    ]);
+    if (!chainResponse.ok) return { ok: false, error: `HTTP ${chainResponse.status}` };
+    if (!blockResponse.ok) return { ok: false, error: `HTTP ${blockResponse.status}` };
+    const chainJson = await chainResponse.json() as { result?: string; error?: { message?: string } };
+    const blockJson = await blockResponse.json() as { result?: string; error?: { message?: string } };
+    if (chainJson.error) return { ok: false, error: chainJson.error.message || "RPC chain ID error" };
+    if (blockJson.error) return { ok: false, error: blockJson.error.message || "RPC block number error" };
+    if (!chainJson.result) return { ok: false, error: "RPC returned no chain ID" };
+    if (!blockJson.result) return { ok: false, error: "RPC returned no block number" };
+    const chainId = Number.parseInt(chainJson.result, 16);
+    if (chainId !== EXPECTED_CHAIN_ID) {
+      return { ok: false, chainId, error: `Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainId}` };
+    }
+    return { ok: true, blockNumber: Number.parseInt(blockJson.result, 16), chainId, latencyMs: Date.now() - startedAt };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "RPC unreachable" };
   }
