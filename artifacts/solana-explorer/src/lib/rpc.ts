@@ -1,7 +1,32 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 
-export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
-  const res = await fetch("/api/rpc", {
+export const DEFAULT_RPC_PRIMARY =
+  import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+export const DEFAULT_RPC_SECONDARY =
+  import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com";
+
+const LS_KEY_RPC1 = "gyds_rpc_primary";
+const LS_KEY_RPC2 = "gyds_rpc_secondary";
+
+/** Ordered list of RPC endpoints: user overrides first, then the proxy fallback. */
+export function getRpcEndpoints(): string[] {
+  let primary = DEFAULT_RPC_PRIMARY;
+  let secondary = DEFAULT_RPC_SECONDARY;
+  try {
+    primary = localStorage.getItem(LS_KEY_RPC1) || primary;
+    secondary = localStorage.getItem(LS_KEY_RPC2) || secondary;
+  } catch {
+    /* ignore (SSR / blocked storage) */
+  }
+  return [...new Set([primary, secondary, "/api/rpc"].filter(Boolean))];
+}
+
+async function callEndpoint(
+  endpoint: string,
+  method: string,
+  params: unknown[],
+): Promise<unknown> {
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
@@ -11,6 +36,72 @@ export async function rpcCall(method: string, params: unknown[] = []): Promise<u
     throw new Error(data.error?.message || `RPC call failed for method "${method}"`);
   }
   return data.result;
+}
+
+/** Calls each configured RPC endpoint in order until one succeeds. */
+export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
+  const endpoints = getRpcEndpoints();
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    try {
+      return await callEndpoint(endpoint, method, params);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`All RPC endpoints failed for method "${method}"`);
+}
+
+export interface RpcEndpointHealth {
+  url: string;
+  online: boolean;
+  blockNumber?: number;
+  chainId?: number;
+  latencyMs: number;
+  error?: string;
+}
+
+export async function checkRpcEndpoint(url: string): Promise<RpcEndpointHealth> {
+  const started = performance.now();
+  try {
+    const [blockNumber, chainId] = await Promise.all([
+      callEndpoint(url, "eth_blockNumber", []),
+      callEndpoint(url, "eth_chainId", []),
+    ]);
+    return {
+      url,
+      online: true,
+      blockNumber: hexToNumber(blockNumber as string),
+      chainId: hexToNumber(chainId as string),
+      latencyMs: Math.round(performance.now() - started),
+    };
+  } catch (err) {
+    return {
+      url,
+      online: false,
+      latencyMs: Math.round(performance.now() - started),
+      error: err instanceof Error ? err.message : "Unreachable",
+    };
+  }
+}
+
+export interface SyncStatus {
+  syncing: boolean;
+  currentBlock?: number;
+  highestBlock?: number;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  const result = await rpcCall("eth_syncing");
+  if (!result || result === false) return { syncing: false };
+  const s = result as { currentBlock: string; highestBlock: string };
+  return {
+    syncing: true,
+    currentBlock: hexToNumber(s.currentBlock),
+    highestBlock: hexToNumber(s.highestBlock),
+  };
 }
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
