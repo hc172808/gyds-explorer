@@ -4,8 +4,10 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Run & Operate
 
-- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
+- `artifacts/solana-explorer: web` workflow — runs the frontend preview
+- `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
+- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend by itself
+- `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
 - `npm run typecheck` — full typecheck across all packages
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
@@ -14,13 +16,13 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
 - API service env: `API_SECRET_KEY` or `JWT_SECRET_KEY` — required JWT signing secret; the API workflow will not start without one
-- Replit preview: the frontend and mockup workflows are the runnable preview targets; the optional API artifact remains available but requires an explicitly configured API/JWT secret and is not part of the frontend's normal runtime path
+- Replit preview: the managed frontend proxies `/api` requests to the managed API service on localhost port 8080
 - Ubuntu deployment: Nginx serves the static explorer on port 80 and port 8080 by default; `--web-port=PORT` changes the direct web port
 - Validator setup: `node-setup.sh` configures Clique proof-of-authority authority nodes. It does not implement proof-of-stake staking.
 
 ## Stack
 
-- npm workspaces, Node.js 20+, TypeScript 5.9
+- npm workspaces, Node.js 22+, TypeScript 5.9
 - Frontend: React + Vite, Tailwind v3, shadcn/ui
 - Routing: react-router-dom v7 with `basename={import.meta.env.BASE_URL}`
 - Charts: recharts, framer-motion
@@ -37,8 +39,10 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Architecture decisions
 
-- Pure frontend app — no backend needed; calls Solana/GYDS RPC endpoints directly from the browser
-- The API service is only needed for authenticated admin and feature-gate routes; do not invent or reuse another secret
+- The explorer calls Solana/GYDS RPC endpoints directly from the browser; authenticated admin and feature-gate routes use the local API service
+- The API service must use `API_SECRET_KEY` or `JWT_SECRET_KEY` from Replit Secrets; do not invent or reuse another secret
+- Admin login uses a wallet signature. The wallet must be seeded as an active `admin_wallets` row; API/JWT secrets only sign the resulting session token.
+- Wallet extensions reject connection/signature requests from embedded Replit previews; open the explorer in a new browser tab before using Admin Login.
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
 - RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
@@ -55,7 +59,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - Do NOT run `npm run dev` at workspace root — use the workflow or `npm run dev --workspace=@workspace/solana-explorer`
 - Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
-- The app talks directly to RPC nodes — no api-server is used by this app
+- The app talks directly to RPC nodes and proxies `/api` to the API service on localhost port 8080 during Replit development
 
 ## Pointers
 
