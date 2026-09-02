@@ -62,7 +62,8 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    // Lovable's dist-check inspects the workspace-root dist directory.
+    outDir: path.resolve(import.meta.dirname, "../..", "dist"),
     emptyOutDir: true,
   },
   server: {
@@ -72,7 +73,10 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: process.env.API_SERVER_URL || "http://127.0.0.1:8080",
+        target:
+          process.env.API_SERVER_URL ||
+          process.env.API_PROXY_TARGET ||
+          "http://127.0.0.1:8080",
         changeOrigin: true,
       },
     },

@@ -22,6 +22,7 @@ import TokenBalances from "./pages/TokenBalances";
 import WalletOnboarding from "./pages/WalletOnboarding";
 import MyWallet from "./pages/MyWallet";
 import AboutCoins from "./pages/AboutCoins";
+import SearchPage from "./pages/Search";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/block/:id" element={<BlockDetail />} />
+                <Route path="/search" element={<SearchPage />} />
                 <Route path="/blocks" element={<AllBlocks />} />
                 <Route path="/tx/:hash" element={<TxDetail />} />
                 <Route path="/address/:address" element={<AddressDetail />} />

@@ -8,7 +8,52 @@
 const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
 const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
+export const API_BASE_URL = API_BASE;
+
 const TOKEN_KEY = "gyds-admin-token";
+
+export class ApiUnreachableError extends Error {
+  constructor(message?: string) {
+    super(
+      message ||
+        `API server unreachable. Make sure the GYDS API service is running and reachable at ${API_BASE}.`,
+    );
+    this.name = "ApiUnreachableError";
+  }
+}
+
+export function isApiUnreachable(err: unknown): boolean {
+  return err instanceof ApiUnreachableError || (err instanceof Error && err.name === "ApiUnreachableError");
+}
+
+export interface ApiHealth {
+  status: "healthy" | "unhealthy";
+  database?: string;
+  uptime?: number;
+  latencyMs?: number;
+  timestamp?: string;
+  error?: string;
+}
+
+/** Probe GET /api/health. Throws ApiUnreachableError when the server cannot be reached. */
+export async function checkApiHealth(timeoutMs = 6000): Promise<ApiHealth> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    throw new ApiUnreachableError();
+  }
+  let body: ApiHealth | null = null;
+  try {
+    body = (await res.json()) as ApiHealth;
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    return body ?? { status: "unhealthy", error: `HTTP ${res.status}` };
+  }
+  return body ?? { status: "healthy" };
+}
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -27,31 +72,42 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
 }
 
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE}${path}`, init);
+  } catch {
+    throw new ApiUnreachableError();
+  }
+}
+
+async function parseError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    return (body && (body as { error?: string }).error) || fallback;
+  } catch {
+    return `${fallback} (HTTP ${res.status})`;
+  }
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────
 
 export async function requestNonce(walletAddress: string): Promise<{ nonce: string; message: string }> {
-  const res = await fetch(`${API_BASE}/auth/nonce`, {
+  const res = await apiFetch(`/auth/nonce`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Failed to request nonce");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Failed to request nonce"));
   return res.json();
 }
 
 export async function verifySignature(walletAddress: string, signature: string): Promise<{ token: string; walletAddress: string; label: string }> {
-  const res = await fetch(`${API_BASE}/auth/verify`, {
+  const res = await apiFetch(`/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, signature }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Verification failed");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Verification failed"));
   return res.json();
 }
 
@@ -59,7 +115,7 @@ export async function getAdminInfo(): Promise<{ walletAddress: string; label: st
   const token = getStoredToken();
   if (!token) return null;
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+    const res = await apiFetch(`/auth/me`, { headers: authHeaders() });
     if (!res.ok) {
       clearStoredToken();
       return null;
@@ -81,20 +137,17 @@ export interface FeatureGate {
 }
 
 export async function fetchFeatureGates(): Promise<FeatureGate[]> {
-  const res = await fetch(`${API_BASE}/feature-gates`);
-  if (!res.ok) throw new Error("Failed to fetch feature gates");
+  const res = await apiFetch(`/feature-gates`);
+  if (!res.ok) throw new Error(await parseError(res, "Failed to fetch feature gates"));
   return res.json();
 }
 
 export async function toggleFeatureGate(id: string, status: boolean): Promise<FeatureGate> {
-  const res = await fetch(`${API_BASE}/feature-gates/${id}`, {
+  const res = await apiFetch(`/feature-gates/${id}`, {
     method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify({ status }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Failed to update feature gate");
-  }
+  if (!res.ok) throw new Error(await parseError(res, "Failed to update feature gate"));
   return res.json();
 }

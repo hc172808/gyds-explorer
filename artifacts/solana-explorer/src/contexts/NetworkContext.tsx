@@ -9,7 +9,7 @@ interface NetworkConfig {
 }
 
 const ENV_RPC1 = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-const ENV_RPC2 = import.meta.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com";
+const ENV_RPC2 = import.meta.env.VITE_RPC_URL_2 || "https://rpc2.netlifegy.com";
 
 const LS_KEY_RPC1     = "gyds_rpc_primary";
 const LS_KEY_RPC2     = "gyds_rpc_secondary";
