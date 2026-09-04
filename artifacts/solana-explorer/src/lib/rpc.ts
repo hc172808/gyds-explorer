@@ -1,4 +1,5 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
+import { formatUnitsRaw } from "./coins";
 
 export const DEFAULT_RPC_PRIMARY =
   import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
@@ -106,14 +107,12 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
 export const hexToDecimal = (hex: string): string => BigInt(hex).toString();
-export const weiToEther = (wei: string): string => {
-  const val = BigInt(wei);
-  const eth = Number(val) / 1e18;
-  return eth.toFixed(6);
-};
-export const gweiFromWei = (wei: string): string => {
-  return (Number(BigInt(wei)) / 1e9).toFixed(2);
-};
+/** Raw wei (18 decimals) -> GYDS, BigInt-safe with 6 fraction digits. */
+export const weiToEther = (wei: string): string =>
+  formatUnitsRaw(wei, 18, { maxFractionDigits: 6, minFractionDigits: 6 });
+/** Raw wei -> gwei (1e9 wei), used for gas prices only. */
+export const gweiFromWei = (wei: string): string =>
+  formatUnitsRaw(wei, 9, { maxFractionDigits: 2, minFractionDigits: 2 });
 
 export const formatAddress = (addr: string): string =>
   `${addr.slice(0, 6)}...${addr.slice(-4)}`;

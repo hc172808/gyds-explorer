@@ -18,6 +18,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Token decimals check
+        run: bun run check:decimals
+
+      - name: Unit tests
+        run: bun run test
+
       - name: Build frontend
         run: bun run build
 

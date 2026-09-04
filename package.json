@@ -18,7 +18,9 @@
     "build:check": "npm run typecheck && npm run build",
     "build:dev": "npm run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "bash scripts/typecheck-all.sh"
+    "typecheck": "bash scripts/typecheck-all.sh",
+    "test": "cd artifacts/solana-explorer && ../../node_modules/.bin/vitest run --config vitest.config.ts",
+    "check:decimals": "node scripts/check-decimals.mjs"
   },
   "private": true,
   "devDependencies": {
