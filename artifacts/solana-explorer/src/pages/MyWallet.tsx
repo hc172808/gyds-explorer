@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
