@@ -1,4 +1,5 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
+import { formatUnitsRaw } from "./coins";
 
 export const DEFAULT_RPC_PRIMARY =
   import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
