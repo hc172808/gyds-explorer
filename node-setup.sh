@@ -784,6 +784,242 @@ ufw --force enable 2>/dev/null || warn "UFW not available or already enabled. Co
 log "Firewall configured."
 
 # ============================================================
+# STEP 7b: Hardening — time sync, keystore, log rotation
+# ============================================================
+header "Step 7b/9: Hardening"
+
+# --- Time sync (clock drift breaks PoS/clique block timing) ---
+systemctl enable --now chrony 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || \
+  warn "chrony not available — install an NTP client manually."
+timedatectl set-ntp true 2>/dev/null || true
+log "Time synchronisation enabled."
+
+# --- Keystore & secret permissions ---
+if [ -d "${DATA_DIR}/keystore" ]; then
+  chmod 700 "${DATA_DIR}/keystore"
+  find "${DATA_DIR}/keystore" -type f -exec chmod 600 {} \;
+fi
+chmod 700 "${CONFIG_DIR}" 2>/dev/null || true
+for SECRET in "${CONFIG_DIR}"/*password*.txt; do
+  [ -f "$SECRET" ] && chmod 600 "$SECRET"
+done
+log "Keystore and password files locked down (700/600)."
+
+# --- Log rotation ---
+cat > /etc/logrotate.d/gyds-node <<LOGROTATE
+${LOG_DIR}/*.log {
+  daily
+  rotate 14
+  size 100M
+  missingok
+  notifempty
+  compress
+  delaycompress
+  copytruncate
+}
+LOGROTATE
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/gyds.conf <<JOURNALD
+[Journal]
+SystemMaxUse=1G
+MaxRetentionSec=1month
+JOURNALD
+systemctl restart systemd-journald 2>/dev/null || true
+log "Log rotation configured (logrotate + journald caps)."
+
+# ============================================================
+# STEP 7c: Backups, health monitor, upgrade/rollback
+# ============================================================
+header "Step 7c/9: Backups & Monitoring"
+
+mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+
+cat > /usr/local/bin/gyds-backup <<'MGMT'
+#!/bin/bash
+# Snapshot chain data, genesis, keystore and node.env.
+set -euo pipefail
+source /etc/gyds/node.env
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUT="${BACKUP_DIR}/gyds-${NODE_TYPE}-${STAMP}.tar.gz"
+mkdir -p "$BACKUP_DIR"
+
+WAS_RUNNING=no
+if systemctl is-active --quiet gyds-node; then WAS_RUNNING=yes; systemctl stop gyds-node; fi
+trap '[ "$WAS_RUNNING" = yes ] && systemctl start gyds-node || true' EXIT
+
+tar -czf "$OUT" \
+  -C / \
+  "${DATA_DIR#/}" \
+  "${CONFIG_DIR#/}" 2>/dev/null
+chmod 600 "$OUT"
+sha256sum "$OUT" > "${OUT}.sha256"
+echo "Backup written: $OUT"
+
+# Retention
+ls -1t "${BACKUP_DIR}"/gyds-*.tar.gz 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while read -r OLD; do
+  rm -f "$OLD" "${OLD}.sha256"
+  echo "Removed old backup: $OLD"
+done
+MGMT
+
+cat > /usr/local/bin/gyds-restore <<'MGMT'
+#!/bin/bash
+# Usage: gyds-restore /var/backups/gyds/gyds-main-YYYYmmdd-HHMMSS.tar.gz
+set -euo pipefail
+ARCHIVE="${1:-}"
+[ -f "$ARCHIVE" ] || { echo "Usage: gyds-restore <backup.tar.gz>"; exit 1; }
+if [ -f "${ARCHIVE}.sha256" ]; then
+  sha256sum -c "${ARCHIVE}.sha256" || { echo "Checksum mismatch — refusing to restore."; exit 1; }
+fi
+source /etc/gyds/node.env 2>/dev/null || true
+read -r -p "This overwrites ${DATA_DIR:-/var/lib/gyds} and ${CONFIG_DIR:-/etc/gyds}. Continue? [y/N] " OK
+[ "${OK,,}" = "y" ] || exit 1
+systemctl stop gyds-node || true
+tar -xzf "$ARCHIVE" -C /
+systemctl start gyds-node
+echo "Restore complete. Verify with: gyds-health"
+MGMT
+
+cat > /usr/local/bin/gyds-health <<'MGMT'
+#!/bin/bash
+# Peer-count and block-stall health check. Restarts a stuck node.
+set -uo pipefail
+source /etc/gyds/node.env
+RPC="http://127.0.0.1:${RPC_PORT}"
+MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+STALL="${HEALTH_STALL_SECONDS:-300}"
+STATE_FILE="/var/lib/gyds/.health-state"
+RESTART="${1:-}"
+
+rpc() { curl -fsS --max-time 8 "$RPC" -H 'content-type: application/json' \
+        --data "{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":${2:-[]},\"id\":1}"; }
+
+if ! systemctl is-active --quiet gyds-node; then
+  echo "CRITICAL: gyds-node is not running."
+  [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node
+  exit 2
+fi
+
+BLOCK_HEX="$(rpc eth_blockNumber | jq -r '.result // empty')"
+PEERS_HEX="$(rpc net_peerCount | jq -r '.result // empty')"
+SYNCING="$(rpc eth_syncing | jq -r '.result')"
+[ -n "$BLOCK_HEX" ] || { echo "CRITICAL: RPC not answering."; [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node; exit 2; }
+
+BLOCK=$((16#${BLOCK_HEX#0x}))
+PEERS=$((16#${PEERS_HEX#0x}))
+NOW=$(date +%s)
+
+LAST_BLOCK=0; LAST_TS=$NOW
+[ -f "$STATE_FILE" ] && read -r LAST_BLOCK LAST_TS < "$STATE_FILE"
+
+STATUS=OK
+if [ "$BLOCK" -gt "$LAST_BLOCK" ]; then
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+elif [ $((NOW - LAST_TS)) -ge "$STALL" ]; then
+  STATUS=STALLED
+fi
+
+[ "$PEERS" -lt "$MIN_PEERS" ] && STATUS="${STATUS}/LOW_PEERS"
+
+echo "block=${BLOCK} peers=${PEERS} syncing=${SYNCING} status=${STATUS}"
+
+if [ "$STATUS" != "OK" ] && [ "$RESTART" = "--auto-restart" ]; then
+  logger -t gyds-health "Node unhealthy (${STATUS}) — restarting gyds-node"
+  systemctl restart gyds-node
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+  exit 1
+fi
+[ "$STATUS" = "OK" ] || exit 1
+MGMT
+
+cat > /usr/local/bin/gyds-upgrade <<'MGMT'
+#!/bin/bash
+# Versioned geth upgrade with automatic rollback.
+# Usage: gyds-upgrade /path/to/new/geth   |   gyds-upgrade --rollback
+set -euo pipefail
+GETH_BIN="$(command -v geth)"
+BACKUP="/var/backups/gyds/geth.previous"
+mkdir -p /var/backups/gyds
+
+if [ "${1:-}" = "--rollback" ]; then
+  [ -f "$BACKUP" ] || { echo "No previous binary to roll back to."; exit 1; }
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  echo "Rolled back to previous geth build."
+  exit 0
+fi
+
+NEW="${1:-}"
+[ -x "$NEW" ] || { echo "Usage: gyds-upgrade /path/to/geth  (or --rollback)"; exit 1; }
+
+gyds-backup || echo "Warning: pre-upgrade data backup failed."
+cp "$GETH_BIN" "$BACKUP"
+systemctl stop gyds-node
+cp "$NEW" "$GETH_BIN"; chmod +x "$GETH_BIN"
+systemctl start gyds-node
+sleep 10
+
+if gyds-health >/dev/null 2>&1; then
+  echo "Upgrade OK: $(geth version | head -3 | tr '\n' ' ')"
+else
+  echo "Health check failed — rolling back."
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  exit 1
+fi
+MGMT
+
+chmod +x /usr/local/bin/gyds-backup /usr/local/bin/gyds-restore \
+         /usr/local/bin/gyds-health /usr/local/bin/gyds-upgrade
+
+# --- Timers: nightly backup, health check every 2 minutes ---
+cat > /etc/systemd/system/gyds-backup.service <<'UNIT'
+[Unit]
+Description=GYDS chain data backup
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-backup
+UNIT
+
+cat > /etc/systemd/system/gyds-backup.timer <<'UNIT'
+[Unit]
+Description=Nightly GYDS chain data backup
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+
+cat > /etc/systemd/system/gyds-health.service <<'UNIT'
+[Unit]
+Description=GYDS node health check
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-health --auto-restart
+UNIT
+
+cat > /etc/systemd/system/gyds-health.timer <<'UNIT'
+[Unit]
+Description=Run GYDS node health check every 2 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now gyds-backup.timer gyds-health.timer 2>/dev/null || \
+  warn "Could not enable backup/health timers — enable them manually."
+log "Backups (nightly), health monitor (2 min) and upgrade/rollback installed."
+
+# ============================================================
 # STEP 8: Install Management Commands
 # ============================================================
 header "Step 8/9: Creating Management Scripts"
