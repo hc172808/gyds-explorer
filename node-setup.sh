@@ -70,7 +70,7 @@ CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
 CHAIN_ID=198282
 NETWORK_ID=198282
-NATIVE_DECIMALS=9
+NATIVE_DECIMALS=18
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 
@@ -105,7 +105,7 @@ EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
-#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 18)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for ENV_FILE in \
@@ -154,11 +154,12 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
+[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
 [ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
 [ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
-NATIVE_SUPPLY_BASE_UNITS=$((NATIVE_SUPPLY * 1000000000))
+ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
+NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY}${ZEROS}"   # wei-style base units (18 decimals)
 info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""
@@ -284,7 +285,7 @@ header "Step 1/9: Installing System Dependencies"
 
 apt-get update -y
 apt-get install -y curl wget git build-essential software-properties-common \
-  apt-transport-https ca-certificates openssl ufw jq
+  apt-transport-https ca-certificates openssl ufw jq chrony logrotate bc
 
 log "System dependencies installed."
 
@@ -423,7 +424,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   # Genesis allocation for the admin wallet (skipped when it's the authority account)
   ADMIN_ALLOC_ENTRY=""
   if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
-    ADMIN_SUPPLY_BASE_UNITS=$((ADMIN_SUPPLY * 1000000000))
+    ADMIN_SUPPLY_BASE_UNITS="${ADMIN_SUPPLY}${ZEROS}"
     ADMIN_ALLOC_ENTRY=",
     \"${ADMIN_WALLET}\": {
       \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
