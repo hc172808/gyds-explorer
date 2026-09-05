@@ -1,0 +1,27 @@
+sudo gyds-start
+GYDS node started.
+* gyds-node.service - GYDS MAIN Node (gyds-main)
+     Loaded: loaded (/etc/systemd/system/gyds-node.service; enabled; vendor preset: enabled)
+     Active: active (running) since Sat 2026-09-05 15:59:49 UTC; 24ms ago
+   Main PID: 64701 (geth)
+      Tasks: 1 (limit: 5154)
+     Memory: 4.0K
+        CPU: 363us
+     CGroup: /system.slice/gyds-node.service
+             `-64701 /usr/bin/geth --datadir /var/lib/gyds --networkid 198282 --port 30303 --metrics --metrics.addr 0.0.0.0 --metrics.port 6060 --verbosity 3 --log.file /var/log/gyds/node.log --http --http.addr 127.0.0.1 --http.port 8545 --http.api eth,net,web3,txpool,debug,clique,admin --http.vhosts localhost --ws --ws.addr 127.0.0.1 --ws.port 8546 --ws.api eth,net,web3,txpool --ws.origins "*" --mine --miner.etherbase 0x9E71444DFca7d1DC8A4532D64f1211Fe329e6958 --unlock 0x9E71444DFca7d1DC8A4532D64f1211Fe329e6958 --password /etc/gyds/account-password.txt --allow-insecure-unlock --maxpeers 100 --nat extip:190.80.50.242 --syncmode full --gcmode archive
+
+Sep 05 15:59:49 mainn systemd[1]: Started GYDS MAIN Node (gyds-main).
+root@mainn:~# sudo gyds-status
+=== GYDS Node Status ===
+* gyds-node.service - GYDS MAIN Node (gyds-main)
+     Loaded: loaded (/etc/systemd/system/gyds-node.service; enabled; vendor preset: enabled)
+     Active: activating (auto-restart) (Result: exit-code) since Sat 2026-09-05 15:59:54 UTC; 36ms ago
+    Process: 64937 ExecStart=/usr/bin/geth --datadir /var/lib/gyds --networkid 198282 --port 30303 --metrics --metrics.addr 0.0.0.0 --metrics.port 6060 --verbosity 3 --log.file /var/log/gyds/node.log --http --http.addr 127.0.0.1 --http.port 8545 --http.api eth,net,web3,txpool,debug,clique,admin --http.vhosts localhost --ws --ws.addr 127.0.0.1 --ws.port 8546 --ws.api eth,net,web3,txpool --ws.origins * --mine --miner.etherbase 0x9E71444DFca7d1DC8A4532D64f1211Fe329e6958 --unlock 0x9E71444DFca7d1DC8A4532D64f1211Fe329e6958 --password /etc/gyds/account-password.txt --allow-insecure-unlock --maxpeers 100 --nat extip:190.80.50.242 --syncmode full --gcmode archive (code=exited, status=1/FAILURE)
+   Main PID: 64937 (code=exited, status=1/FAILURE)
+        CPU: 101ms
+
+Sep 05 15:59:54 mainn systemd[1]: gyds-node.service: Main process exited, code=exited, status=1/FAILURE
+Sep 05 15:59:54 mainn systemd[1]: gyds-node.service: Failed with result 'exit-code'.
+
+=== Logs (last 20 lines) ===
+No logs yet.
