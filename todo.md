@@ -1159,3 +1159,53 @@ protocol balances have been erased.
 - [x] Hardened `featureGateApi.ts`: unreachable API now reports
       "API server unreachable …" instead of a raw `Failed to fetch`, and
       non-JSON error responses fall back to an `HTTP <status>` message.
+
+## Explorer reliability & correctness backlog — added 2026-09-05
+
+### A. RPC / decimals / UX
+
+- [ ] **Staging end-to-end smoke test** that hits `rpc.netlifegy.com` and
+      `rpc2.netlifegy.com` from a staging environment and verifies chain id,
+      latest block, and a sample transfer render correctly with 18 decimals
+      (run in CI against staging, not the sandbox).
+- [ ] **UI decimals guard**: detect when fetched/assumed GYDS decimals differ
+      from `chain-spec.json` and show a clear warning banner stating the
+      expected decimals instead of silently formatting wrong values.
+- [ ] **Token-aware totals on `/search`**: each address result shows the
+      formatted GYDS balance and transfer count, with pagination over the
+      address's transfers.
+- [ ] **Extend `/tx/:hash`**: display gas used, effective gas price, and total
+      fee, all converted from raw values with the shared decimals-aware
+      formatting utilities.
+- [ ] **RPC caching + rate limiting**: cache repeated calls (latest block,
+      chain id, address/tx detail) with short TTLs, de-duplicate in-flight
+      requests, and throttle bursts so heavy search usage stays fast and
+      stable.
+
+### B. Node files — gaps found in `node-setup.sh` / `node-verify.sh` /
+`check-services.sh` / `node.env.example`
+
+- [ ] Add automated **chain data backup & restore** (periodic snapshot of the
+      datadir/LevelDB plus a documented restore path).
+- [ ] Add **log rotation** (`logrotate` or journald limits) for node logs so
+      disks do not fill on long-running validators.
+- [ ] Add a **node health monitor**: periodic peer count / block-height-stall
+      check with alerting and automatic restart on a stuck node.
+- [ ] Restrict RPC exposure: bind RPC/WS to localhost by default and only open
+      the firewall when the operator explicitly requests a public RPC, plus an
+      RPC method allow-list.
+- [ ] Add **rate limiting / DDoS protection** in front of public RPC nodes.
+- [ ] Add **key/keystore protection**: strict file permissions, optional
+      passphrase file outside the repo, and a documented key rotation path.
+- [ ] Extend `node-verify.sh` to check chain id, sync status, peer count,
+      disk space, and systemd unit state — not just service liveness.
+- [ ] Add a **node upgrade / rollback script** (versioned binary, graceful
+      stop, restart, verify, revert on failure).
+- [ ] Document and script **bootnode/enode registration** so new nodes can
+      join without manual editing.
+- [ ] Add **time sync (chrony/NTP)** setup — clock drift breaks PoS block
+      timing.
+- [ ] Add all node environment variables to `node.env.example` with comments
+      and safe defaults, and validate required ones at startup.
+- [ ] Add a **multi-node integration test** (boot + full + lite node) that
+      verifies block propagation and dual-coin balances before release.
