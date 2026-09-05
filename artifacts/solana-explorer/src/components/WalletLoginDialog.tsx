@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Wallet, Loader2, ShieldCheck } from "lucide-react";
+import { Wallet, Loader2, ShieldCheck, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,21 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   const [step, setStep] = useState<"connect" | "sign">("connect");
   const [signMessage, setSignMessage] = useState("");
   const [pendingAddress, setPendingAddress] = useState("");
+  const isEmbedded = (() => {
+    try {
+      return window.self !== window.top;
+    } catch {
+      return true;
+    }
+  })();
 
   const connectWallet = async () => {
+    if (isEmbedded) {
+      toast.error("Open the explorer in a new tab", {
+        description: "Wallet extensions block connection requests from embedded previews.",
+      });
+      return;
+    }
     setLoading(true);
     try {
       if (!window.ethereum) {
@@ -125,9 +138,23 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
 
         {step === "connect" && (
           <div className="space-y-4 pt-2">
+            {isEmbedded && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <p className="text-sm font-medium">Wallet connection needs a full browser tab</p>
+                <p className="text-xs text-muted-foreground">
+                  Wallet extensions block connection and signature requests from Replit’s embedded preview.
+                </p>
+                <Button asChild variant="secondary" size="sm" className="w-full gap-2">
+                  <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="w-4 h-4" />
+                    Open explorer in a new tab
+                  </a>
+                </Button>
+              </div>
+            )}
             <Button
               onClick={connectWallet}
-              disabled={loading}
+              disabled={loading || isEmbedded}
               className="w-full gap-2"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}

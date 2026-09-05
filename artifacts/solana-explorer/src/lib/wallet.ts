@@ -6,7 +6,7 @@ export const GYDS_NETWORK = {
   nativeCurrency: {
     name: import.meta.env.VITE_NATIVE_COIN_NAME || "GYDSChain",
     symbol: import.meta.env.VITE_NATIVE_COIN_SYMBOL || "GYDS",
-    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 9),
+    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 18),
   },
   blockExplorerUrl: import.meta.env.VITE_EXPLORER_URL || window.location.origin,
   iconUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",

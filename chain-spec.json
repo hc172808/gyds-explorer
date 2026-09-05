@@ -1,0 +1,7 @@
+{
+  "network": "GYDS Network",
+  "coins": {
+    "GYDS": { "decimals": 18, "type": "native" },
+    "GYD": { "decimals": 6, "type": "stablecoin" }
+  }
+}

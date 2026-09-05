@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "bash", "go-1.21", "web"]
+modules = ["bash", "go-1.21", "web", "nodejs-22", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -9,7 +9,6 @@ args = ["npm", "cache", "clean", "--force"]
 env = { "CI" = "true" }
 
 [workflows]
-runButton = "Project"
 
 [agent]
 expertMode = true
