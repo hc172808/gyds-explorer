@@ -96,6 +96,14 @@ ADMIN_WALLET_CREATED="no"
 ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
 EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 
+# Public RPC exposure. "no" keeps RPC/WS reachable only from localhost/VPN.
+PUBLIC_RPC="${PUBLIC_RPC:-no}"
+# Backups & health monitoring
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+HEALTH_MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
+
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
@@ -141,6 +149,11 @@ for ENV_FILE in \
         ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
         ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
         EXPLORER_API_URL)   EXPLORER_API_URL="${val:-$EXPLORER_API_URL}" ;;
+        PUBLIC_RPC)         PUBLIC_RPC="${val:-$PUBLIC_RPC}" ;;
+        BACKUP_DIR)         BACKUP_DIR="${val:-$BACKUP_DIR}" ;;
+        BACKUP_KEEP)        BACKUP_KEEP="${val:-$BACKUP_KEEP}" ;;
+        HEALTH_MIN_PEERS)   HEALTH_MIN_PEERS="${val:-$HEALTH_MIN_PEERS}" ;;
+        HEALTH_STALL_SECONDS) HEALTH_STALL_SECONDS="${val:-$HEALTH_STALL_SECONDS}" ;;
       esac
     done < "$ENV_FILE"
     break
@@ -548,6 +561,16 @@ ADMIN_WALLET_LABEL=${ADMIN_WALLET_LABEL}
 # ---------- Performance ----------
 CACHE_SIZE=1024
 MAX_PEERS=50
+
+# ---------- Security ----------
+# yes = RPC/WS ports opened to the internet, no = localhost/VPN only
+PUBLIC_RPC=${PUBLIC_RPC}
+
+# ---------- Backups & health ----------
+BACKUP_DIR=${BACKUP_DIR}
+BACKUP_KEEP=${BACKUP_KEEP}
+HEALTH_MIN_PEERS=${HEALTH_MIN_PEERS}
+HEALTH_STALL_SECONDS=${HEALTH_STALL_SECONDS}
 NODEENV
 
 chmod 600 "${CONFIG_DIR}/node.env"
@@ -744,21 +767,18 @@ ufw allow ssh 2>/dev/null || true
 ufw allow "${P2P_PORT}/tcp" 2>/dev/null || true
 ufw allow "${P2P_PORT}/udp" 2>/dev/null || true
 
-case "$NODE_TYPE" in
-  main|full|rpc)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "${NODE_TYPE^} node: RPC (${RPC_PORT}), WS (${WS_PORT}), P2P (${P2P_PORT}) opened."
-    ;;
-  lite)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "Lite node: RPC (${RPC_PORT}), WS (${WS_PORT}) opened for wallets/websites."
-    ;;
-  validator)
-    info "Validator: Only P2P (${P2P_PORT}) opened. RPC restricted to localhost."
-    ;;
-esac
+if [ "$NODE_TYPE" = "validator" ]; then
+  info "Validator: only P2P (${P2P_PORT}) opened. RPC stays on localhost."
+elif [ "${PUBLIC_RPC,,}" = "yes" ]; then
+  ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
+  warn "PUBLIC_RPC=yes — RPC (${RPC_PORT}) and WS (${WS_PORT}) are open to the internet."
+  warn "Put Nginx (rate limiting + TLS + method allow-list) in front of this node."
+else
+  ufw deny "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw deny "${WS_PORT}/tcp" 2>/dev/null || true
+  info "RPC/WS restricted to localhost and the VPN. Set PUBLIC_RPC=yes to expose them."
+fi
 
 ufw --force enable 2>/dev/null || warn "UFW not available or already enabled. Configure firewall manually if needed."
 log "Firewall configured."
