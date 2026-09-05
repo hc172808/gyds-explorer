@@ -70,7 +70,7 @@ CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
 CHAIN_ID=198282
 NETWORK_ID=198282
-NATIVE_DECIMALS=9
+NATIVE_DECIMALS=18
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 
@@ -96,6 +96,14 @@ ADMIN_WALLET_CREATED="no"
 ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
 EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 
+# Public RPC exposure. "no" keeps RPC/WS reachable only from localhost/VPN.
+PUBLIC_RPC="${PUBLIC_RPC:-no}"
+# Backups & health monitoring
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+HEALTH_MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
+
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
@@ -105,7 +113,7 @@ EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
-#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 18)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for ENV_FILE in \
@@ -141,6 +149,11 @@ for ENV_FILE in \
         ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
         ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
         EXPLORER_API_URL)   EXPLORER_API_URL="${val:-$EXPLORER_API_URL}" ;;
+        PUBLIC_RPC)         PUBLIC_RPC="${val:-$PUBLIC_RPC}" ;;
+        BACKUP_DIR)         BACKUP_DIR="${val:-$BACKUP_DIR}" ;;
+        BACKUP_KEEP)        BACKUP_KEEP="${val:-$BACKUP_KEEP}" ;;
+        HEALTH_MIN_PEERS)   HEALTH_MIN_PEERS="${val:-$HEALTH_MIN_PEERS}" ;;
+        HEALTH_STALL_SECONDS) HEALTH_STALL_SECONDS="${val:-$HEALTH_STALL_SECONDS}" ;;
       esac
     done < "$ENV_FILE"
     break
@@ -154,11 +167,12 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
+[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
 [ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
 [ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
-NATIVE_SUPPLY_BASE_UNITS=$((NATIVE_SUPPLY * 1000000000))
+ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
+NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY}${ZEROS}"   # wei-style base units (18 decimals)
 info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""
@@ -284,7 +298,7 @@ header "Step 1/9: Installing System Dependencies"
 
 apt-get update -y
 apt-get install -y curl wget git build-essential software-properties-common \
-  apt-transport-https ca-certificates openssl ufw jq
+  apt-transport-https ca-certificates openssl ufw jq chrony logrotate bc
 
 log "System dependencies installed."
 
@@ -423,7 +437,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   # Genesis allocation for the admin wallet (skipped when it's the authority account)
   ADMIN_ALLOC_ENTRY=""
   if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
-    ADMIN_SUPPLY_BASE_UNITS=$((ADMIN_SUPPLY * 1000000000))
+    ADMIN_SUPPLY_BASE_UNITS="${ADMIN_SUPPLY}${ZEROS}"
     ADMIN_ALLOC_ENTRY=",
     \"${ADMIN_WALLET}\": {
       \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
@@ -547,6 +561,16 @@ ADMIN_WALLET_LABEL=${ADMIN_WALLET_LABEL}
 # ---------- Performance ----------
 CACHE_SIZE=1024
 MAX_PEERS=50
+
+# ---------- Security ----------
+# yes = RPC/WS ports opened to the internet, no = localhost/VPN only
+PUBLIC_RPC=${PUBLIC_RPC}
+
+# ---------- Backups & health ----------
+BACKUP_DIR=${BACKUP_DIR}
+BACKUP_KEEP=${BACKUP_KEEP}
+HEALTH_MIN_PEERS=${HEALTH_MIN_PEERS}
+HEALTH_STALL_SECONDS=${HEALTH_STALL_SECONDS}
 NODEENV
 
 chmod 600 "${CONFIG_DIR}/node.env"
@@ -743,24 +767,257 @@ ufw allow ssh 2>/dev/null || true
 ufw allow "${P2P_PORT}/tcp" 2>/dev/null || true
 ufw allow "${P2P_PORT}/udp" 2>/dev/null || true
 
-case "$NODE_TYPE" in
-  main|full|rpc)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "${NODE_TYPE^} node: RPC (${RPC_PORT}), WS (${WS_PORT}), P2P (${P2P_PORT}) opened."
-    ;;
-  lite)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "Lite node: RPC (${RPC_PORT}), WS (${WS_PORT}) opened for wallets/websites."
-    ;;
-  validator)
-    info "Validator: Only P2P (${P2P_PORT}) opened. RPC restricted to localhost."
-    ;;
-esac
+if [ "$NODE_TYPE" = "validator" ]; then
+  info "Validator: only P2P (${P2P_PORT}) opened. RPC stays on localhost."
+elif [ "${PUBLIC_RPC,,}" = "yes" ]; then
+  ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
+  warn "PUBLIC_RPC=yes — RPC (${RPC_PORT}) and WS (${WS_PORT}) are open to the internet."
+  warn "Put Nginx (rate limiting + TLS + method allow-list) in front of this node."
+else
+  ufw deny "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw deny "${WS_PORT}/tcp" 2>/dev/null || true
+  info "RPC/WS restricted to localhost and the VPN. Set PUBLIC_RPC=yes to expose them."
+fi
 
 ufw --force enable 2>/dev/null || warn "UFW not available or already enabled. Configure firewall manually if needed."
 log "Firewall configured."
+
+# ============================================================
+# STEP 7b: Hardening — time sync, keystore, log rotation
+# ============================================================
+header "Step 7b/9: Hardening"
+
+# --- Time sync (clock drift breaks PoS/clique block timing) ---
+systemctl enable --now chrony 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || \
+  warn "chrony not available — install an NTP client manually."
+timedatectl set-ntp true 2>/dev/null || true
+log "Time synchronisation enabled."
+
+# --- Keystore & secret permissions ---
+if [ -d "${DATA_DIR}/keystore" ]; then
+  chmod 700 "${DATA_DIR}/keystore"
+  find "${DATA_DIR}/keystore" -type f -exec chmod 600 {} \;
+fi
+chmod 700 "${CONFIG_DIR}" 2>/dev/null || true
+for SECRET in "${CONFIG_DIR}"/*password*.txt; do
+  [ -f "$SECRET" ] && chmod 600 "$SECRET"
+done
+log "Keystore and password files locked down (700/600)."
+
+# --- Log rotation ---
+cat > /etc/logrotate.d/gyds-node <<LOGROTATE
+${LOG_DIR}/*.log {
+  daily
+  rotate 14
+  size 100M
+  missingok
+  notifempty
+  compress
+  delaycompress
+  copytruncate
+}
+LOGROTATE
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/gyds.conf <<JOURNALD
+[Journal]
+SystemMaxUse=1G
+MaxRetentionSec=1month
+JOURNALD
+systemctl restart systemd-journald 2>/dev/null || true
+log "Log rotation configured (logrotate + journald caps)."
+
+# ============================================================
+# STEP 7c: Backups, health monitor, upgrade/rollback
+# ============================================================
+header "Step 7c/9: Backups & Monitoring"
+
+mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+
+cat > /usr/local/bin/gyds-backup <<'MGMT'
+#!/bin/bash
+# Snapshot chain data, genesis, keystore and node.env.
+set -euo pipefail
+source /etc/gyds/node.env
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUT="${BACKUP_DIR}/gyds-${NODE_TYPE}-${STAMP}.tar.gz"
+mkdir -p "$BACKUP_DIR"
+
+WAS_RUNNING=no
+if systemctl is-active --quiet gyds-node; then WAS_RUNNING=yes; systemctl stop gyds-node; fi
+trap '[ "$WAS_RUNNING" = yes ] && systemctl start gyds-node || true' EXIT
+
+tar -czf "$OUT" \
+  -C / \
+  "${DATA_DIR#/}" \
+  "${CONFIG_DIR#/}" 2>/dev/null
+chmod 600 "$OUT"
+sha256sum "$OUT" > "${OUT}.sha256"
+echo "Backup written: $OUT"
+
+# Retention
+ls -1t "${BACKUP_DIR}"/gyds-*.tar.gz 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while read -r OLD; do
+  rm -f "$OLD" "${OLD}.sha256"
+  echo "Removed old backup: $OLD"
+done
+MGMT
+
+cat > /usr/local/bin/gyds-restore <<'MGMT'
+#!/bin/bash
+# Usage: gyds-restore /var/backups/gyds/gyds-main-YYYYmmdd-HHMMSS.tar.gz
+set -euo pipefail
+ARCHIVE="${1:-}"
+[ -f "$ARCHIVE" ] || { echo "Usage: gyds-restore <backup.tar.gz>"; exit 1; }
+if [ -f "${ARCHIVE}.sha256" ]; then
+  sha256sum -c "${ARCHIVE}.sha256" || { echo "Checksum mismatch — refusing to restore."; exit 1; }
+fi
+source /etc/gyds/node.env 2>/dev/null || true
+read -r -p "This overwrites ${DATA_DIR:-/var/lib/gyds} and ${CONFIG_DIR:-/etc/gyds}. Continue? [y/N] " OK
+[ "${OK,,}" = "y" ] || exit 1
+systemctl stop gyds-node || true
+tar -xzf "$ARCHIVE" -C /
+systemctl start gyds-node
+echo "Restore complete. Verify with: gyds-health"
+MGMT
+
+cat > /usr/local/bin/gyds-health <<'MGMT'
+#!/bin/bash
+# Peer-count and block-stall health check. Restarts a stuck node.
+set -uo pipefail
+source /etc/gyds/node.env
+RPC="http://127.0.0.1:${RPC_PORT}"
+MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+STALL="${HEALTH_STALL_SECONDS:-300}"
+STATE_FILE="/var/lib/gyds/.health-state"
+RESTART="${1:-}"
+
+rpc() { curl -fsS --max-time 8 "$RPC" -H 'content-type: application/json' \
+        --data "{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":${2:-[]},\"id\":1}"; }
+
+if ! systemctl is-active --quiet gyds-node; then
+  echo "CRITICAL: gyds-node is not running."
+  [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node
+  exit 2
+fi
+
+BLOCK_HEX="$(rpc eth_blockNumber | jq -r '.result // empty')"
+PEERS_HEX="$(rpc net_peerCount | jq -r '.result // empty')"
+SYNCING="$(rpc eth_syncing | jq -r '.result')"
+[ -n "$BLOCK_HEX" ] || { echo "CRITICAL: RPC not answering."; [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node; exit 2; }
+
+BLOCK=$((16#${BLOCK_HEX#0x}))
+PEERS=$((16#${PEERS_HEX#0x}))
+NOW=$(date +%s)
+
+LAST_BLOCK=0; LAST_TS=$NOW
+[ -f "$STATE_FILE" ] && read -r LAST_BLOCK LAST_TS < "$STATE_FILE"
+
+STATUS=OK
+if [ "$BLOCK" -gt "$LAST_BLOCK" ]; then
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+elif [ $((NOW - LAST_TS)) -ge "$STALL" ]; then
+  STATUS=STALLED
+fi
+
+[ "$PEERS" -lt "$MIN_PEERS" ] && STATUS="${STATUS}/LOW_PEERS"
+
+echo "block=${BLOCK} peers=${PEERS} syncing=${SYNCING} status=${STATUS}"
+
+if [ "$STATUS" != "OK" ] && [ "$RESTART" = "--auto-restart" ]; then
+  logger -t gyds-health "Node unhealthy (${STATUS}) — restarting gyds-node"
+  systemctl restart gyds-node
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+  exit 1
+fi
+[ "$STATUS" = "OK" ] || exit 1
+MGMT
+
+cat > /usr/local/bin/gyds-upgrade <<'MGMT'
+#!/bin/bash
+# Versioned geth upgrade with automatic rollback.
+# Usage: gyds-upgrade /path/to/new/geth   |   gyds-upgrade --rollback
+set -euo pipefail
+GETH_BIN="$(command -v geth)"
+BACKUP="/var/backups/gyds/geth.previous"
+mkdir -p /var/backups/gyds
+
+if [ "${1:-}" = "--rollback" ]; then
+  [ -f "$BACKUP" ] || { echo "No previous binary to roll back to."; exit 1; }
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  echo "Rolled back to previous geth build."
+  exit 0
+fi
+
+NEW="${1:-}"
+[ -x "$NEW" ] || { echo "Usage: gyds-upgrade /path/to/geth  (or --rollback)"; exit 1; }
+
+gyds-backup || echo "Warning: pre-upgrade data backup failed."
+cp "$GETH_BIN" "$BACKUP"
+systemctl stop gyds-node
+cp "$NEW" "$GETH_BIN"; chmod +x "$GETH_BIN"
+systemctl start gyds-node
+sleep 10
+
+if gyds-health >/dev/null 2>&1; then
+  echo "Upgrade OK: $(geth version | head -3 | tr '\n' ' ')"
+else
+  echo "Health check failed — rolling back."
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  exit 1
+fi
+MGMT
+
+chmod +x /usr/local/bin/gyds-backup /usr/local/bin/gyds-restore \
+         /usr/local/bin/gyds-health /usr/local/bin/gyds-upgrade
+
+# --- Timers: nightly backup, health check every 2 minutes ---
+cat > /etc/systemd/system/gyds-backup.service <<'UNIT'
+[Unit]
+Description=GYDS chain data backup
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-backup
+UNIT
+
+cat > /etc/systemd/system/gyds-backup.timer <<'UNIT'
+[Unit]
+Description=Nightly GYDS chain data backup
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+
+cat > /etc/systemd/system/gyds-health.service <<'UNIT'
+[Unit]
+Description=GYDS node health check
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-health --auto-restart
+UNIT
+
+cat > /etc/systemd/system/gyds-health.timer <<'UNIT'
+[Unit]
+Description=Run GYDS node health check every 2 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now gyds-backup.timer gyds-health.timer 2>/dev/null || \
+  warn "Could not enable backup/health timers — enable them manually."
+log "Backups (nightly), health monitor (2 min) and upgrade/rollback installed."
 
 # ============================================================
 # STEP 8: Install Management Commands
