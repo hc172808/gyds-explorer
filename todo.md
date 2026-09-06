@@ -1209,3 +1209,71 @@ protocol balances have been erased.
       and safe defaults, and validate required ones at startup.
 - [ ] Add a **multi-node integration test** (boot + full + lite node) that
       verifies block propagation and dual-coin balances before release.
+
+## Node & admin-dashboard backlog — added 2026-09-06
+
+### C. Node configuration & operations
+
+- [ ] **Refresh `node.env.example`**: document every variable used by
+      `node-setup.sh` / `node-verify.sh` (NODE_TYPE, NODE_NAME, CHAIN_ID,
+      NETWORK_ID, DATA_DIR, CONFIG_DIR, LOG_DIR, RPC_PORT, WS_PORT, P2P_PORT,
+      PUBLIC_RPC, RPC_ALLOWED_METHODS, RPC_RATE_LIMIT, MAIN_NODE_IP,
+      MAIN_NODE_ENODE, FULL_NODE_IPS, VALIDATOR_ADDRESS, ADMIN_WALLET,
+      ADMIN_WALLET_LABEL, ADMIN_SUPPLY, EXPLORER_API_URL) with safe defaults,
+      and set `NATIVE_DECIMALS=18` (currently still 9).
+- [ ] **GYDS = 18 decimals everywhere**: sweep node scripts, genesis
+      generation, env examples and docs so no 9-decimal assumption remains;
+      keep GYD at 6. Add the check to `scripts/check-decimals.mjs`.
+- [ ] **Refresh `check-services.sh`**: match current unit names
+      (`gyds-node`, `nginx`, `postgresql`, PM2 `gyds-api` / `gyds-indexer` /
+      `gyds-feature-gates`), respect `PUBLIC_RPC` when deciding whether an
+      external RPC listener is expected, check sync status and peer count, and
+      report the restart/auto-heal state of each unit.
+- [ ] **Public RPC rate limiting & throttling** for the `PUBLIC_RPC=yes` path:
+      Nginx `limit_req` / `limit_conn` zones per IP, request body size caps,
+      method allow-list, upstream timeouts, and a burst policy documented in
+      the env example.
+- [ ] **Key rotation & key operations doc**: keystore file permissions
+      (0600 / 0700 dirs, dedicated user), passphrase file kept outside the
+      repo, step-by-step rotation for validator and admin keys (create new key,
+      register, drain, retire old key), backup and recovery procedure, and what
+      to do on suspected compromise.
+- [ ] **Multi-node integration test**: script that brings up boot + full +
+      lite (+ validator) nodes locally or in CI and asserts peer discovery,
+      block propagation across all nodes, sync progress reaching head, and
+      correct dual-coin balances; fail the run on stall or divergence.
+
+### D. Admin dashboard — node management
+
+- [ ] **Add node from the dashboard with automatic enode discovery**: on save,
+      the API calls the node's RPC (`admin_nodeInfo` / `net_info`) to fetch the
+      enode URL and public key, stores it, and shows an error if unreachable
+      instead of requiring manual entry.
+- [ ] **Bind discovery to `0.0.0.0`** so nodes accept local and LAN peers, while
+      advertising the correct external address; make the bind address and the
+      advertised address separate settings.
+- [ ] **All settings editable from the dashboard or `.env`**: dashboard values
+      override file defaults, with the effective source shown per setting.
+- [ ] **Enable / disable nodes** from the dashboard (already partly present in
+      `artifacts/api-server/src/routes/nodes.ts` — surface it in the UI and make
+      disabling drop the node from public RPC rotation).
+- [ ] **Sync gating**: a node only reports "online"/eligible for traffic once it
+      has fully caught up; a lagging node stays "syncing" and is excluded from
+      the public rotation until complete.
+- [ ] **Sync percentage per node in the dashboard**: poll each node's
+      `eth_syncing` / latest block vs. network head and show a percentage plus
+      blocks-behind, peer count, last-seen time, and version.
+
+### E. Additional items worth covering
+
+- [ ] Node status polling service (background job) so the dashboard reads
+      cached status instead of hitting every node per page load.
+- [ ] Alerting when a node falls behind, loses peers, or goes offline.
+- [ ] Role-scoped admin actions and an audit log of node add/remove/toggle.
+- [ ] Automatic failover: public RPC endpoint list rebuilt from healthy,
+      fully-synced nodes only.
+- [ ] Per-node resource metrics (disk, CPU, memory, datadir size) in the
+      dashboard.
+- [ ] Documented network bootstrap order (boot node first, then full, then
+      lite/validator) and a one-command node join flow using a token from the
+      dashboard.
