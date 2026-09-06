@@ -1277,3 +1277,26 @@ protocol balances have been erased.
 - [ ] Documented network bootstrap order (boot node first, then full, then
       lite/validator) and a one-command node join flow using a token from the
       dashboard.
+
+### F. Observability, security & recovery — added 2026-09-06
+
+- [ ] **Prometheus metrics per node**: expose block height, peer count, sync
+      status, RPC latency and restart count from each node (metrics port,
+      scrape config), plus a **Grafana dashboard** embedded/linked in the
+      explorer admin view.
+- [ ] **Alerting & notifications in the admin dashboard** for stalled sync,
+      falling peer count, failed health checks, and backup/restore errors, with
+      thresholds configurable via `.env` (e.g. `ALERT_MAX_BLOCKS_BEHIND`,
+      `ALERT_MIN_PEERS`, `ALERT_HEALTH_FAIL_COUNT`, notification channel URLs).
+- [ ] **Role-based access control** for the admin dashboard: only authorized
+      roles may add/enable/disable nodes or change `.env` settings; roles stored
+      in a separate `user_roles` table, checked server-side, with an **audit
+      log** recording actor, action, before/after values and timestamp for every
+      change.
+- [ ] **Enode validation & reachability checks on add**: validate enode URL
+      format and public key, attempt a real TCP/UDP connection on the P2P port,
+      and return detailed errors when discovery on `0.0.0.0` or local
+      connectivity fails (which port, which address, what the node replied).
+- [ ] **Backup/restore integration test**: automated run that takes a backup,
+      restores it onto a fresh node, and verifies the chain resumes syncing to
+      the expected block height with the expected peer count.
