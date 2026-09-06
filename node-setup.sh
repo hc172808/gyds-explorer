@@ -145,6 +145,7 @@ for ENV_FILE in \
         RPC_PORT)           RPC_PORT="$val" ;;
         WS_PORT)            WS_PORT="$val" ;;
         P2P_PORT)           P2P_PORT="$val" ;;
+        METRICS_PORT)       METRICS_PORT="$val" ;;
         ADMIN_WALLET)       [ -z "$ADMIN_WALLET"       ] && ADMIN_WALLET="$val" ;;
         ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
         ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
