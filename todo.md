@@ -1300,3 +1300,21 @@ protocol balances have been erased.
 - [ ] **Backup/restore integration test**: automated run that takes a backup,
       restores it onto a fresh node, and verifies the chain resumes syncing to
       the expected block height with the expected peer count.
+- [ ] **Explorer RPC & cache metrics**: instrument the explorer's RPC layer and
+      request cache with Prometheus metrics — RPC call latency (per method/endpoint),
+      cache hit/miss rate, and error counts per RPC host (rpc.netlifegy.com /
+      rpc2.netlifegy.com); add matching **Grafana panels** to the admin view.
+- [ ] **OpenTelemetry tracing**: add tracing across the explorer and admin flows
+      (page load → RPC call spans, cache lookups, admin mutations, failures) and
+      export to Grafana (Tempo/Jaeger) so slow or failing RPC calls can be
+      visualized end-to-end.
+- [ ] **Notification channels for alerts**: configurable channels for email,
+      Slack, and generic webhook (URLs/credentials via `.env` or admin
+      dashboard), plus a **"send test alert" button** per alert type (stalled
+      sync, low peers, failed health check, backup/restore error) in the admin
+      dashboard.
+- [ ] **Scheduled backup verification**: periodic job that verifies backup
+      integrity (checksum/size/schema) and performs a **lightweight restore
+      check** confirming a node can resume syncing to the expected block height;
+      schedule and target height via `.env`, failures routed into the alerting
+      system above.
