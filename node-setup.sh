@@ -621,7 +621,7 @@ GETH_ARGS=""
 GETH_ARGS+=" --datadir ${DATA_DIR}"
 GETH_ARGS+=" --networkid ${NETWORK_ID}"
 GETH_ARGS+=" --port ${P2P_PORT}"
-GETH_ARGS+=" --metrics --metrics.addr 0.0.0.0 --metrics.port ${METRICS_PORT}"
+GETH_ARGS+=" --metrics --metrics.addr 127.0.0.1 --metrics.port ${METRICS_PORT}"
 GETH_ARGS+=" --verbosity 3"
 GETH_ARGS+=" --log.file ${LOG_DIR}/node.log"
 
@@ -763,6 +763,8 @@ log "Systemd service created: /etc/systemd/system/gyds-node.service"
 # ============================================================
 header "Step 7/9: Configuring Firewall"
 
+ufw default deny incoming 2>/dev/null || true
+ufw default allow outgoing 2>/dev/null || true
 ufw allow ssh 2>/dev/null || true
 ufw allow "${P2P_PORT}/tcp" 2>/dev/null || true
 ufw allow "${P2P_PORT}/udp" 2>/dev/null || true
