@@ -101,7 +101,10 @@ func (bc *Blockchain) createGenesis() *Block {
 	return &Block{Header: header, Transactions: []*Transaction{}}
 }
 
+// computeBlockHash hashes a header with the Hash field cleared, so the value
+// is reproducible by any node that receives the block.
 func computeBlockHash(h Header) string {
+	h.Hash = ""
 	data, _ := json.Marshal(h)
 	return utils.Keccak256Hex(data)
 }
@@ -120,10 +123,16 @@ func (bc *Blockchain) AddBlock(block *Block) error {
 
 	// Apply transactions
 	for _, tx := range block.Transactions {
-		if err := bc.applyTransaction(tx); err != nil {
+		if err := bc.applyTransaction(tx, block.Header.Miner); err != nil {
 			bc.state.RollbackToSnapshot(snapshot)
 			return fmt.Errorf("tx %s failed: %w", tx.Hash, err)
 		}
+	}
+
+	// Credit the block reward deterministically here (not in the miner) so every
+	// node that replays the block reaches the same state.
+	if block.Header.Number > 0 && block.Header.Miner != "" {
+		bc.state.AddGYDSBalance(block.Header.Miner, BlockReward)
 	}
 
 	// Save block
@@ -151,6 +160,12 @@ func (bc *Blockchain) validateBlock(block *Block) error {
 	if block.Header.Timestamp <= 0 {
 		return errors.New("invalid timestamp")
 	}
+	if block.Header.Timestamp > time.Now().Add(15*time.Second).Unix() {
+		return errors.New("block timestamp too far in the future")
+	}
+	if block.Header.Hash != computeBlockHash(block.Header) {
+		return errors.New("block hash mismatch")
+	}
 	// Validate each transaction
 	for _, tx := range block.Transactions {
 		if err := ValidateTransaction(tx, bc.state); err != nil {
@@ -160,7 +175,22 @@ func (bc *Blockchain) validateBlock(block *Block) error {
 	return nil
 }
 
-func (bc *Blockchain) applyTransaction(tx *Transaction) error {
+func (bc *Blockchain) applyTransaction(tx *Transaction, miner string) error {
+	// Gas is always paid in GYDS, regardless of the coin being moved.
+	gasCost := new(big.Int).Mul(
+		new(big.Int).SetUint64(tx.GasPrice),
+		new(big.Int).SetUint64(tx.GasLimit),
+	)
+	if gasCost.Sign() > 0 {
+		if bc.state.GetGYDSBalance(tx.From).Cmp(gasCost) < 0 {
+			return errors.New("insufficient GYDS for gas")
+		}
+		bc.state.SubGYDSBalance(tx.From, gasCost)
+		if miner != "" {
+			bc.state.AddGYDSBalance(miner, gasCost)
+		}
+	}
+
 	switch tx.CoinType {
 	case CoinGYDS:
 		fromBal := bc.state.GetGYDSBalance(tx.From)

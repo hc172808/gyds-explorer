@@ -41,12 +41,26 @@ func (s *StateDB) getOrCreate(addr string) *Account {
 	return acc
 }
 
+// get returns an account for read-only use WITHOUT mutating the map.
+// Read paths hold only an RLock, so they must never call getOrCreate —
+// doing so caused concurrent map writes (data race / runtime panic).
+func (s *StateDB) get(addr string) *Account {
+	if acc, ok := s.accounts[addr]; ok {
+		return acc
+	}
+	return &Account{
+		GYDSBalance: new(big.Int),
+		GYDBalance:  new(big.Int),
+		StakeAmount: new(big.Int),
+	}
+}
+
 // ── GYDS (18 decimals) ──────────────────────────────────────────
 
 func (s *StateDB) GetGYDSBalance(addr string) *big.Int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return new(big.Int).Set(s.getOrCreate(addr).GYDSBalance)
+	return new(big.Int).Set(s.get(addr).GYDSBalance)
 }
 
 func (s *StateDB) SetGYDSBalance(addr string, amount *big.Int) {
@@ -74,7 +88,7 @@ func (s *StateDB) SubGYDSBalance(addr string, amount *big.Int) {
 func (s *StateDB) GetGYDBalance(addr string) *big.Int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return new(big.Int).Set(s.getOrCreate(addr).GYDBalance)
+	return new(big.Int).Set(s.get(addr).GYDBalance)
 }
 
 func (s *StateDB) SetGYDBalance(addr string, amount *big.Int) {
@@ -102,7 +116,7 @@ func (s *StateDB) SubGYDBalance(addr string, amount *big.Int) {
 func (s *StateDB) GetStake(addr string) *big.Int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return new(big.Int).Set(s.getOrCreate(addr).StakeAmount)
+	return new(big.Int).Set(s.get(addr).StakeAmount)
 }
 
 func (s *StateDB) AddStake(addr string, amount *big.Int) {
@@ -124,7 +138,7 @@ func (s *StateDB) SubStake(addr string, amount *big.Int) {
 func (s *StateDB) GetNonce(addr string) uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.getOrCreate(addr).Nonce
+	return s.get(addr).Nonce
 }
 
 func (s *StateDB) SetNonce(addr string, nonce uint64) {
@@ -138,7 +152,7 @@ func (s *StateDB) SetNonce(addr string, nonce uint64) {
 func (s *StateDB) GetAccount(addr string) *Account {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	acc := s.getOrCreate(addr)
+	acc := s.get(addr)
 	return &Account{
 		GYDSBalance: new(big.Int).Set(acc.GYDSBalance),
 		GYDBalance:  new(big.Int).Set(acc.GYDBalance),

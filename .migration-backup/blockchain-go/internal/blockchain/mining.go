@@ -3,9 +3,11 @@ package blockchain
 import (
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/guardian-chain/blockchain-go/internal/consensus"
+	"github.com/guardian-chain/blockchain-go/internal/utils"
 )
 
 // Block reward: 2 GYDS per block (2 * 10^18 wei)
@@ -18,6 +20,7 @@ type Miner struct {
 	minerAddress string
 	running      bool
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 }
 
 // NewMiner creates a new block miner
@@ -69,10 +72,12 @@ func (m *Miner) Start(onBlock func(*Block)) {
 	}
 }
 
-// Stop halts the miner
+// Stop halts the miner. Safe to call more than once.
 func (m *Miner) Stop() {
-	m.running = false
-	close(m.stopCh)
+	m.stopOnce.Do(func() {
+		m.running = false
+		close(m.stopCh)
+	})
 }
 
 func (m *Miner) mineBlock() *Block {
@@ -95,7 +100,7 @@ func (m *Miner) mineBlock() *Block {
 
 	// Compute state and tx roots
 	header.TxRoot = computeTxRoot(pendingTxs)
-	header.StateRoot = "0x" + string(m.chain.State().CreateSnapshot()[:64])
+	header.StateRoot = utils.Keccak256Hex(m.chain.State().CreateSnapshot())
 	header.Hash = computeBlockHash(header)
 
 	block := &Block{
@@ -103,15 +108,8 @@ func (m *Miner) mineBlock() *Block {
 		Transactions: pendingTxs,
 	}
 
-	// Apply mining reward (GYDS only)
-	m.chain.State().AddGYDSBalance(m.minerAddress, BlockReward)
-
-	// PoS bonus: additional reward proportional to stake
-	stakeBonus := m.pos.CalculateRewardBonus(stake)
-	if stakeBonus.Sign() > 0 {
-		m.chain.State().AddGYDSBalance(m.minerAddress, stakeBonus)
-	}
-
+	// The block reward is credited inside Blockchain.AddBlock so that every node
+	// replaying this block computes the same state. Nothing is credited here.
 	return block
 }
 
@@ -123,13 +121,25 @@ func (m *Miner) calculateGasUsed(txs []*Transaction) uint64 {
 	return total
 }
 
+// computeTxRoot builds a binary Merkle root over the transaction hashes.
 func computeTxRoot(txs []*Transaction) string {
 	if len(txs) == 0 {
 		return "0x0000000000000000000000000000000000000000000000000000000000000000"
 	}
-	var combined []byte
+	layer := make([]string, 0, len(txs))
 	for _, tx := range txs {
-		combined = append(combined, []byte(tx.Hash)...)
+		layer = append(layer, tx.Hash)
 	}
-	return computeBlockHash(Header{}) // Simplified - should be Merkle root
+	for len(layer) > 1 {
+		next := make([]string, 0, (len(layer)+1)/2)
+		for i := 0; i < len(layer); i += 2 {
+			right := layer[i]
+			if i+1 < len(layer) {
+				right = layer[i+1]
+			}
+			next = append(next, utils.Keccak256Hex([]byte(layer[i]+right)))
+		}
+		layer = next
+	}
+	return layer[0]
 }
