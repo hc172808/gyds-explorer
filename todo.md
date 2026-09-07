@@ -1318,3 +1318,26 @@ protocol balances have been erased.
       check** confirming a node can resume syncing to the expected block height;
       schedule and target height via `.env`, failures routed into the alerting
       system above.
+
+### G. Pre-launch verification — added 2026-09-07
+
+- [x] **`pre-launch-check.sh`**: single go/no-go script run on a node before it is
+      promoted to production. Verifies env sanity (required vars, node type,
+      GYDS `NATIVE_DECIMALS=18` cross-checked against `chain-spec.json`, GYD 6,
+      no secrets in `node.env`, keystore mode 700, free disk), service active +
+      enabled at boot, NTP sync, required ports listening (RPC/WS localhost-only
+      unless `PUBLIC_RPC=yes`, P2P open, metrics localhost-only), RPC/metrics
+      endpoints responding with matching chain/network id, and sync state
+      (`eth_syncing`, peer count, minimum block height, live block progress,
+      genesis hash). Exits non-zero with a NOT READY verdict on any failure.
+- [x] **Go core debug pass** (`blockchain-go`): fixed a state-DB data race
+      (read paths created accounts under an RLock), made block hashes
+      reproducible (hash field excluded from hashing) and validated on receipt,
+      added a future-timestamp guard, moved the block reward into `AddBlock` so
+      replaying nodes reach identical state, replaced the stubbed tx root with a
+      real Merkle root, fixed a panic-prone state root slice, charged gas in
+      GYDS to the miner, and made `Miner.Stop` idempotent. Added race-enabled
+      unit tests covering all of the above.
+- [ ] Wire `pre-launch-check.sh` into the deploy flow (run automatically after
+      `node-setup.sh` and before a node is marked production in the admin
+      dashboard).
