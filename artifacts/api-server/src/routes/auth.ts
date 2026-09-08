@@ -115,4 +115,83 @@ router.get("/me", requireAdmin, (req: AdminRequest, res) => {
   res.json({ walletAddress: req.admin!.walletAddress, label: req.admin!.label, role: req.admin!.role });
 });
 
+// ── Public wallet session (any user, admin flag when authorized) ──────────
+const SESSION_PREFIX = "Sign in to GYDS Explorer:\n\nNonce: ";
+
+// POST /auth/session/nonce — nonce for ANY wallet (no admin requirement)
+router.post("/session/nonce", async (req, res) => {
+  try {
+    const { walletAddress } = req.body as { walletAddress?: string };
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      res.status(400).json({ error: "Invalid wallet address" });
+      return;
+    }
+    const address = walletAddress.toLowerCase();
+    const nonce = crypto.randomBytes(32).toString("hex");
+    await db.insert(authNoncesTable).values({ walletAddress: address, nonce }).onConflictDoUpdate({
+      target: authNoncesTable.walletAddress,
+      set: { nonce, createdAt: new Date() },
+    });
+    res.json({ nonce, message: `${SESSION_PREFIX}${nonce}` });
+  } catch (err) {
+    req.log.error({ err }, "Session nonce error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /auth/session/verify — verify signature, issue JWT with user or admin role
+router.post("/session/verify", async (req, res) => {
+  try {
+    const { walletAddress, signature } = req.body as { walletAddress?: string; signature?: string };
+    if (!walletAddress || !ethers.isAddress(walletAddress) || !signature) {
+      res.status(400).json({ error: "Missing walletAddress or signature" });
+      return;
+    }
+    const address = walletAddress.toLowerCase();
+    const nonceRow = await db.query.authNoncesTable.findFirst({ where: (t) => eq(t.walletAddress, address) });
+    if (!nonceRow) {
+      res.status(400).json({ error: "No nonce found. Request a new one." });
+      return;
+    }
+    if (Date.now() - new Date(nonceRow.createdAt).getTime() > 5 * 60 * 1000) {
+      res.status(400).json({ error: "Nonce expired. Request a new one." });
+      return;
+    }
+    const recovered = ethers.verifyMessage(`${SESSION_PREFIX}${nonceRow.nonce}`, signature).toLowerCase();
+    if (recovered !== address) {
+      res.status(401).json({ error: "Signature verification failed" });
+      return;
+    }
+    await db.delete(authNoncesTable).where(eq(authNoncesTable.walletAddress, address));
+
+    const admin = await db.query.adminWalletsTable.findFirst({
+      where: (t, { and }) => and(eq(sql`LOWER(${t.walletAddress})`, address), eq(t.isActive, true)),
+    });
+    const role = admin ? "admin" : "user";
+    const label = admin?.label ?? null;
+    const token = jwt.sign({ walletAddress: address, label, role }, JWT_SECRET, { expiresIn: "24h" });
+    res.json({ token, walletAddress: address, label, role });
+  } catch (err) {
+    req.log.error({ err }, "Session verify error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /auth/session — current session for any signed-in wallet
+router.get("/session", (req, res) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "No token provided" });
+    return;
+  }
+  try {
+    const decoded = jwt.verify(header.split(" ")[1] as string, JWT_SECRET) as {
+      walletAddress: string; label: string | null; role: string;
+    };
+    res.json({ walletAddress: decoded.walletAddress, label: decoded.label, role: decoded.role });
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
+});
+
 export default router;

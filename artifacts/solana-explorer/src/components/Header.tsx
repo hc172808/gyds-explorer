@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Search, Menu, X, Github, Globe, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { useNetwork, NetworkType } from "@/contexts/NetworkContext";
+import WalletAuthButton from "@/components/WalletAuthButton";
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
   { label: "Mainnet", value: "mainnet", color: "bg-primary" },
@@ -113,6 +114,8 @@ const Header = () => {
               </>
             )}
           </div>
+
+          <WalletAuthButton />
 
           {/* GitHub link */}
           <a

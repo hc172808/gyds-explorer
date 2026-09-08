@@ -1341,3 +1341,31 @@ protocol balances have been erased.
 - [ ] Wire `pre-launch-check.sh` into the deploy flow (run automatically after
       `node-setup.sh` and before a node is marked production in the admin
       dashboard).
+
+### H. Single chain, two environments (mainnet + testnet) — added 2026-09-08
+
+- [ ] **One blockchain, different ports**: testnet and mainnet run the same
+      Guardian Chain codebase/genesis rules on one host, separated only by port
+      and data dir — not by a forked build. Testnet identifier/port: **198283**
+      (mainnet stays 198282).
+- [ ] **Port map**: document and script mainnet vs testnet ports (P2P, RPC, WS,
+      metrics) so both can run side by side without collisions; testnet base
+      offset derived from 198283.
+- [ ] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
+      id/port set, data dir (`/var/lib/gyds` vs `/var/lib/gyds-testnet`),
+      service name (`gyds-node` vs `gyds-node-testnet`) and firewall rules.
+- [ ] **Explorer network switch** points Testnet at the 198283 endpoints and
+      shows a clear testnet banner; faucet-style test coins optional.
+- [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
+      filtering, so nodes of both environments are managed in one place.
+- [ ] **Pre-launch + verify scripts**: accept the environment flag and check the
+      correct ports/chain id for testnet runs.
+
+### I. Wallet sign-in for everyone — added 2026-09-08
+
+- [x] Any wallet can sign in with Web3 (nonce + `personal_sign`), not just
+      admins; admins are detected automatically from the authorized wallet list.
+- [x] After sign-in users are redirected to their dashboard (`/dashboard`),
+      admins to `/admin`.
+- [x] Admin dashboard can edit each coin's logo URL, name and about text
+      (Coin Settings tab, saved server-side).
