@@ -1018,7 +1018,10 @@ fi
 # ============================================================
 log "Step 8/11 — Setting up PM2 process manager..."
 
-npm install -g pm2 2>/dev/null || true
+if ! command -v pm2 >/dev/null 2>&1; then
+  npm install -g pm2 || err "PM2 installation failed. Check the npm error above and verify Node.js/npm and network access."
+fi
+command -v pm2 >/dev/null 2>&1 || err "PM2 is not available after installation."
 
 # Stop existing processes if any
 pm2 delete gyds-api 2>/dev/null || true
