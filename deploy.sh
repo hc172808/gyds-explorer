@@ -978,13 +978,12 @@ if [ "$DEPLOY_WEB" = true ]; then
     PORT=${WEB_PORT} BASE_PATH=/ NODE_ENV=production \
     npm run build --workspace=@workspace/solana-explorer
 
-  FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
+  # vite.config.ts writes the frontend build to the workspace-level dist/
+  # directory so the same output is used by local and production builds.
+  FRONTEND_DIST="${APP_DIR}/dist"
   if [ ! -f "${FRONTEND_DIST}/index.html" ]; then
     err "Build failed — no index.html in ${FRONTEND_DIST}. Run 'npm run build --workspace=@workspace/solana-explorer' manually to see the error."
   fi
-
-  rm -rf "${APP_DIR}/dist"
-  cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
 
   # Nginx (www-data) must be able to traverse and read the web root, otherwise
   # the browser gets a blank page / 403 even though the build succeeded.
