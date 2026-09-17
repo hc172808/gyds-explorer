@@ -1,0 +1,63 @@
+[ℹ INFO] Database tables created successfully.
+[✓ STEP] Step 4/11 — Setting up application code...
+Cloning into '/var/www/gyds-explorer'...
+remote: Enumerating objects: 1455, done.
+remote: Counting objects: 100% (152/152), done.
+remote: Compressing objects: 100% (77/77), done.
+remote: Total 1455 (delta 90), reused 115 (delta 75), pack-reused 1303 (from 1)
+Receiving objects: 100% (1455/1455), 6.81 MiB | 7.44 MiB/s, done.
+Resolving deltas: 100% (942/942), done.
+[✓ STEP] Step 5/11 — Generating .env configuration...
+[ℹ INFO] .env file generated with secure credentials.
+[ℹ INFO] Database password saved in /var/www/gyds-explorer/.env
+[✓ STEP] Step 6/11 — Creating Express API server...
+[ℹ INFO] API server files created at /var/www/gyds-explorer/api
+[✓ STEP] Step 7/11 — Installing dependencies and building...
+npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.hirok.io
+npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.hirok.io
+npm warn deprecated recharts@2.15.4: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
+
+added 599 packages, and audited 608 packages in 1m
+
+122 packages are looking for funding
+  run `npm fund` for details
+
+7 vulnerabilities (5 moderate, 2 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+
+added 109 packages, and audited 110 packages in 57s
+
+22 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+added 15 packages, and audited 16 packages in 3s
+
+1 package is looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+> @workspace/solana-explorer@0.0.0 build
+> PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 2398 modules transformed.
+../../dist/index.html                   0.71 kB │ gzip:   0.33 kB
+../../dist/assets/index-DvX1s4Tn.css   77.08 kB │ gzip:  13.41 kB
+../../dist/assets/index-Dfra7d_I.js   977.43 kB │ gzip: 315.22 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 25.07s
+[✗ ERROR] Build failed — no index.html in /var/www/gyds-explorer/artifacts/solana-explorer/dist/public. Run 'npm run build --workspace=@workspace/solana-explorer' manually to see the error.
