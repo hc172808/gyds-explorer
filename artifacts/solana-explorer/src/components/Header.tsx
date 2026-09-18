@@ -1,8 +1,15 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Search, Menu, X, Github, Globe, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { useEffect } from "react";
 import { useNetwork, NetworkType } from "@/contexts/NetworkContext";
 import WalletAuthButton from "@/components/WalletAuthButton";
+import {
+  getStoredSession,
+  isPrivilegedSession,
+  SESSION_CHANGE_EVENT_NAME,
+  type WalletSession,
+} from "@/lib/session";
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
   { label: "Mainnet", value: "mainnet", color: "bg-primary" },
@@ -25,10 +32,19 @@ const Header = () => {
   const [query, setQuery] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
+  const [session, setSession] = useState<WalletSession | null>(null);
   const navigate = useNavigate();
   const { networkType, setNetworkType, customRpcUrl, setCustomRpcUrl } = useNetwork();
 
   const currentNetwork = NETWORK_OPTIONS.find((n) => n.value === networkType)!;
+  const showFeatureGates = session !== null && isPrivilegedSession(session);
+
+  useEffect(() => {
+    const syncSession = () => setSession(getStoredSession());
+    syncSession();
+    window.addEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
+    return () => window.removeEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +157,7 @@ const Header = () => {
       {/* Nav bar - desktop */}
       <nav className="hidden md:block border-t border-border bg-card/50">
         <div className="container mx-auto px-4 flex items-center gap-1 py-1">
-          {NAV_LINKS.map((link) => (
+          {NAV_LINKS.filter((link) => link.to !== "/feature-gates" || showFeatureGates).map((link) => (
             <Link
               key={link.to}
               to={link.to}
@@ -178,7 +194,7 @@ const Header = () => {
               </div>
             </form>
             <div className="flex flex-col gap-1">
-              {NAV_LINKS.map((link) => (
+                {NAV_LINKS.filter((link) => link.to !== "/feature-gates" || showFeatureGates).map((link) => (
                 <Link
                   key={link.to}
                   to={link.to}
