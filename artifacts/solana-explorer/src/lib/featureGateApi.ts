@@ -101,7 +101,12 @@ export async function requestNonce(walletAddress: string): Promise<{ nonce: stri
   return res.json();
 }
 
-export async function verifySignature(walletAddress: string, signature: string): Promise<{ token: string; walletAddress: string; label: string }> {
+export async function verifySignature(walletAddress: string, signature: string): Promise<{
+  token: string;
+  walletAddress: string;
+  label: string | null;
+  role: "founder" | "admin";
+}> {
   const res = await apiFetch(`/auth/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

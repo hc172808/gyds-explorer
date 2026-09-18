@@ -7,11 +7,12 @@ import {
   Coins, Plus, ExternalLink, ChevronDown, ChevronUp, Zap, AlertCircle,
 } from "lucide-react";
 import { useTokenDeploy, type DeployResult } from "@/lib/useTokenDeploy";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { getStoredToken } from "@/lib/featureGateApi";
+import { getStoredSession, isPrivilegedSession } from "@/lib/session";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
 import {
@@ -1112,11 +1113,17 @@ node deploy-token.js \\
 const AdminDashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("node");
+  const navigate = useNavigate();
 
   useEffect(() => {
     const token = getStoredToken();
+    const session = getStoredSession();
+    if (session && !isPrivilegedSession(session)) {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
     if (token) setIsAuthenticated(true);
-  }, []);
+  }, [navigate]);
 
   if (!isAuthenticated) {
     return (

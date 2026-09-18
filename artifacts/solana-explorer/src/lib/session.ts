@@ -4,10 +4,11 @@ import { getEthereumProvider } from "@/lib/wallet";
 export interface WalletSession {
   walletAddress: string;
   label: string | null;
-  role: "admin" | "user";
+  role: "founder" | "admin" | "user";
 }
 
 const SESSION_KEY = "gyds-session";
+const SESSION_CHANGE_EVENT = "gyds-session-change";
 
 export function getStoredSession(): WalletSession | null {
   try {
@@ -22,6 +23,7 @@ export function getStoredSession(): WalletSession | null {
 export function storeSession(session: WalletSession) {
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
   } catch {
     /* ignore */
   }
@@ -31,10 +33,13 @@ export function clearSession() {
   clearStoredToken();
   try {
     localStorage.removeItem(SESSION_KEY);
+    window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
   } catch {
     /* ignore */
   }
 }
+
+export const SESSION_CHANGE_EVENT_NAME = SESSION_CHANGE_EVENT;
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
@@ -72,7 +77,12 @@ export async function signInWithWallet(): Promise<WalletSession> {
   const { message } = await post<{ nonce: string; message: string }>("/auth/session/nonce", { walletAddress: address });
   const signature = (await ethereum.request({ method: "personal_sign", params: [message, address] })) as string;
 
-  const result = await post<{ token: string; walletAddress: string; label: string | null; role: "admin" | "user" }>(
+  const result = await post<{
+    token: string;
+    walletAddress: string;
+    label: string | null;
+    role: "founder" | "admin" | "user";
+  }>(
     "/auth/session/verify",
     { walletAddress: address, signature },
   );
@@ -85,5 +95,13 @@ export async function signInWithWallet(): Promise<WalletSession> {
 
 /** Where a wallet should land right after signing in. */
 export function dashboardPathFor(session: WalletSession): string {
-  return session.role === "admin" ? "/admin" : "/dashboard";
+  return isPrivilegedSession(session) ? "/admin" : "/dashboard";
+}
+
+export function isPrivilegedSession(session: WalletSession): boolean {
+  return session.role === "admin" || session.role === "founder";
+}
+
+export function isFounderSession(session: WalletSession): boolean {
+  return session.role === "founder" || session.label?.trim().toLowerCase() === "founder";
 }

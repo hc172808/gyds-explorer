@@ -96,14 +96,16 @@ router.post("/verify", async (req, res) => {
     // Delete used nonce
     await db.delete(authNoncesTable).where(eq(authNoncesTable.walletAddress, address));
 
+    const role = admin.label?.trim().toLowerCase() === "founder" ? "founder" : "admin";
+
     // Issue JWT
     const token = jwt.sign(
-      { walletAddress: address, label: admin.label, role: "admin" },
+      { walletAddress: address, label: admin.label, role },
       JWT_SECRET,
       { expiresIn: "24h" },
     );
 
-    res.json({ token, walletAddress: address, label: admin.label });
+    res.json({ token, walletAddress: address, label: admin.label, role });
   } catch (err) {
     req.log.error({ err }, "Verify error");
     res.status(500).json({ error: "Internal server error" });
@@ -167,7 +169,11 @@ router.post("/session/verify", async (req, res) => {
     const admin = await db.query.adminWalletsTable.findFirst({
       where: (t, { and }) => and(eq(sql`LOWER(${t.walletAddress})`, address), eq(t.isActive, true)),
     });
-    const role = admin ? "admin" : "user";
+    const role = admin
+      ? admin.label?.trim().toLowerCase() === "founder"
+        ? "founder"
+        : "admin"
+      : "user";
     const label = admin?.label ?? null;
     const token = jwt.sign({ walletAddress: address, label, role }, JWT_SECRET, { expiresIn: "24h" });
     res.json({ token, walletAddress: address, label, role });

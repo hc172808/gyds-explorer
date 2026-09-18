@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { requestNonce, verifySignature, setStoredToken } from "@/lib/featureGateApi";
+import { storeSession } from "@/lib/session";
 
 interface WalletLoginDialogProps {
-  onLoginSuccess: (walletAddress: string, label: string) => void;
+  onLoginSuccess: (walletAddress: string, label: string | null) => void;
 }
 
 declare global {
@@ -109,6 +110,11 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   const completeAuth = async (address: string, signature: string) => {
     const result = await verifySignature(address, signature);
     setStoredToken(result.token);
+    storeSession({
+      walletAddress: result.walletAddress,
+      label: result.label,
+      role: result.role,
+    });
     toast.success("Admin authenticated", {
       description: `Wallet: ${address.slice(0, 6)}...${address.slice(-4)}`,
     });

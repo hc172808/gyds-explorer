@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Loader2, Wallet } from "lucide-react";
+import { LayoutDashboard, LogOut, Loader2, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { clearSession, dashboardPathFor, getStoredSession, signInWithWallet, type WalletSession } from "@/lib/session";
+import {
+  clearSession,
+  dashboardPathFor,
+  getStoredSession,
+  isFounderSession,
+  isPrivilegedSession,
+  SESSION_CHANGE_EVENT_NAME,
+  signInWithWallet,
+  type WalletSession,
+} from "@/lib/session";
 import { getWalletError } from "@/lib/wallet";
 
 const WalletAuthButton = () => {
@@ -12,7 +21,10 @@ const WalletAuthButton = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setSession(getStoredSession());
+    const syncSession = () => setSession(getStoredSession());
+    syncSession();
+    window.addEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
+    return () => window.removeEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
   }, []);
 
   const signIn = async () => {
@@ -20,7 +32,7 @@ const WalletAuthButton = () => {
     try {
       const next = await signInWithWallet();
       setSession(next);
-      toast.success(next.role === "admin" ? "Signed in as admin" : "Signed in", {
+      toast.success(isPrivilegedSession(next) ? `Signed in as ${next.role}` : "Signed in", {
         description: `${next.walletAddress.slice(0, 6)}…${next.walletAddress.slice(-4)}`,
       });
       navigate(dashboardPathFor(next));
@@ -39,17 +51,24 @@ const WalletAuthButton = () => {
   };
 
   if (session) {
+    const privileged = isPrivilegedSession(session);
+    const panelLabel = isFounderSession(session) ? "Founder Panel" : "Admin Panel";
+
     return (
       <div className="flex items-center gap-1">
         <Button
-          variant="outline"
+          variant={privileged ? "default" : "outline"}
           size="sm"
-          className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-          onClick={() => navigate(dashboardPathFor(session))}
+          className={`gap-1.5 ${privileged ? "shadow-[0_0_16px_hsl(var(--primary)/0.22)]" : "border-primary/30 text-primary hover:bg-primary/10"}`}
+          onClick={() => navigate(privileged ? "/admin" : dashboardPathFor(session))}
+          title={privileged ? `Open ${panelLabel}` : "Open your dashboard"}
         >
-          <LayoutDashboard className="w-3.5 h-3.5" />
+          {privileged ? <ShieldCheck className="w-3.5 h-3.5" /> : <LayoutDashboard className="w-3.5 h-3.5" />}
           <span className="font-mono text-xs hidden sm:inline">
-            {session.walletAddress.slice(0, 6)}…{session.walletAddress.slice(-4)}
+            <span className="font-sans mr-1">{privileged ? panelLabel : "Dashboard"}</span>
+            <span className="text-muted-foreground">
+              {session.walletAddress.slice(0, 6)}…{session.walletAddress.slice(-4)}
+            </span>
           </span>
         </Button>
         <Button variant="ghost" size="sm" onClick={signOut} title="Sign out">
