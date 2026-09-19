@@ -99,6 +99,19 @@ sudo ufw allow 8080/tcp
 Do not open 3001, 3002, 5432, 6060, or 8008 to the internet. Only open 8545
 and 8546 when this machine is intentionally a public RPC node.
 
+### Re-running the deployment
+
+Running `deploy.sh` against an existing deployment asks whether to reset the
+generated state. Type `YES` only when a clean installation is intended. A
+confirmed reset stops the managed PM2 services and GYDS node, drops and
+recreates the explorer database, removes GYDS chain data, genesis, keystores,
+node configuration, logs, backups, and the node systemd unit, then continues
+through node setup again. The application source directory is retained.
+
+Answer anything other than `YES` to preserve the database and node data. A
+reset is destructive and cannot recover indexed data or node keys without an
+external backup.
+
 ### Blank page or connection refused
 
 Run these commands in order:

@@ -3,3 +3,4 @@
 - [Replit managed artifact workflows](replit-managed-workflows.md) — registered artifact services expose managed names and ports; align proxies to them instead of replacing workflows.
 - [Go dependency firewall](go-dependency-firewall.md) — Replit may block x/crypto module downloads for CVEs; verify the firewall before changing archived Go code.
 - [GYDS RPC exposure](gyds-rpc-exposure.md) — RPC nodes default to public bindings; full/lite nodes stay local unless PUBLIC_RPC is explicitly enabled.
+- [GYDS deployment reset](gyds-deployment-reset.md) — destructive reruns require explicit YES and reset node state plus the explorer database before recreation.

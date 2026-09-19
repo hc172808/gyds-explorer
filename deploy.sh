@@ -26,6 +26,7 @@ set -e
 APP_NAME="gyds-explorer"
 APP_DIR="/var/www/${APP_NAME}"
 API_DIR="${APP_DIR}/api"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
 DOMAIN=""
 NODE_VERSION="22"
@@ -54,6 +55,10 @@ warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
 err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
 
+RESET_EXISTING=false
+HAD_NODE_STATE=false
+DATABASE_RESET_DONE=false
+
 for ARG in "$@"; do
   case "$ARG" in
     --node-only|--node)
@@ -81,6 +86,7 @@ for ARG in "$@"; do
       ;;
     --help|-h)
       echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|validator] [--validator] [--no-web]"
+      echo "       On an existing deployment, the script asks before deleting database/node state."
       exit 0
       ;;
     --*)
@@ -145,6 +151,37 @@ check_port_number "WEB_PORT" "${WEB_PORT}"
 # HTTP on the HTTPS port and make browsers report a connection/TLS failure.
 [ "${WEB_PORT}" != "443" ] || err "WEB_PORT 443 is reserved for HTTPS. Use the default port 80 or --web-port=8080."
 
+# ---------- Existing deployment reset prompt ----------
+# The source directory alone is not treated as a deployed-state marker:
+# deploy.sh may be run from a freshly cloned checkout before first install.
+if [ -f "${APP_DIR}/.env" ] ||
+   [ -d "/var/lib/gyds" ] ||
+   [ -f "/etc/gyds/node.env" ] ||
+   [ -f "/etc/systemd/system/gyds-node.service" ] ||
+   [ -f "/etc/nginx/sites-available/${APP_NAME}" ]; then
+  if [ -d "/var/lib/gyds" ] || [ -f "/etc/gyds/node.env" ] || [ -f "/etc/systemd/system/gyds-node.service" ]; then
+    HAD_NODE_STATE=true
+  fi
+
+  echo ""
+  echo -e "${RED}WARNING: An existing GYDS deployment was detected.${NC}"
+  echo "A reset permanently deletes:"
+  echo "  - the ${DB_NAME} database and all indexed/authentication data"
+  echo "  - GYDS node chain data, genesis, keystores, configuration, logs, and backups"
+  echo "  - the gyds-node systemd unit and PM2-managed API/indexer processes"
+  echo "The application source directory is kept and recreated from the repository."
+  echo ""
+  read -r -p "Reset all generated deployment data and recreate it? Type YES to continue: " RESET_CONFIRM || \
+    err "Could not read the reset confirmation. Existing data was not changed."
+  if [ "${RESET_CONFIRM}" = "YES" ]; then
+    RESET_EXISTING=true
+    warn "Confirmed: this deployment will be reset before setup continues."
+  else
+    info "Reset declined. Existing database and node data will be preserved."
+  fi
+  echo ""
+fi
+
 echo ""
 echo "╔════════════════════════════════════════════╗"
 echo "║   GYDS Explorer Deployment Script          ║"
@@ -177,6 +214,64 @@ generate_secret() {
 DB_PASSWORD=$(generate_password)
 API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-$(generate_secret)}}"
 
+drop_existing_database() {
+  [ "${RESET_EXISTING}" = true ] || return 0
+  [ "${DATABASE_RESET_DONE}" = true ] && return 0
+  if ! command -v psql >/dev/null 2>&1 || ! id postgres >/dev/null 2>&1; then
+    info "PostgreSQL is not installed yet; database reset will be retried after installation."
+    return 0
+  fi
+
+  systemctl start postgresql 2>/dev/null || true
+  if ! sudo -u postgres psql -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
+    info "PostgreSQL is not ready yet; database reset will be retried after installation."
+    return 0
+  fi
+
+  info "Dropping existing database '${DB_NAME}'..."
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid <> pg_backend_pid();" >/dev/null
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres \
+    -c "DROP DATABASE IF EXISTS \"${DB_NAME}\";"
+  DATABASE_RESET_DONE=true
+  log "Database '${DB_NAME}' removed. It will be recreated now."
+}
+
+reset_managed_state() {
+  log "Resetting existing managed services and GYDS node state..."
+
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete gyds-api 2>/dev/null || true
+    pm2 delete gyds-indexer 2>/dev/null || true
+    pm2 delete gyds-feature-gates 2>/dev/null || true
+    pm2 save --force >/dev/null 2>&1 || true
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop gyds-node 2>/dev/null || true
+    systemctl disable gyds-node 2>/dev/null || true
+  fi
+
+  rm -rf \
+    /var/lib/gyds \
+    /etc/gyds \
+    /var/log/gyds \
+    /var/backups/gyds \
+    "${APP_DIR}/.env"
+  rm -f /etc/systemd/system/gyds-node.service /etc/logrotate.d/gyds-node
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    systemctl reset-failed gyds-node 2>/dev/null || true
+  fi
+  info "Node data, node configuration, generated secrets, and managed processes removed."
+}
+
+if [ "${RESET_EXISTING}" = true ]; then
+  reset_managed_state
+  drop_existing_database
+fi
+
 # ============================================================
 # OPTIONAL: Run node-setup.sh first
 # ============================================================
@@ -188,13 +283,15 @@ echo "│   Do you want to set up a GYDS blockchain node      │"
 echo "│   on this server? (main / full / lite / rpc / validator) │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
-if [ "$NODE_ONLY" = true ]; then
+if [ "$NODE_ONLY" = true ] || { [ "${RESET_EXISTING}" = true ] && [ "${HAD_NODE_STATE}" = true ]; }; then
   SETUP_NODE_CHOICE="y"
+  if [ "${RESET_EXISTING}" = true ] && [ "${HAD_NODE_STATE}" = true ] && [ "$NODE_ONLY" != true ]; then
+    info "An existing node was reset; node setup is required to recreate it."
+  fi
 else
   read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
 fi
 if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   NODE_SETUP_SCRIPT="${SCRIPT_DIR}/node-setup.sh"
 
   if [ ! -f "${NODE_SETUP_SCRIPT}" ]; then
@@ -282,13 +379,25 @@ fi
 # Wait for PostgreSQL to be ready
 sleep 2
 
+# Retry the reset here when PostgreSQL was not installed or ready before the
+# optional node setup ran. This also covers --node-only reruns cleanly.
+drop_existing_database
+
 # Create database user and database
 info "Creating database user '${DB_USER}' and database '${DB_NAME}'..."
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';"
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+  # A rerun generates a fresh .env password. Keep the existing role usable
+  # when the database was preserved, and after a reset as well.
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "ALTER ROLE \"${DB_USER}\" WITH LOGIN PASSWORD '${DB_PASSWORD}';"
+else
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "CREATE USER \"${DB_USER}\" WITH LOGIN PASSWORD '${DB_PASSWORD}';"
+fi
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "CREATE DATABASE \"${DB_NAME}\" OWNER \"${DB_USER}\";"
 
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 
