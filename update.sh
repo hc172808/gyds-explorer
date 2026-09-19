@@ -26,6 +26,11 @@ HEALTH_CHECK="${APP_DIR}/check-services.sh"
 LOG_FILE="/var/log/gyds-explorer-update.log"
 MIN_NODE_VERSION="22.18.0"
 NPM_REGISTRY="https://registry.npmjs.org/"
+WEB_PORT="${WEB_PORT:-}"
+if [ -z "${WEB_PORT}" ] && [ -f "${APP_DIR}/.env" ]; then
+  WEB_PORT="$(awk -F= '$1 == "WEB_PORT" {print $2; exit}' "${APP_DIR}/.env" 2>/dev/null || true)"
+fi
+WEB_PORT="${WEB_PORT:-8080}"
 
 # ---------- Flags ----------
 SKIP_DEPS=false
@@ -83,6 +88,10 @@ check_node_version() {
     err "Node.js ${MIN_NODE_VERSION} or newer is required; found v${current_node}."
   command -v npm >/dev/null 2>&1 || err "npm is required."
 }
+
+if ! [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] || [ "${WEB_PORT}" -lt 1 ] || [ "${WEB_PORT}" -gt 65535 ]; then
+  err "WEB_PORT must be a TCP port between 1 and 65535; found '${WEB_PORT}'."
+fi
 
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
@@ -211,14 +220,20 @@ fi
 if [ "${SKIP_BUILD}" = "false" ]; then
   log "Building frontend..."
   cd "${APP_DIR}"
-  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+  PORT="${WEB_PORT}" BASE_PATH=/ NODE_ENV=production \
     npm run build --workspace=@workspace/solana-explorer
 
-  if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
-    err "Build failed — frontend output not found in ${FRONTEND_BUILD_DIR}."
+  if [ ! -f "${FRONTEND_BUILD_DIR}/index.html" ]; then
+    err "Build failed — frontend index.html not found in ${FRONTEND_BUILD_DIR}."
   fi
   rm -rf "${APP_DIR}/dist"
   cp -R "${FRONTEND_BUILD_DIR}" "${APP_DIR}/dist"
+  chmod 755 "${APP_DIR}/dist" "${APP_DIR}" /var/www 2>/dev/null || true
+  if id -u www-data >/dev/null 2>&1; then
+    chown -R www-data:www-data "${APP_DIR}/dist"
+  fi
+  find "${APP_DIR}/dist" -type d -exec chmod 755 {} \;
+  find "${APP_DIR}/dist" -type f -exec chmod 644 {} \;
   log "Frontend built successfully → ${APP_DIR}/dist"
 else
   info "Skipping frontend build (--skip-build)."
@@ -251,8 +266,17 @@ if [ "${NO_RESTART}" = "false" ]; then
 
   # Reload nginx (no downtime)
   if command -v nginx &>/dev/null; then
-    nginx -t 2>/dev/null && systemctl reload nginx && log "Nginx reloaded." \
-      || warn "Nginx config test failed — not reloaded. Check: nginx -t"
+    if nginx -t 2>/dev/null; then
+      if systemctl is-active --quiet nginx; then
+        systemctl reload nginx && log "Nginx reloaded." \
+          || warn "Nginx reload failed. Check: systemctl status nginx"
+      else
+        systemctl start nginx && log "Nginx started." \
+          || warn "Nginx could not start. Check: systemctl status nginx"
+      fi
+    else
+      warn "Nginx config test failed — not reloaded. Check: nginx -t"
+    fi
   fi
 
   if [ -x "${HEALTH_CHECK}" ]; then

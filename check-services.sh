@@ -145,6 +145,8 @@ echo ""
 
 if [ "${FAILURES}" -gt 0 ]; then
   echo -e "${RED}${FAILURES} health check(s) failed.${NC}"
+  echo "For a failed GYDS node, inspect: systemctl status gyds-node --no-pager -l"
+  echo "                  and: journalctl -u gyds-node -n 100 --no-pager"
   exit 1
 fi
 

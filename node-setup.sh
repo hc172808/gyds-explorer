@@ -97,7 +97,8 @@ ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wa
 EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 
 # Public RPC exposure. "no" keeps RPC/WS reachable only from localhost/VPN.
-PUBLIC_RPC="${PUBLIC_RPC:-no}"
+# RPC nodes are public by definition unless the operator explicitly opts out.
+PUBLIC_RPC="${PUBLIC_RPC:-}"
 # Backups & health monitoring
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
@@ -214,6 +215,36 @@ else
     main|full|lite|rpc|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
     *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, rpc, or validator." ;;
   esac
+fi
+
+if [ -z "${PUBLIC_RPC}" ]; then
+  if [ "${NODE_TYPE}" = "rpc" ]; then
+    PUBLIC_RPC="yes"
+  else
+    PUBLIC_RPC="no"
+  fi
+fi
+case "${PUBLIC_RPC,,}" in
+  yes|no) PUBLIC_RPC="${PUBLIC_RPC,,}" ;;
+  *) err "PUBLIC_RPC must be yes or no; found '${PUBLIC_RPC}'." ;;
+esac
+
+validate_port() {
+  local name="$1"
+  local value="$2"
+  [[ "${value}" =~ ^[0-9]+$ ]] || err "${name} must be a numeric TCP/UDP port; found '${value}'."
+  [ "${value}" -ge 1 ] && [ "${value}" -le 65535 ] || \
+    err "${name} must be between 1 and 65535; found '${value}'."
+}
+
+validate_port "RPC_PORT" "${RPC_PORT}"
+validate_port "WS_PORT" "${WS_PORT}"
+validate_port "P2P_PORT" "${P2P_PORT}"
+validate_port "METRICS_PORT" "${METRICS_PORT}"
+if [ "${RPC_PORT}" = "${WS_PORT}" ] || [ "${RPC_PORT}" = "${P2P_PORT}" ] ||
+   [ "${RPC_PORT}" = "${METRICS_PORT}" ] || [ "${WS_PORT}" = "${P2P_PORT}" ] ||
+   [ "${WS_PORT}" = "${METRICS_PORT}" ] || [ "${P2P_PORT}" = "${METRICS_PORT}" ]; then
+  err "RPC_PORT, WS_PORT, P2P_PORT, and METRICS_PORT must all be different."
 fi
 
 NODE_NAME="gyds-${NODE_TYPE}"
@@ -626,6 +657,17 @@ GETH_ARGS+=" --metrics --metrics.addr 127.0.0.1 --metrics.port ${METRICS_PORT}"
 GETH_ARGS+=" --verbosity 3"
 GETH_ARGS+=" --log.file ${LOG_DIR}/node.log"
 
+RPC_BIND_ADDR="127.0.0.1"
+WS_BIND_ADDR="127.0.0.1"
+HTTP_VHOSTS="localhost"
+WS_ORIGINS="localhost"
+if [ "${PUBLIC_RPC}" = "yes" ]; then
+  RPC_BIND_ADDR="0.0.0.0"
+  WS_BIND_ADDR="0.0.0.0"
+  HTTP_VHOSTS="*"
+  WS_ORIGINS="*"
+fi
+
 case "$NODE_TYPE" in
   main)
     # Keep authority/admin RPC local; public wallets use a dedicated RPC node.
@@ -646,12 +688,12 @@ case "$NODE_TYPE" in
     ;;
 
   full)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode full"
     GETH_ARGS+=" --gcmode full"
     GETH_ARGS+=" --maxpeers 50"
@@ -662,12 +704,12 @@ case "$NODE_TYPE" in
     ;;
 
   rpc)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode full"
     GETH_ARGS+=" --gcmode archive"
     GETH_ARGS+=" --maxpeers 50"
@@ -678,12 +720,12 @@ case "$NODE_TYPE" in
     ;;
 
   lite)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode light"
     GETH_ARGS+=" --maxpeers 25"
     GETH_ARGS+=" --nat extip:${SERVER_IP}"
@@ -1182,16 +1224,20 @@ log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-st
 header "Step 9/9: Starting Node"
 
 systemctl enable gyds-node
-systemctl start gyds-node
+systemctl restart gyds-node
 
-sleep 3
+for ATTEMPT in $(seq 1 10); do
+  systemctl is-active --quiet gyds-node && break
+  sleep 1
+done
 
 if systemctl is-active --quiet gyds-node; then
   log "GYDS ${NODE_TYPE^^} node is running!"
 else
-  warn "Node may have failed to start. Check logs with:"
-  warn "  gyds-logs"
-  warn "  journalctl -u gyds-node -n 50 --no-pager"
+  warn "GYDS ${NODE_TYPE^^} node failed to start. Recent service output:"
+  systemctl --no-pager --full status gyds-node || true
+  journalctl -u gyds-node -n 50 --no-pager || true
+  err "Node setup did not complete because gyds-node is not active."
 fi
 
 # ============================================================

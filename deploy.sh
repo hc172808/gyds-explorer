@@ -140,6 +140,10 @@ fi
 
 check_port_number "WEB_PORT" "${WEB_PORT}"
 [ "${WEB_PORT}" != "${API_PORT}" ] || err "WEB_PORT ${WEB_PORT} conflicts with API_PORT ${API_PORT}."
+# This script creates an HTTP listener. HTTPS on 443 is configured by Certbot
+# when a domain is supplied; accepting --web-port=443 would serve plaintext
+# HTTP on the HTTPS port and make browsers report a connection/TLS failure.
+[ "${WEB_PORT}" != "443" ] || err "WEB_PORT 443 is reserved for HTTPS. Use the default port 80 or --web-port=8080."
 
 echo ""
 echo "╔════════════════════════════════════════════╗"
@@ -1329,7 +1333,7 @@ if [ "$DEPLOY_WEB" = true ]; then
     warn "Debug: nginx -t | systemctl status nginx | pm2 list | tail -50 /var/log/nginx/error.log"
     warn "If the local check passed but the public IP/domain does not load, the port is blocked by your cloud provider's firewall (open 80/443) or DNS is not pointing here."
   else
-    info "All local checks passed. If the public IP/domain still shows nothing, open ports 80/443 in your cloud firewall and confirm the DNS A record points to this server."
+    info "All local checks passed. Open TCP 80 (and 443 after SSL) in your cloud firewall and confirm the DNS A record points to this server."
   fi
 fi
 
@@ -1346,7 +1350,12 @@ echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
 if [ "$DEPLOY_WEB" = true ]; then
   printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
-  printf "║   🌐 Web ports:      %-35s║\n" "80 and ${WEB_PORT}"
+  if [ "${WEB_PORT}" = "80" ]; then
+    WEB_PORT_SUMMARY="80"
+  else
+    WEB_PORT_SUMMARY="80 and ${WEB_PORT}"
+  fi
+  printf "║   🌐 Web ports:      %-35s║\n" "${WEB_PORT_SUMMARY}"
 else
   echo "║   🌐 Web interface:  disabled                           ║"
 fi
