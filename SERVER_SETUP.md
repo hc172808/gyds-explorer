@@ -171,6 +171,83 @@ Keep `/etc/gyds/account-password.txt`, the node key, and `genesis.json`
 private. Give other node operators the exact matching genesis file and the
 MAIN node's enode URL, not the account password or private key.
 
+### FULL node
+
+A FULL node keeps a complete chain replica and syncs from MAIN. It is useful
+for operators who need local history or want to provide a trusted upstream to
+lite nodes:
+
+```bash
+sudo install -o root -g root -m 600 genesis.json /etc/gyds/genesis.json
+sudo NODE_TYPE=full \
+  MAIN_NODE_IP=MAIN_PUBLIC_IP \
+  MAIN_NODE_ENODE='enode://PUBLIC_KEY@MAIN_PUBLIC_IP:30303' \
+  ./node-setup.sh
+sudo gyds-status
+sudo gyds-console
+eth.syncing
+eth.blockNumber
+```
+
+Open `30303/tcp` and `30303/udp` between this node and the network. A FULL
+node's HTTP and WebSocket RPC are bound to `0.0.0.0` by the current setup, so
+do not open 8545/8546 unless you intentionally want this node to be public.
+For a public endpoint, use the RPC role instead.
+
+### LITE node
+
+A LITE node stores reduced state and exposes an RPC endpoint for wallets and
+websites. It should peer with one or more FULL nodes:
+
+```bash
+sudo install -o root -g root -m 600 genesis.json /etc/gyds/genesis.json
+sudo NODE_TYPE=lite \
+  FULL_NODE_IPS='FULL_PUBLIC_IP' \
+  MAIN_NODE_ENODE='enode://FULL_NODE_PUBLIC_KEY@FULL_PUBLIC_IP:30303' \
+  ./node-setup.sh
+sudo gyds-status
+sudo gyds-console
+eth.syncing
+```
+
+Add additional FULL node enodes to
+`/var/lib/gyds/geth/static-nodes.json`, then run `sudo gyds-restart`.
+The LITE node exposes `http://SERVER_IP:8545` and
+`ws://SERVER_IP:8546`; point the explorer's `VITE_RPC_URL` and
+`VITE_RPC_URL_2` at reachable HTTPS reverse-proxy URLs in production.
+Opening raw HTTP RPC on an internet-facing IP is not recommended without an
+authenticated proxy and rate limiting.
+
+### RPC node
+
+An RPC node is a FULL-sync/archive node intended to serve wallets, explorers,
+and other clients:
+
+```bash
+sudo install -o root -g root -m 600 genesis.json /etc/gyds/genesis.json
+sudo NODE_TYPE=rpc \
+  MAIN_NODE_IP=MAIN_PUBLIC_IP \
+  MAIN_NODE_ENODE='enode://PUBLIC_KEY@MAIN_PUBLIC_IP:30303' \
+  ./node-setup.sh
+sudo gyds-status
+sudo gyds-console
+eth.syncing
+```
+
+For a deliberately public RPC node, open `30303/tcp`, `30303/udp`,
+`8545/tcp`, and `8546/tcp` in both UFW and the cloud firewall. Test it from
+another machine:
+
+```bash
+curl -sS -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+  http://SERVER_IP:8545
+```
+
+Use `https://` and `wss://` behind a domain/reverse proxy when wallets will
+connect from a browser. Browsers and wallet extensions commonly reject
+insecure RPC URLs on public hostnames.
+
 ### Validator authority node
 
 Copy the exact MAIN genesis file to the validator server, then run:
@@ -212,7 +289,40 @@ The validator must be synchronized and authorized before it can seal blocks.
 Open only `30303/tcp` and `30303/udp` to the validator; its HTTP RPC remains
 bound to localhost by design.
 
-## 6. Node port rules
+## 6. Wallet login and admin setup
+
+The public **Connect Wallet** flow accepts any wallet after it signs a
+one-time message. The **Admin Login** dialog additionally requires that the
+wallet address exists as an active row in `admin_wallets`.
+
+First, open the explorer directly in a browser tab, not inside an embedded
+preview. Wallet extensions refuse `eth_requestAccounts` and signature
+requests from many embedded iframes. Use the same origin as the API, for
+example `http://SERVER_IP/` or the published HTTPS domain.
+
+Then seed the public address that will sign in:
+
+```bash
+cd /var/www/gyds-explorer
+ADMIN_WALLET=0xYOUR_PUBLIC_WALLET_ADDRESS \
+ADMIN_WALLET_LABEL=Founder \
+npm run seed:admin --workspace=@workspace/api-server
+```
+
+Confirm the API and database are running before trying again:
+
+```bash
+curl -f http://127.0.0.1:3001/api/health
+pm2 logs gyds-api --lines 100
+```
+
+Never put a private key in the server environment. Only the public wallet
+address is seeded; the wallet extension signs the nonce locally. If sign-in
+returns `Wallet not authorized`, seed the exact address currently selected in
+the wallet. If it returns `No nonce found` or the API is unreachable, check
+the API health command, `DATABASE_URL`, and the API/JWT/session secret.
+
+## 7. Node port rules
 
 For a MAIN, FULL, or VALIDATOR node, allow peer traffic:
 
@@ -231,7 +341,7 @@ sudo ufw allow 8546/tcp
 The health check distinguishes validator nodes from public RPC nodes and does
 not report localhost-only validator RPC as a failure.
 
-## 7. Updates and rollback-safe checks
+## 8. Updates and rollback-safe checks
 
 Update the server with:
 

@@ -3,18 +3,19 @@
  * Seed (or update) an admin wallet in the admin_wallets table.
  *
  * Usage:
- *   node scripts/seed-admin.mjs                      # uses default test founder wallet
  *   ADMIN_WALLET=0x... ADMIN_WALLET_LABEL=Founder node scripts/seed-admin.mjs
  *
  * Reads DATABASE_URL from the environment (or ../../.env via --env-file).
  */
 import pg from "pg";
 
-const DEFAULT_WALLET = "0x6422D12BFADdEE5142BFaD21b3006a74D09017B1"; // test founder wallet — replace on your server
-
-const wallet = (process.env.ADMIN_WALLET || DEFAULT_WALLET).toLowerCase();
+const wallet = (process.env.ADMIN_WALLET || "").toLowerCase();
 const label = process.env.ADMIN_WALLET_LABEL || "Founder";
 
+if (!wallet) {
+  console.error("ADMIN_WALLET must be set to the public address that will sign in.");
+  process.exit(1);
+}
 if (!/^0x[a-f0-9]{40}$/.test(wallet)) {
   console.error(`Invalid wallet address: ${wallet}`);
   process.exit(1);

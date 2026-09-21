@@ -20,6 +20,14 @@ const WalletAuthButton = () => {
   const [session, setSession] = useState<WalletSession | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const isEmbedded = (() => {
+    try {
+      return window.self !== window.top;
+    } catch {
+      return true;
+    }
+  })();
+
   useEffect(() => {
     const syncSession = () => setSession(getStoredSession());
     syncSession();
@@ -28,6 +36,15 @@ const WalletAuthButton = () => {
   }, []);
 
   const signIn = async () => {
+    if (isEmbedded) {
+      const opened = window.open(window.location.href, "_blank", "noopener,noreferrer");
+      toast.info("Open the explorer in a new tab", {
+        description: opened
+          ? "Wallet extensions cannot connect inside Replit's embedded preview."
+          : "Allow pop-ups, then open the explorer directly in a browser tab.",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const next = await signInWithWallet();
@@ -81,7 +98,7 @@ const WalletAuthButton = () => {
   return (
     <Button variant="outline" size="sm" className="gap-1.5" onClick={signIn} disabled={loading}>
       {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
-      <span className="hidden sm:inline">Connect Wallet</span>
+      <span className="hidden sm:inline">{isEmbedded ? "Open to connect" : "Connect Wallet"}</span>
     </Button>
   );
 };

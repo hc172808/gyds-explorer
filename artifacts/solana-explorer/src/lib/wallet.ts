@@ -89,6 +89,9 @@ export async function addGydToken(provider = getEthereumProvider()) {
 export function getWalletError(error: unknown): string {
   const code = (error as { code?: number })?.code;
   if (code === 4001) return "The request was rejected in your wallet.";
+  if (code === 4002) return "The wallet request timed out. Unlock the wallet and try again.";
+  if (code === -32002) return "A wallet request is already pending. Open the wallet extension and finish it.";
+  if (code === -32603) return "The wallet could not complete the request. Check that the GYDS RPC URL is reachable.";
   if (code === 4902) return "This wallet could not add the network. Use the manual setup details below.";
   return error instanceof Error ? error.message : "The wallet request could not be completed.";
 }

@@ -5,11 +5,11 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 ## Run & Operate
 
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY`, `JWT_SECRET_KEY`, or legacy `JWT_SECRET` is configured
+- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `artifacts/solana-explorer: web` workflow — runs the frontend preview
-- `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY`, `JWT_SECRET_KEY`, or legacy `JWT_SECRET` is configured
+- `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend by itself
-- `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY`, `JWT_SECRET_KEY`, or legacy `JWT_SECRET` is configured
+- `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run typecheck` — full typecheck across all packages
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
@@ -17,7 +17,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
-- API service env: `API_SECRET_KEY`, `JWT_SECRET_KEY`, or legacy `JWT_SECRET` — required JWT signing secret; the API workflow will not start without one
+- API service env: `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` — required JWT signing secret; the API workflow will not start without one
 - Replit preview: the managed frontend proxies `/api` requests to the managed API service on localhost port 8080
 - Ubuntu deployment: Nginx serves the static explorer on port 80 and port 8080 by default; `--web-port=PORT` changes the direct web port
 - Validator setup: `node-setup.sh` configures Clique proof-of-authority authority nodes. It does not implement proof-of-stake staking.
@@ -42,7 +42,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 ## Architecture decisions
 
 - The explorer calls Solana/GYDS RPC endpoints directly from the browser; authenticated admin and feature-gate routes use the local API service
-- The API service must use `API_SECRET_KEY` or `JWT_SECRET_KEY` from Replit Secrets; do not invent or reuse another secret
+- The API service must use `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` from Replit Secrets; do not invent or reuse another secret
 - Admin login uses a wallet signature. The wallet must be seeded as an active `admin_wallets` row; API/JWT secrets only sign the resulting session token.
 - Wallet extensions reject connection/signature requests from embedded Replit previews; open the explorer in a new browser tab before using Admin Login.
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
