@@ -1,12 +1,20 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { networkNodesTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
-const NODE_TYPES = ["full", "lite", "boot"] as const;
+const NODE_TYPES = ["main", "full", "lite", "rpc", "boost", "validator", "boot"] as const;
 const NODE_STATUSES = ["connected", "disconnected"] as const;
+const PUBLIC_NODE_FIELDS = {
+  id: networkNodesTable.id,
+  name: networkNodesTable.name,
+  type: networkNodesTable.type,
+  rpcUrl: networkNodesTable.rpcUrl,
+  status: networkNodesTable.status,
+  isActive: networkNodesTable.isActive,
+} as const;
 
 function validId(value: unknown): number | null {
   if (typeof value !== "string") return null;
@@ -24,6 +32,11 @@ function validUrl(value: unknown): value is string {
   }
 }
 
+function validHttpUrl(value: unknown): value is string {
+  if (!validUrl(value)) return false;
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
 function nodeValues(body: Record<string, unknown>, partial = false) {
   const values: Record<string, unknown> = {};
 
@@ -35,7 +48,7 @@ function nodeValues(body: Record<string, unknown>, partial = false) {
   }
   if (!partial || "type" in body) {
     if (typeof body.type !== "string" || !NODE_TYPES.includes(body.type as typeof NODE_TYPES[number])) {
-      return { error: "type must be one of: full, lite, boot" };
+      return { error: "type must be one of: main, full, lite, rpc, boost, validator, boot" };
     }
     values.type = body.type;
   }
@@ -67,7 +80,7 @@ function nodeValues(body: Record<string, unknown>, partial = false) {
 // Public consumers only see connected nodes so the wallet can read balances.
 router.get("/", async (req, res) => {
   try {
-    res.json(await db.select().from(networkNodesTable).where(eq(networkNodesTable.isActive, true)).orderBy(networkNodesTable.name));
+    res.json(await db.select(PUBLIC_NODE_FIELDS).from(networkNodesTable).where(eq(networkNodesTable.isActive, true)).orderBy(networkNodesTable.name));
   } catch (err) {
     req.log.error({ err }, "Fetch public nodes error");
     res.status(500).json({ error: "Internal server error" });
@@ -80,6 +93,98 @@ router.get("/admin", requireAdmin, async (req, res) => {
     res.json(await db.select().from(networkNodesTable).orderBy(networkNodesTable.name));
   } catch (err) {
     req.log.error({ err }, "Fetch nodes error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Probe an RPC from the server so localhost and private-network node URLs work.
+router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
+  const rpcUrl = req.body?.rpcUrl;
+  if (!validHttpUrl(rpcUrl)) {
+    res.status(400).json({ ok: false, error: "rpcUrl must be a valid HTTP(S) URL" });
+    return;
+  }
+  try {
+    const request = (method: string) => fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method, params: [], id: 1 }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const [chainResponse, blockResponse] = await Promise.all([request("eth_chainId"), request("eth_blockNumber")]);
+    const [chain, block] = await Promise.all([chainResponse.json(), blockResponse.json()]) as [
+      { result?: string; error?: { message?: string } },
+      { result?: string; error?: { message?: string } },
+    ];
+    if (!chainResponse.ok || !blockResponse.ok || chain.error || block.error) {
+      res.json({ ok: false, error: chain.error?.message || block.error?.message || "RPC request failed" });
+      return;
+    }
+    const chainId = Number.parseInt(chain.result || "", 16);
+    if (!Number.isFinite(chainId)) {
+      res.json({ ok: false, error: "RPC returned no chain ID" });
+      return;
+    }
+    res.json({
+      ok: true,
+      chainId,
+      blockNumber: block.result ? Number.parseInt(block.result, 16) : undefined,
+      latencyMs: undefined,
+    });
+  } catch (err) {
+    res.json({ ok: false, error: err instanceof Error ? err.message : "RPC unreachable" });
+  }
+});
+
+// Persist the two explorer RPC endpoints and bootnode setting in the same
+// server-side node catalog used by the public RPC proxy.
+router.put("/runtime-settings", requireAdmin, async (req: AdminRequest, res) => {
+  const { primaryRpc, bootnodeEnode } = req.body ?? {};
+  const boostnodeRpc = req.body?.boostnodeRpc ?? req.body?.secondaryRpc;
+  if (!validHttpUrl(primaryRpc) || !validHttpUrl(boostnodeRpc)) {
+    res.status(400).json({ error: "primaryRpc and boostnodeRpc must be valid HTTP(S) URLs" });
+    return;
+  }
+  if (bootnodeEnode !== undefined && bootnodeEnode !== null && typeof bootnodeEnode !== "string") {
+    res.status(400).json({ error: "bootnodeEnode must be a string or null" });
+    return;
+  }
+
+  try {
+    const settings = [
+      { name: "Explorer Primary RPC", type: "rpc" as const, rpcUrl: primaryRpc.trim(), enode: null, isActive: true },
+      { name: "Explorer Boost Node", type: "boost" as const, rpcUrl: boostnodeRpc.trim(), enode: null, isActive: true },
+      {
+        name: "Explorer Bootnode",
+        type: "boot" as const,
+        rpcUrl: primaryRpc.trim(),
+        enode: typeof bootnodeEnode === "string" && bootnodeEnode.trim() ? bootnodeEnode.trim() : null,
+        isActive: typeof bootnodeEnode === "string" && Boolean(bootnodeEnode.trim()),
+      },
+    ];
+
+    for (const setting of settings) {
+      let existing = await db.query.networkNodesTable.findFirst({
+        where: (table, operators) => operators.eq(table.name, setting.name),
+      });
+      // Rename the earlier secondary-RPC record in place when upgrading.
+      if (!existing && setting.name === "Explorer Boost Node") {
+        existing = await db.query.networkNodesTable.findFirst({
+          where: (table, operators) => operators.eq(table.name, "Explorer Secondary RPC"),
+        });
+      }
+      if (existing) {
+        await db.update(networkNodesTable)
+          .set({ ...setting, updatedAt: new Date() })
+          .where(eq(networkNodesTable.id, existing.id));
+      } else {
+        await db.insert(networkNodesTable).values(setting);
+      }
+    }
+    req.log.info({ by: req.admin!.walletAddress }, "Explorer runtime node settings updated");
+    res.json({ success: true, settings });
+  } catch (err) {
+    req.log.error({ err }, "Update runtime node settings error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

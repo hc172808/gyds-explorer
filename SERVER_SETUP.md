@@ -14,8 +14,8 @@ workspace layout and uses Nginx for the browser UI.
 | 3001/tcp | API | No; Nginx proxies `/api/` locally |
 | 3002/tcp | Feature-gate service, if installed | No |
 | 30303/tcp + udp | GYDS peer-to-peer traffic | Yes for nodes |
-| 8545/tcp | GYDS HTTP JSON-RPC | Only for `rpc`, `full`, or `lite` nodes |
-| 8546/tcp | GYDS WebSocket RPC | Only for `rpc`, `full`, or `lite` nodes |
+| 8545/tcp | GYDS HTTP JSON-RPC | Only for `rpc`, `boost`, `full`, or `lite` nodes |
+| 8546/tcp | GYDS WebSocket RPC | Only for `rpc`, `boost`, `full`, or `lite` nodes |
 | 5432/tcp | PostgreSQL | No |
 | 6060/tcp | Node metrics | No |
 | 8008/tcp | pgAdmin's local Apache backend | No; use `/pgadmin4/` through Nginx |
@@ -247,6 +247,39 @@ curl -sS -H 'Content-Type: application/json' \
 Use `https://` and `wss://` behind a domain/reverse proxy when wallets will
 connect from a browser. Browsers and wallet extensions commonly reject
 insecure RPC URLs on public hostnames.
+
+### BOOST node
+
+A BOOST node is a second, dedicated full-sync/archive RPC node used as the
+explorer's failover endpoint. It runs the same Geth profile as an RPC node but
+is recorded separately in the Admin Dashboard so it can be managed and tested
+independently:
+
+```bash
+sudo install -o root -g root -m 600 genesis.json /etc/gyds/genesis.json
+sudo NODE_TYPE=boost \
+  MAIN_NODE_IP=MAIN_PUBLIC_IP \
+  MAIN_NODE_ENODE='enode://PUBLIC_KEY@MAIN_PUBLIC_IP:30303' \
+  ./node-setup.sh
+sudo gyds-status
+```
+
+After it is reachable through HTTPS, configure it in Admin → Node Settings as
+the **Boost node RPC URL**. The generated deployment values are:
+
+```dotenv
+VITE_RPC_URL_2=https://boost.example.com
+VITE_BOOSTNODE_RPC_URL=https://boost.example.com
+BOOSTNODE_RPC_URL=https://boost.example.com
+```
+
+The same setup can be started through the deployment script:
+
+```bash
+sudo ./deploy.sh --node-only --node-type=boost
+# or
+sudo ./deploy.sh --boost-node
+```
 
 ### Validator authority node
 

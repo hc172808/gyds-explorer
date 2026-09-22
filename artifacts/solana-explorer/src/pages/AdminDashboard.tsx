@@ -6,7 +6,7 @@ import {
   Server, Wifi, WifiOff, Copy, RotateCcw, Save, Activity,
   Coins, Plus, ExternalLink, ChevronDown, ChevronUp, Zap, AlertCircle,
 } from "lucide-react";
-import { useTokenDeploy, type DeployResult } from "@/lib/useTokenDeploy";
+import { useTokenDeploy, fetchTokenBalances, type DeployResult } from "@/lib/useTokenDeploy";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,9 @@ import {
   fetchCoinSettings,
   fetchNetworkNodes,
   pingNetworkNode,
+  saveRuntimeNodeSettings,
   toggleNetworkNode,
+  updateNetworkNode,
   updateCoinSetting,
   type CoinSetting,
   type NetworkNode,
@@ -58,20 +60,7 @@ function authHeaders(): HeadersInit {
 }
 
 async function pingRpc(url: string): Promise<RpcStatus> {
-  const start = Date.now();
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_blockNumber", params: [], id: 1 }),
-      signal: AbortSignal.timeout(5000),
-    });
-    const json = await res.json();
-    if (json.error) return { ok: false, error: json.error.message };
-    return { ok: true, blockNumber: parseInt(json.result, 16), latencyMs: Date.now() - start };
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : "Unreachable" };
-  }
+  return pingNetworkNode(url);
 }
 
 // ── Node Settings Tab ─────────────────────────────────────────────────────────
@@ -87,13 +76,45 @@ function NodeSettingsTab() {
   const [status1, setStatus1] = useState<RpcStatus | null>(null);
   const [status2, setStatus2] = useState<RpcStatus | null>(null);
   const [pinging, setPinging] = useState(false);
+  const [configuredNodes, setConfiguredNodes] = useState<NetworkNode[]>([]);
+
+  const loadConfiguredNodes = useCallback(async () => {
+    try {
+      const loaded = await fetchAdminNetworkNodes();
+      setConfiguredNodes(loaded);
+      const primary = loaded.find((node) => node.name === "Explorer Primary RPC");
+      const secondary = loaded.find((node) => node.name === "Explorer Boost Node" || node.name === "Explorer Secondary RPC");
+      const bootnode = loaded.find((node) => node.name === "Explorer Bootnode");
+      if (primary) setRpc1(primary.rpcUrl);
+      if (secondary) setRpc2(secondary.rpcUrl);
+      if (bootnode?.enode) setBoot(bootnode.enode);
+    } catch {
+      // The form remains usable with the build-time .env defaults.
+    }
+  }, []);
+
+  useEffect(() => { loadConfiguredNodes(); }, [loadConfiguredNodes]);
 
   const ENV_SNIPPET = `# ── GYDS Node / RPC Configuration ──────────────────
 VITE_RPC_URL=${rpc1}
-VITE_RPC_URL_2=${rpc2}${boot ? `
+VITE_RPC_URL_2=${rpc2}
+VITE_BOOSTNODE_RPC_URL=${rpc2}${boot ? `
 
 # ── Bootnode (add to static-nodes.json on your geth node)
 BOOTNODE_ENODE=${boot}` : ""}`;
+  const NODE_ENV_SNIPPET = configuredNodes.length
+    ? `${ENV_SNIPPET}
+
+# ── Server-side node catalog (managed in Admin → Nodes) ─────────
+${configuredNodes.map((node) => [
+  `GYDS_NODE_${node.id}_NAME=${node.name}`,
+  `GYDS_NODE_${node.id}_TYPE=${node.type}`,
+  `GYDS_NODE_${node.id}_RPC_URL=${node.rpcUrl}`,
+  `GYDS_NODE_${node.id}_STATUS=${node.status}`,
+  `GYDS_NODE_${node.id}_ACTIVE=${node.isActive}`,
+  node.enode ? `GYDS_NODE_${node.id}_ENODE=${node.enode}` : "",
+].filter(Boolean).join("\n")).join("\n\n")}`
+    : ENV_SNIPPET;
 
   const STATIC_NODES = boot
     ? `[\n  "${boot}"\n]`
@@ -105,19 +126,25 @@ BOOTNODE_ENODE=${boot}` : ""}`;
 
   const save = async () => {
     setSaving(true);
-    setPrimaryRpc(rpc1.trim());
-    setSecondaryRpc(rpc2.trim());
-    setBootnodeEnode(boot.trim());
-    await new Promise((r) => setTimeout(r, 300));
-    setSaving(false);
-    setDirty(false);
-    toast.success("Node settings saved", { description: "Settings persisted in browser storage." });
+    try {
+      await saveRuntimeNodeSettings({ primaryRpc: rpc1.trim(), boostnodeRpc: rpc2.trim(), bootnodeEnode: boot.trim() });
+      setPrimaryRpc(rpc1.trim());
+      setSecondaryRpc(rpc2.trim());
+      setBootnodeEnode(boot.trim());
+      await loadConfiguredNodes();
+      setDirty(false);
+      toast.success("Node settings saved", { description: "RPC and bootnode settings are now persisted on the server." });
+    } catch (error) {
+      toast.error("Could not save node settings", { description: error instanceof Error ? error.message : "Request failed" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const reset = () => {
     resetToDefaults();
     const envRpc1 = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com";
+    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "https://boost.netlifegy.com";
     setRpc1(envRpc1);
     setRpc2(envRpc2);
     setBoot("");
@@ -181,7 +208,7 @@ BOOTNODE_ENODE=${boot}` : ""}`;
             {status1 && <div className="mt-1.5"><RpcStatusBadge s={status1} /></div>}
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Secondary RPC URL (fallback)</label>
+           <label className="text-xs text-muted-foreground mb-1.5 block">Boost node RPC URL (fallback)</label>
             <Input
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
@@ -195,8 +222,8 @@ BOOTNODE_ENODE=${boot}` : ""}`;
 
       {/* Bootnode / Peer Config */}
       <div className="bg-card border border-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
-          <Server className="w-4 h-4 text-primary" /> Bootnode / Full Node Enode
+          <h2 className="text-sm font-semibold flex items-center gap-2 mb-1">
+           <Server className="w-4 h-4 text-primary" /> Bootnode / Full Node Enode
         </h2>
         <p className="text-xs text-muted-foreground mb-3">
           The enode URL of your full node or bootnode. Paste this into your geth node's
@@ -249,7 +276,7 @@ BOOTNODE_ENODE=${boot}` : ""}`;
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-semibold text-muted-foreground">.env / deploy config snippet</h2>
           <button
-            onClick={() => copy(ENV_SNIPPET, ".env snippet")}
+           onClick={() => copy(NODE_ENV_SNIPPET, ".env snippet")}
             className="text-xs text-primary hover:underline flex items-center gap-1"
           >
             <Copy className="w-3 h-3" /> Copy
@@ -260,7 +287,7 @@ BOOTNODE_ENODE=${boot}` : ""}`;
           <code className="font-mono text-[11px]">/var/www/gyds-explorer/.env</code>, then rebuild the frontend.
         </p>
         <pre className="text-[11px] font-mono bg-secondary/60 border border-border rounded-lg px-3 py-2.5 overflow-x-auto text-muted-foreground whitespace-pre">
-          {ENV_SNIPPET}
+          {NODE_ENV_SNIPPET}
         </pre>
         <div className="mt-3 p-3 rounded-lg bg-secondary/40 border border-border">
           <p className="text-xs text-muted-foreground font-semibold mb-1">After updating .env on the server:</p>
@@ -279,6 +306,7 @@ function NodesTab() {
   const [nodes, setNodes] = useState<NetworkNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: "",
     type: "full" as NetworkNodeType,
@@ -301,7 +329,7 @@ function NodesTab() {
 
   useEffect(() => { loadNodes(); }, [loadNodes]);
 
-  const addNode = async (event: React.FormEvent) => {
+  const saveNode = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.name.trim() || !form.rpcUrl.trim()) {
       toast.error("Name and RPC URL are required");
@@ -309,22 +337,36 @@ function NodesTab() {
     }
     setSaving(true);
     try {
-      await createNetworkNode({
+      const input = {
         name: form.name.trim(),
         type: form.type,
         rpcUrl: form.rpcUrl.trim(),
         enode: form.enode.trim() || null,
-        status: form.status.trim() || "unknown",
-        isActive: true,
-      });
+        status: form.status as "connected" | "disconnected",
+        isActive: editingId ? nodes.find((node) => node.id === editingId)?.isActive ?? true : true,
+      };
+      if (editingId) await updateNetworkNode(editingId, input);
+      else await createNetworkNode(input);
+      setEditingId(null);
       setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" });
-      toast.success("Network node added");
+      toast.success(editingId ? "Network node updated" : "Network node added");
       loadNodes();
     } catch (error) {
       toast.error("Could not add node", { description: error instanceof Error ? error.message : "Request failed" });
     } finally {
       setSaving(false);
     }
+  };
+
+  const beginEdit = (node: NetworkNode) => {
+    setEditingId(node.id);
+    setForm({
+      name: node.name,
+      type: node.type,
+      rpcUrl: node.rpcUrl,
+      enode: node.enode || "",
+      status: node.status === "connected" ? "connected" : "disconnected",
+    });
   };
 
   const toggle = async (node: NetworkNode) => {
@@ -356,22 +398,32 @@ function NodesTab() {
 
   return (
     <div className="space-y-5">
-      <form onSubmit={addNode} className="rounded-xl border border-border bg-card p-5">
+      <form onSubmit={saveNode} className="rounded-xl border border-border bg-card p-5">
         <div className="mb-4 flex items-center gap-2">
           <Network className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">Add network node</h2>
+          <h2 className="text-sm font-semibold">{editingId ? "Edit network node" : "Add network node"}</h2>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Node name" />
           <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value as NetworkNodeType })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+            <option value="main">Main node</option>
             <option value="full">Full node</option>
             <option value="lite">Lite node</option>
+            <option value="rpc">RPC node</option>
+            <option value="boost">Boost node</option>
+            <option value="validator">Validator node</option>
             <option value="boot">Boot node</option>
           </select>
           <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder="https://rpc.example.com" className="font-mono text-xs" />
           <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="enode://… (optional)" className="font-mono text-xs" />
-          <Input value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} placeholder="Status label (optional)" />
-          <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add node</Button>
+          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
+            <option value="connected">Connected</option>
+            <option value="disconnected">Disconnected</option>
+          </select>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
+            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
+          </div>
         </div>
       </form>
 
@@ -395,6 +447,7 @@ function NodesTab() {
               </div>
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="sm" onClick={() => ping(node)} className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Ping</Button>
+                <Button variant="ghost" size="sm" onClick={() => beginEdit(node)} className="gap-1.5 text-xs"><Settings className="h-3.5 w-3.5" /> Edit</Button>
                 <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disconnect" : "Connect"}</Button>
                 <Button variant="ghost" size="sm" onClick={() => remove(node)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
@@ -435,6 +488,7 @@ function CoinSettingsTab() {
       await updateCoinSetting(coin.symbol, {
         name: coin.name.trim(),
         decimals: Number(coin.decimals),
+        contractAddress: coin.contractAddress?.trim() || null,
         logoUrl: coin.logoUrl?.trim() || null,
         description: coin.description.trim(),
       });
@@ -456,6 +510,7 @@ function CoinSettingsTab() {
             <div><label className="mb-1.5 block text-xs text-muted-foreground">Name</label><Input value={coin.name} onChange={(event) => updateField(coin.symbol, "name", event.target.value)} /></div>
             <div><label className="mb-1.5 block text-xs text-muted-foreground">Symbol</label><Input value={coin.symbol} disabled className="font-mono" /></div>
             <div><label className="mb-1.5 block text-xs text-muted-foreground">Decimals</label><Input type="number" min={0} max={36} value={coin.decimals} onChange={(event) => updateField(coin.symbol, "decimals", Number(event.target.value))} /></div>
+            <div><label className="mb-1.5 block text-xs text-muted-foreground">ERC-20 contract address</label><Input value={coin.contractAddress || ""} onChange={(event) => updateField(coin.symbol, "contractAddress", event.target.value)} placeholder="0x… (leave empty for native coin)" className="font-mono text-xs" /></div>
             <div><label className="mb-1.5 block text-xs text-muted-foreground">Logo URL</label><Input value={coin.logoUrl || ""} onChange={(event) => updateField(coin.symbol, "logoUrl", event.target.value)} placeholder="/assets/gyds-logo.svg" className="font-mono text-xs" /></div>
             <div className="md:col-span-2"><label className="mb-1.5 block text-xs text-muted-foreground">About text</label><Textarea value={coin.description} onChange={(event) => updateField(coin.symbol, "description", event.target.value)} rows={4} placeholder="Describe this coin for the public About Coins page." /></div>
           </div>
@@ -738,6 +793,23 @@ function TokensTab() {
     localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
   };
 
+  const publishTokenSettings = async (result: DeployResult) => {
+    try {
+      await updateCoinSetting(result.symbol, {
+        name: result.name,
+        decimals: result.decimals,
+        contractAddress: result.contractAddress,
+        logoUrl: null,
+        description: `ERC-20 token deployed on GYDSChain. Contract: ${result.contractAddress}`,
+      });
+      toast.success(`${result.symbol} was added to the shared token catalog`);
+    } catch (error) {
+      toast.error("Token deployed, but shared catalog update failed", {
+        description: error instanceof Error ? error.message : "Save the contract in Admin → Coins.",
+      });
+    }
+  };
+
   const handleDeploy = async () => {
     if (!tokenName.trim() || !tokenSymbol.trim()) {
       toast.error("Token name and symbol are required.");
@@ -756,6 +828,7 @@ function TokensTab() {
     });
     if (result) {
       saveTokenToRegistry(result);
+      await publishTokenSettings(result);
       toast.success(`${result.name} (${result.symbol}) deployed at ${result.contractAddress.slice(0, 10)}…`);
     }
   };

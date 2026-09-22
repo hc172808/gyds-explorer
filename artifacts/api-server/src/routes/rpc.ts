@@ -1,9 +1,12 @@
 import { Router } from "express";
+import { db } from "@workspace/db";
+import { networkNodesTable } from "@workspace/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 const router = Router();
 const RPC_ENDPOINTS = [
   process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
-  process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
+  process.env.BOOSTNODE_RPC_URL || process.env.VITE_BOOSTNODE_RPC_URL || process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
 ];
 const EXPECTED_CHAIN_ID = "0x3068a";
 const RPC_TIMEOUT_MS = 5000;
@@ -16,8 +19,31 @@ router.post("/", async (req, res) => {
     return;
   }
 
+  let endpoints = RPC_ENDPOINTS;
+  const nodeId = Number(req.query.nodeId);
+  try {
+    if (Number.isSafeInteger(nodeId) && nodeId > 0) {
+      const [node] = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
+        .from(networkNodesTable)
+        .where(and(eq(networkNodesTable.id, nodeId), eq(networkNodesTable.isActive, true)))
+        .limit(1);
+      if (!node) {
+        res.status(404).json({ jsonrpc: "2.0", error: { code: -32001, message: "Configured node not found" }, id });
+        return;
+      }
+      endpoints = [node.rpcUrl];
+    } else {
+      const nodes = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
+        .from(networkNodesTable)
+        .where(and(eq(networkNodesTable.isActive, true), inArray(networkNodesTable.type, ["main", "full", "lite", "rpc", "boost"])));
+      endpoints = [...new Set([...nodes.map((node) => node.rpcUrl), ...RPC_ENDPOINTS])];
+    }
+  } catch {
+    // The environment fallbacks remain usable if the optional node catalog is unavailable.
+  }
+
   let lastError: unknown;
-  for (const endpoint of RPC_ENDPOINTS) {
+  for (const endpoint of endpoints) {
     try {
       const chainResponse = await fetch(endpoint, {
         method: "POST",

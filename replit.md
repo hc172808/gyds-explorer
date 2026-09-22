@@ -15,7 +15,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
-- Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
+- Required env: `VITE_RPC_URL_2` or `VITE_BOOSTNODE_RPC_URL` — boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
 - API service env: `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` — required JWT signing secret; the API workflow will not start without one
 - Replit preview: the managed frontend proxies `/api` requests to the managed API service on localhost port 8080

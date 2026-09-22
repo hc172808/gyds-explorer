@@ -1,6 +1,6 @@
 import { boolean, integer, pgEnum, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
-export const networkNodeTypeEnum = pgEnum("network_node_type", ["full", "lite", "boot"]);
+export const networkNodeTypeEnum = pgEnum("network_node_type", ["main", "full", "lite", "rpc", "boost", "validator", "boot"]);
 export const networkNodeStatusEnum = pgEnum("network_node_status", ["connected", "disconnected"]);
 
 export const networkNodesTable = pgTable("network_nodes", {
@@ -19,6 +19,7 @@ export const coinSettingsTable = pgTable("coin_settings", {
   symbol:      varchar("symbol", { length: 20 }).primaryKey(),
   name:        varchar("name", { length: 255 }).notNull(),
   decimals:    integer("decimals").notNull(),
+  contractAddress: varchar("contract_address", { length: 42 }),
   logoUrl:     varchar("logo_url", { length: 2048 }),
   description: text("description").notNull().default(""),
   updatedAt:   timestamp("updated_at").notNull().defaultNow(),

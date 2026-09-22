@@ -6,15 +6,15 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNetwork } from "@/contexts/NetworkContext";
-import { fetchCoinSettings, fetchNetworkNodes, type CoinSetting, type NetworkNode } from "@/lib/networkApi";
+import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type NetworkNode } from "@/lib/networkApi";
 import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
 import { GYD_TOKEN, getEthereumProvider, getWalletError } from "@/lib/wallet";
 import { toast } from "sonner";
 
 const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, logoUrl: "/assets/gyds-logo.svg", description: "" },
-  { symbol: "GYD", name: "GYD", decimals: 6, logoUrl: "/assets/gyd-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
 interface NetworkBalance {
@@ -124,14 +124,16 @@ export default function MyWallet() {
     const activeNodes = nodes.length ? nodes : [fallbackNode];
     const tokenAddresses = [
       ...(GYD_TOKEN.address ? [GYD_TOKEN.address] : []),
+      ...coins.map((coin) => coin.contractAddress).filter((address): address is string => Boolean(address)),
       ...registeredTokens.map((token) => token.address),
     ].filter((token, index, all) => all.indexOf(token) === index);
     const nextBalances = await Promise.all(activeNodes.map(async (node): Promise<NetworkBalance> => {
       try {
-        const provider = new JsonRpcProvider(node.rpcUrl);
+        const nodeRpc = proxyRpcUrl(node.id);
+        const provider = new JsonRpcProvider(nodeRpc);
         const [native, tokens] = await Promise.all([
           provider.getBalance(address),
-          tokenAddresses.length ? fetchTokenBalances(address, tokenAddresses, node.rpcUrl) : Promise.resolve([]),
+          tokenAddresses.length ? fetchTokenBalances(address, tokenAddresses, nodeRpc) : Promise.resolve([]),
         ]);
         return { node, native, tokens };
       } catch (balanceError) {
@@ -141,7 +143,7 @@ export default function MyWallet() {
     setBalances(nextBalances);
     if (nextBalances.every((result) => result.error)) setError("None of the configured RPC nodes could be reached.");
     setLoading(false);
-  }, [address, fallbackNode, nodes, registeredTokens]);
+  }, [address, coins, fallbackNode, nodes, registeredTokens]);
 
   useEffect(() => {
     if (address) loadBalances();
@@ -175,9 +177,10 @@ export default function MyWallet() {
       if (sendAsset === "GYDS") {
         tx = await signer.sendTransaction({ to: sendTo, value: parseEther(sendAmount) });
       } else {
-        if (!GYD_TOKEN.address) throw new Error("The GYD contract address has not been configured.");
-        const contract = new Contract(GYD_TOKEN.address, ERC20_TRANSFER_ABI, signer);
-        tx = await contract.transfer(sendTo, parseUnits(sendAmount, GYD_TOKEN.decimals));
+        const gydAddress = stableCoin.contractAddress || GYD_TOKEN.address;
+        if (!gydAddress) throw new Error("The GYD contract address has not been configured.");
+        const contract = new Contract(gydAddress, ERC20_TRANSFER_ABI, signer);
+        tx = await contract.transfer(sendTo, parseUnits(sendAmount, stableCoin.decimals));
       }
       toast.success("Transaction submitted", { description: tx.hash });
       setSendTo("");
@@ -195,6 +198,26 @@ export default function MyWallet() {
 
   const nativeCoin = coins.find((coin) => coin.symbol.toUpperCase() === "GYDS") || DEFAULT_COINS[0];
   const stableCoin = coins.find((coin) => coin.symbol.toUpperCase() === "GYD") || DEFAULT_COINS[1];
+  const portfolio = useMemo(() => {
+    const source = balances.find((result) => !result.error && result.native !== null);
+    if (!source || source.native === null) return [];
+    const assets = [{
+      key: "native",
+      symbol: nativeCoin.symbol,
+      name: nativeCoin.name,
+      decimals: nativeCoin.decimals,
+      balance: source.native,
+      logoUrl: nativeCoin.logoUrl,
+    }, ...source.tokens.map((token) => ({
+      key: token.contractAddress.toLowerCase(),
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      balance: token.balance,
+      logoUrl: coins.find((coin) => coin.contractAddress?.toLowerCase() === token.contractAddress.toLowerCase())?.logoUrl,
+    }))];
+    return assets.filter((asset, index, all) => all.findIndex((candidate) => candidate.key === asset.key) === index);
+  }, [balances, coins, nativeCoin]);
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-10">
@@ -246,9 +269,27 @@ export default function MyWallet() {
               <Button variant="ghost" size="sm" onClick={loadBalances} disabled={loading} className="gap-1.5"><RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</Button>
             </div>
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>}
+            {portfolio.length > 0 && (
+              <section className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-base font-semibold">Combined portfolio</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">Every configured asset in this wallet, shown in its own token unit.</p>
+                  </div>
+                  <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] text-primary">{portfolio.length} asset{portfolio.length === 1 ? "" : "s"}</span>
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {portfolio.map((asset) => (
+                    <BalanceCard key={asset.key} symbol={asset.symbol} name={asset.name} logoUrl={asset.logoUrl} value={formatBalance(asset.balance, asset.decimals)} decimals={asset.decimals} />
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] text-muted-foreground">Different tokens are not added into one numeric figure because GYDS, GYD, and ERC-20 assets use different units. Duplicate RPC nodes are not double-counted.</p>
+              </section>
+            )}
             <div className="space-y-5">
               {balances.map(({ node, native, tokens, error: nodeError }) => {
-                const gydToken = tokens.find((token) => token.contractAddress.toLowerCase() === GYD_TOKEN.address.toLowerCase());
+                const gydAddress = stableCoin.contractAddress || GYD_TOKEN.address;
+                const gydToken = tokens.find((token) => token.contractAddress.toLowerCase() === gydAddress.toLowerCase());
                 return (
                   <section key={node.id || node.rpcUrl} className="rounded-2xl border border-border bg-card overflow-hidden">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/30 px-5 py-3">
@@ -259,7 +300,7 @@ export default function MyWallet() {
                       <div className="grid gap-3 p-4 md:grid-cols-2">
                         <BalanceCard symbol={nativeCoin.symbol} name={nativeCoin.name} logoUrl={nativeCoin.logoUrl} value={native === null ? "—" : formatBalance(native, 18)} decimals={nativeCoin.decimals} />
                         <BalanceCard symbol={stableCoin.symbol} name={stableCoin.name} logoUrl={stableCoin.logoUrl} value={gydToken ? formatBalance(gydToken.balance, gydToken.decimals) : "Not configured"} decimals={stableCoin.decimals} />
-                        {tokens.filter((token) => token.contractAddress.toLowerCase() !== GYD_TOKEN.address.toLowerCase()).map((token) => (
+                        {tokens.filter((token) => token.contractAddress.toLowerCase() !== gydAddress.toLowerCase()).map((token) => (
                           <BalanceCard key={token.contractAddress} symbol={token.symbol} name={token.name} value={formatBalance(token.balance, token.decimals)} decimals={token.decimals} />
                         ))}
                       </div>

@@ -7,8 +7,8 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 const router = Router();
 const SYMBOL_PATTERN = /^[A-Za-z0-9]{1,20}$/;
 const DEFAULT_COIN_SETTINGS = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
-  { symbol: "GYD", name: "GYD", decimals: 6, logoUrl: "/assets/gyd-logo.svg", description: "Stablecoin of the GYDS network." },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
+  { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "Stablecoin of the GYDS network." },
 ];
 
 function validUrl(value: unknown): value is string {
@@ -29,6 +29,10 @@ function settingValues(body: Record<string, unknown>) {
   if (!Number.isInteger(body.decimals) || (body.decimals as number) < 0 || (body.decimals as number) > 36) {
     return { error: "decimals must be an integer between 0 and 36" };
   }
+  if (body.contractAddress !== null && body.contractAddress !== undefined &&
+      (typeof body.contractAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(body.contractAddress))) {
+    return { error: "contractAddress must be a valid 0x address or null" };
+  }
   if (body.logoUrl !== null && body.logoUrl !== undefined && (!validUrl(body.logoUrl) || body.logoUrl.length > 2048)) {
     return { error: "logoUrl must be a valid HTTP(S) URL or null" };
   }
@@ -39,6 +43,7 @@ function settingValues(body: Record<string, unknown>) {
     values: {
       name: body.name.trim(),
       decimals: body.decimals,
+      contractAddress: typeof body.contractAddress === "string" ? body.contractAddress.toLowerCase() : null,
       logoUrl: typeof body.logoUrl === "string" ? body.logoUrl.trim() : null,
       description: body.description.trim(),
     },

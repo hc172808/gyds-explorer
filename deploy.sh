@@ -13,7 +13,7 @@
 # Usage:
 #   chmod +x deploy.sh
 #   sudo ./deploy.sh [domain.com]
-#   sudo ./deploy.sh --node-only --node-type=rpc
+#   sudo ./deploy.sh --node-only --node-type=boost
 #   sudo ./deploy.sh --web-port=8080 [domain.com]
 #   sudo ./deploy.sh --no-web [domain.com]
 #
@@ -68,6 +68,10 @@ for ARG in "$@"; do
       NODE_ONLY=true
       NODE_TYPE_OVERRIDE="rpc"
       ;;
+    --boost-node)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="boost"
+      ;;
     --no-web|--api-only)
       DEPLOY_WEB=false
       ;;
@@ -85,7 +89,7 @@ for ARG in "$@"; do
       NODE_TYPE_OVERRIDE="${ARG#*=}"
       ;;
     --help|-h)
-      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|validator] [--validator] [--no-web]"
+      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|boost|validator] [--validator] [--no-web]"
       echo "       On an existing deployment, the script asks before deleting database/node state."
       exit 0
       ;;
@@ -280,7 +284,7 @@ echo "┌───────────────────────�
 echo "│   GYDS Blockchain Node Setup (Optional)             │"
 echo "│                                                     │"
 echo "│   Do you want to set up a GYDS blockchain node      │"
-echo "│   on this server? (main / full / lite / rpc / validator) │"
+echo "│   on this server? (main / full / lite / rpc / boost / validator) │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
 if [ "$NODE_ONLY" = true ] || { [ "${RESET_EXISTING}" = true ] && [ "${HAD_NODE_STATE}" = true ]; }; then
@@ -542,6 +546,8 @@ cat > "${APP_DIR}/.env" <<EOF
 # ---------- RPC Configuration ----------
 VITE_RPC_URL=https://rpc.netlifegy.com
 VITE_RPC_URL_2=https://boost.netlifegy.com
+VITE_BOOSTNODE_RPC_URL=https://boost.netlifegy.com
+BOOSTNODE_RPC_URL=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------
 VITE_PORT=${WEB_PORT}

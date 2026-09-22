@@ -34,7 +34,7 @@
 # Usage:
 #   chmod +x node-setup.sh
 #   sudo ./node-setup.sh
-#   sudo NODE_TYPE=rpc ./node-setup.sh
+#   sudo NODE_TYPE=boost ./node-setup.sh
 #
 # ============================================================
 
@@ -108,7 +108,7 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
-#   NODE_TYPE           main | full | lite | rpc | validator
+#   NODE_TYPE           main | full | lite | rpc | boost | validator
 #   MAIN_NODE_IP        IP of the main node
 #   MAIN_NODE_ENODE     enode://... URL of the main node
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
@@ -195,30 +195,32 @@ echo "║                  (syncs from Full nodes)       ║"
 echo "║                  (wallets & websites connect)  ║"
 echo "║                                                ║"
 echo "║   4) RPC       — Full synced public RPC node   ║"
-echo "║   5) VALIDATOR — Full node + consensus         ║"
+echo "║   5) BOOST     — Dedicated RPC failover node   ║"
+echo "║   6) VALIDATOR — Full node + consensus         ║"
 echo "║                  (syncs from Main, seals)      ║"
 echo "║                                                ║"
 echo "╚════════════════════════════════════════════════╝"
 echo ""
 if [ -z "$NODE_TYPE" ]; then
-  read -p "Enter choice [1-5]: " NODE_TYPE_CHOICE
+  read -p "Enter choice [1-6]: " NODE_TYPE_CHOICE
   case "$NODE_TYPE_CHOICE" in
     1) NODE_TYPE="main" ;;
     2) NODE_TYPE="full" ;;
     3) NODE_TYPE="lite" ;;
     4) NODE_TYPE="rpc" ;;
-    5) NODE_TYPE="validator" ;;
-    *) err "Invalid choice. Please enter 1, 2, 3, 4, or 5." ;;
+    5) NODE_TYPE="boost" ;;
+    6) NODE_TYPE="validator" ;;
+    *) err "Invalid choice. Please enter 1, 2, 3, 4, 5, or 6." ;;
   esac
 else
   case "$NODE_TYPE" in
-    main|full|lite|rpc|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
-    *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, rpc, or validator." ;;
+    main|full|lite|rpc|boost|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
+    *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, rpc, boost, or validator." ;;
   esac
 fi
 
 if [ -z "${PUBLIC_RPC}" ]; then
-  if [ "${NODE_TYPE}" = "rpc" ]; then
+  if [ "${NODE_TYPE}" = "rpc" ] || [ "${NODE_TYPE}" = "boost" ]; then
     PUBLIC_RPC="yes"
   else
     PUBLIC_RPC="no"
@@ -257,7 +259,7 @@ NODE_NAME="${CUSTOM_NAME:-$NODE_NAME}"
 
 if [ "$NODE_TYPE" != "main" ]; then
   echo ""
-  if [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "validator" ]; then
+  if [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "boost" ] || [ "$NODE_TYPE" = "validator" ]; then
     info "Full/Validator nodes sync from the MAIN node."
     if [ -z "$MAIN_NODE_IP" ]; then
       read -p "Enter MAIN node IP address: " MAIN_NODE_IP
@@ -703,7 +705,7 @@ case "$NODE_TYPE" in
     fi
     ;;
 
-  rpc)
+  rpc|boost)
     GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
     GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
@@ -755,7 +757,7 @@ case "$NODE_TYPE" in
 esac
 
 # Write static-nodes.json for full/validator nodes
-if { [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "validator" ]; } && [ -n "$MAIN_NODE_ENODE" ]; then
+if { [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "boost" ] || [ "$NODE_TYPE" = "validator" ]; } && [ -n "$MAIN_NODE_ENODE" ]; then
   mkdir -p "${DATA_DIR}/geth"
   cat > "${DATA_DIR}/geth/static-nodes.json" <<STATIC
 [
@@ -1283,7 +1285,7 @@ case "$NODE_TYPE" in
     echo "║   Once synced, share your enode with lite nodes.         ║"
     echo "║     gyds-enode                                           ║"
     ;;
-  rpc)
+  rpc|boost)
     printf "║   Syncing from MAIN: %-37s║\n" "${MAIN_NODE_IP}"
     echo "║   Public RPC endpoint for wallets/websites.              ║"
     printf "║     HTTP RPC: %-43s║\n" "http://${SERVER_IP}:${RPC_PORT}"
@@ -1342,6 +1344,12 @@ case "$NODE_TYPE" in
     echo "  2. Wait for sync:           gyds-console → eth.syncing"
     printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
     echo "  4. Use this RPC in the explorer's VITE_RPC_URL"
+    ;;
+  boost)
+    echo "  1. Verify genesis.json matches the MAIN node"
+    echo "  2. Wait for sync:           gyds-console → eth.syncing"
+    printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
+    echo "  4. Use this RPC as VITE_RPC_URL_2 / BOOSTNODE_RPC_URL"
     ;;
   lite)
     printf "  1. Add full node enodes to %s/geth/static-nodes.json\n" "${DATA_DIR}"
