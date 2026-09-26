@@ -1,0 +1,7 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">GYD token logo</title>
+  <rect width="256" height="256" rx="56" fill="#07131A"/>
+  <circle cx="128" cy="128" r="82" stroke="#45C7FF" stroke-width="12"/>
+  <path d="M166 93c-10-9.5-23-15-38-15-27.89 0-50.5 22.61-50.5 50.5S100.11 179 128 179c15 0 28-5.5 38-15v-35h-38" stroke="#45C7FF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 111v34M116 128h24" stroke="#45C7FF" stroke-width="10" stroke-linecap="round"/>
+</svg>

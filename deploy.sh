@@ -30,10 +30,14 @@ APP_NAME="gyds-explorer"
 APP_DIR="/var/www/${APP_NAME}"
 API_DIR="${APP_DIR}/api"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
+REPO_BRANCH="${REPO_BRANCH:-main}"
 DOMAIN=""
-NODE_VERSION="20"
+NODE_VERSION="22"
+MIN_NODE_VERSION="22.18.0"
+NPM_REGISTRY="https://registry.npmjs.org/"
 WEB_ENABLED=true
 PGADMIN_ENABLED=true
+DEPLOY_WEB=true
 NODE_ONLY=false
 NODE_TYPE_OVERRIDE=""
 SETUP_NODE=false
@@ -54,7 +58,17 @@ while [ "$i" -le "$#" ]; do
       ;;
     --no-web|--headless)
       WEB_ENABLED=false
+      DEPLOY_WEB=false
       PGADMIN_ENABLED=false
+      ;;
+    --api-only)
+      WEB_ENABLED=false
+      DEPLOY_WEB=false
+      PGADMIN_ENABLED=false
+      ;;
+    --with-web)
+      WEB_ENABLED=true
+      DEPLOY_WEB=true
       ;;
     --no-pgadmin)
       PGADMIN_ENABLED=false
@@ -64,6 +78,16 @@ while [ "$i" -le "$#" ]; do
       WEB_ENABLED=false
       PGADMIN_ENABLED=false
       SETUP_NODE=true
+      ;;
+    --node|--rpc-node)
+      NODE_ONLY=true
+      WEB_ENABLED=false
+      DEPLOY_WEB=false
+      PGADMIN_ENABLED=false
+      SETUP_NODE=true
+      if [ "$arg" = "--rpc-node" ]; then
+        NODE_TYPE_OVERRIDE="rpc"
+      fi
       ;;
     --setup-node)
       SETUP_NODE=true
@@ -109,6 +133,35 @@ warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
 err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
 
+version_at_least() {
+  local current="$1"
+  local minimum="$2"
+  local current_major current_minor current_patch
+  local minimum_major minimum_minor minimum_patch
+  IFS=. read -r current_major current_minor current_patch <<< "${current%%-*}"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<< "${minimum%%-*}"
+  current_minor="${current_minor:-0}"
+  current_patch="${current_patch:-0}"
+  minimum_minor="${minimum_minor:-0}"
+  minimum_patch="${minimum_patch:-0}"
+  if [ "${current_major:-0}" -ne "${minimum_major:-0}" ]; then
+    [ "${current_major:-0}" -gt "${minimum_major:-0}" ]
+  elif [ "${current_minor:-0}" -ne "${minimum_minor:-0}" ]; then
+    [ "${current_minor:-0}" -gt "${minimum_minor:-0}" ]
+  else
+    [ "${current_patch:-0}" -ge "${minimum_patch:-0}" ]
+  fi
+}
+
+check_node_version() {
+  command -v node >/dev/null 2>&1 || err "Node.js ${MIN_NODE_VERSION} or newer is required."
+  local current_node
+  current_node="$(node -v | sed 's/^v//')"
+  version_at_least "${current_node}" "${MIN_NODE_VERSION}" || \
+    err "Node.js ${MIN_NODE_VERSION} or newer is required; found v${current_node}."
+  command -v npm >/dev/null 2>&1 || err "npm is required."
+}
+
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
   err "Please run as root: sudo ./deploy.sh"
@@ -116,7 +169,7 @@ fi
 
 echo ""
 echo "╔════════════════════════════════════════════╗"
-echo "║   GYDS Explorer - Full Deployment Script   ║"
+echo "║   GYDS Explorer Deployment Script          ║"
 echo "║   Ubuntu 22.04                             ║"
 echo "╠════════════════════════════════════════════╣"
 echo "║   Steps:                                   ║"
@@ -154,10 +207,10 @@ echo "┌───────────────────────�
 echo "│   GYDS Blockchain Node Setup (Optional)             │"
 echo "│                                                     │"
 echo "│   Do you want to set up a GYDS blockchain node      │"
-echo "│   on this server? (main / full / lite / validator)  │"
+echo "│   on this server? (main / full / lite / rpc / validator) │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
-if [ "${SETUP_NODE}" = true ] || [ -n "${NODE_TYPE_OVERRIDE}" ]; then
+if [ "${SETUP_NODE}" = true ] || [ "${NODE_ONLY}" = true ] || [ -n "${NODE_TYPE_OVERRIDE}" ]; then
   SETUP_NODE_CHOICE="y"
 else
   read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
@@ -173,14 +226,18 @@ if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
 
   if [ -f "${NODE_SETUP_SCRIPT}" ]; then
     chmod +x "${NODE_SETUP_SCRIPT}"
-    if [ -n "${NODE_TYPE_OVERRIDE}" ]; then
-      NODE_TYPE="${NODE_TYPE_OVERRIDE}" bash "${NODE_SETUP_SCRIPT}"
+    if [ -n "$NODE_TYPE_OVERRIDE" ]; then
+      NODE_TYPE="$NODE_TYPE_OVERRIDE" bash "${NODE_SETUP_SCRIPT}"
     else
       bash "${NODE_SETUP_SCRIPT}"
     fi
     echo ""
     log "Blockchain node setup complete."
     echo ""
+    if [ "$NODE_ONLY" = true ]; then
+      log "Node-only mode selected. Web interface, API, database, and Nginx were skipped."
+      exit 0
+    fi
   else
     warn "node-setup.sh not found. Skipping node setup."
     warn "Place node-setup.sh in the same directory as deploy.sh and re-run to set up a node."
@@ -208,8 +265,8 @@ if ! command -v node &> /dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
   apt-get install -y nodejs
 else
-  CURRENT_NODE=$(node -v | cut -dv -f2 | cut -d. -f1)
-  if [ "$CURRENT_NODE" -lt "$NODE_VERSION" ]; then
+  CURRENT_NODE=$(node -v | sed 's/^v//')
+  if ! version_at_least "$CURRENT_NODE" "$MIN_NODE_VERSION"; then
     curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
     apt-get install -y nodejs
   else
@@ -227,7 +284,12 @@ if ! command -v npm &> /dev/null; then
   apt-get install -y npm
 fi
 
-info "Node: $(node -v) | npm: $(npm -v)"
+check_node_version
+export npm_config_registry="${NPM_REGISTRY}"
+if [ "$(npm config get registry)" != "${NPM_REGISTRY}" ]; then
+  err "npm registry must be ${NPM_REGISTRY}; found $(npm config get registry)."
+fi
+info "Node: $(node -v) | npm: $(npm -v) | registry: $(npm config get registry)"
 
 # ============================================================
 # STEP 3: Install & Configure PostgreSQL
@@ -331,14 +393,32 @@ info "Database tables created successfully."
 # ============================================================
 log "Step 4/11 — Setting up application code..."
 if [ -d "${APP_DIR}/.git" ]; then
-  warn "Directory ${APP_DIR} exists. Pulling latest changes..."
+  warn "Directory ${APP_DIR} exists. Updating from Git..."
   cd "${APP_DIR}"
-  git pull origin main || git pull origin master || warn "Git pull failed, using existing code."
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    git remote add origin "${REPO_URL}"
+  fi
+  git fetch --prune origin
+  CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [ -z "${CURRENT_BRANCH}" ]; then
+    CURRENT_BRANCH="${REPO_BRANCH}"
+  fi
+  if git show-ref --verify --quiet "refs/remotes/origin/${CURRENT_BRANCH}"; then
+    REPO_BRANCH="${CURRENT_BRANCH}"
+  elif git show-ref --verify --quiet "refs/remotes/origin/${REPO_BRANCH}"; then
+    git checkout -B "${REPO_BRANCH}" "origin/${REPO_BRANCH}"
+  else
+    warn "No matching remote branch found; using the existing checkout."
+  fi
+  if git show-ref --verify --quiet "refs/remotes/origin/${REPO_BRANCH}"; then
+    git pull --ff-only origin "${REPO_BRANCH}" \
+      || warn "Fast-forward pull failed; local changes were preserved."
+  fi
 elif [ -d "${APP_DIR}" ] && [ -f "${APP_DIR}/package.json" ]; then
   warn "Directory ${APP_DIR} exists with code but no git repo. Using existing files."
   cd "${APP_DIR}"
 else
-  git clone "${REPO_URL}" "${APP_DIR}"
+  git clone --branch "${REPO_BRANCH}" "${REPO_URL}" "${APP_DIR}"
   cd "${APP_DIR}"
 fi
 
@@ -711,7 +791,7 @@ info "API server files created at ${API_DIR}"
 log "Step 7/11 — Installing dependencies and building..."
 cd "${APP_DIR}"
 
-# Frontend dependencies
+# Workspace dependencies
 npm install --legacy-peer-deps
 
 # API dependencies
@@ -733,17 +813,22 @@ if [ -d "${APP_DIR}/indexer" ]; then
   cd "${APP_DIR}"
 fi
 
-# Build frontend
-if [ "${WEB_ENABLED}" = true ]; then
-  PORT="${VITE_PORT:-8080}" BASE_PATH="/" npm run build
+if [ "$DEPLOY_WEB" = true ]; then
+  # Build frontend
+  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+    npm run build --workspace=@workspace/solana-explorer
 
-  if [ ! -d "${APP_DIR}/dist/public" ]; then
-    err "Build failed — 'dist/public' directory not found in ${APP_DIR}."
+  FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
+  if [ ! -d "${FRONTEND_DIST}" ]; then
+    err "Build failed — frontend output not found in ${FRONTEND_DIST}."
   fi
 
-  info "Frontend built to ${APP_DIR}/dist/public"
+  rm -rf "${APP_DIR}/dist"
+  cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
+  info "Frontend built to ${APP_DIR}/dist"
 else
-  warn "Web UI disabled; skipping frontend build."
+  info "Web interface disabled. Building API only."
+  npm run build --workspace=@workspace/api-server
 fi
 
 # ============================================================
@@ -792,9 +877,9 @@ cd "${APP_DIR}"
 info "Services running via PM2. Use 'pm2 list' to check status."
 
 # ============================================================
-# STEP 9: Configure Nginx
+# STEP 9: Configure Nginx (optional web interface)
 # ============================================================
-if [ "${WEB_ENABLED}" = true ]; then
+if [ "$DEPLOY_WEB" = true ]; then
 log "Step 9/11 — Installing and configuring Nginx..."
 
 if ! command -v nginx &> /dev/null; then
@@ -882,13 +967,13 @@ systemctl reload nginx
 
 info "Nginx configured with API reverse proxy."
 else
-  warn "Web UI disabled; skipping Nginx configuration."
+  info "Web interface disabled. Skipping Nginx configuration."
 fi
 
 # ============================================================
-# STEP 10: Install pgAdmin Web Interface
+# STEP 10: Install pgAdmin Web Interface (optional)
 # ============================================================
-if [ "${PGADMIN_ENABLED}" = true ] && [ "${WEB_ENABLED}" = true ]; then
+if [ "$DEPLOY_WEB" = true ]; then
 log "Step 10/11 — Installing pgAdmin web interface..."
 
 if ! dpkg -l pgadmin4-web &>/dev/null; then
@@ -947,7 +1032,7 @@ info "  Access via: http://your-server/pgadmin4"
 info "  Email:      ${PGADMIN_EMAIL}"
 info "  Password:   ${PGADMIN_PASSWORD}  (also saved in ${APP_DIR}/.env)"
 else
-  warn "pgAdmin disabled; skipping web database interface."
+  info "Web interface disabled. Skipping pgAdmin installation."
 fi
 
 # ============================================================
@@ -974,24 +1059,30 @@ echo "║   ✅ GYDS Explorer deployed successfully!              ║"
 echo "╠════════════════════════════════════════════════════════╣"
 echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
-if [ "${WEB_ENABLED}" = true ]; then
-  printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist/public"
+if [ "$DEPLOY_WEB" = true ]; then
+  printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
 else
-  printf "║   🌐 Web interface:  %-35s║\n" "disabled"
+  echo "║   🌐 Web interface:  disabled                           ║"
 fi
 printf "║   🔌 API server:     %-35s║\n" "http://localhost:${API_PORT}/api"
 printf "║   🗄️  Database:       %-35s║\n" "${DB_NAME} @ localhost:${DB_PORT}"
 printf "║   👤 DB User:        %-35s║\n" "${DB_USER}"
 echo "║   🔑 DB Password:    saved in ${APP_DIR}/.env          ║"
-if [ "${PGADMIN_ENABLED}" = true ] && [ "${WEB_ENABLED}" = true ]; then
+if [ "$DEPLOY_WEB" = true ]; then
   printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
-else
-  printf "║   📊 pgAdmin:        %-35s║\n" "disabled"
 fi
 echo "║                                                        ║"
-if [ "${WEB_ENABLED}" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
-elif [ "${WEB_ENABLED}" = true ]; then
+else
+  if [ "$DEPLOY_WEB" = false ]; then
+    printf "║   📊 pgAdmin:        %-35s║\n" "disabled"
+  fi
+fi
+echo "║                                                        ║"
+if [ "$DEPLOY_WEB" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
+elif [ "$DEPLOY_WEB" = true ]; then
   printf "║   🌍 URL: %-47s║\n" "http://${SERVER_IP}"
 else
   printf "║   🌍 URL: %-47s║\n" "not installed"

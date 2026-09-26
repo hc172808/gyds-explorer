@@ -5,14 +5,13 @@ router = "application"
 deploymentTarget = "autoscale"
 
 [deployment.postBuild]
-args = ["pnpm", "store", "prune"]
+args = ["npm", "cache", "clean", "--force"]
 env = { "CI" = "true" }
 
 [workflows]
 runButton = "Project"
 
 [agent]
-stack = "PNPM_WORKSPACE"
 expertMode = true
 
 [postMerge]
@@ -29,3 +28,15 @@ VITE_RPC_URL_2 = "https://boost.netlifegy.com"
 
 [nix]
 channel = "stable-25_05"
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3000
+
+[[ports]]
+localPort = 18680
+externalPort = 80

@@ -4,17 +4,20 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/solana-explorer run dev` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `pnpm --filter @workspace/api-server run dev` — run the optional API service (workflow: `artifacts/api-server: API Server`)
-- `pnpm run typecheck` — full typecheck across all packages
+- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
+- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
+- `npm run typecheck` — full typecheck across all packages
+- `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
+- `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
 - Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
 - API service env: `API_SECRET_KEY` or `JWT_SECRET_KEY` — required JWT signing secret; the API workflow will not start without one
+- Replit preview: the frontend and mockup workflows are the runnable preview targets; the optional API artifact remains available but requires an explicitly configured API/JWT secret and is not part of the frontend's normal runtime path
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
+- npm workspaces, Node.js 20+, TypeScript 5.9
 - Frontend: React + Vite, Tailwind v3, shadcn/ui
 - Routing: react-router-dom v7 with `basename={import.meta.env.BASE_URL}`
 - Charts: recharts, framer-motion
@@ -49,10 +52,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-- Do NOT run `pnpm dev` at workspace root — use the workflow or `pnpm --filter @workspace/solana-explorer run dev`
+- Do NOT run `npm run dev` at workspace root — use the workflow or `npm run dev --workspace=@workspace/solana-explorer`
 - Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
 - The app uses `/api/rpc`; if the API service is absent, configure the frontend to use an RPC endpoint that explicitly allows browser CORS
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- The root `package.json` defines the npm workspace structure, TypeScript setup, and package details

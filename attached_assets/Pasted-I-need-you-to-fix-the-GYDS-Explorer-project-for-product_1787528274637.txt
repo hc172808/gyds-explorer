@@ -1,0 +1,159 @@
+I need you to fix the GYDS Explorer project for production deployment on a standalone Ubuntu 22.04 server.
+
+IMPORTANT: I am using NPM, NOT pnpm. Do not migrate this project to pnpm and do not add any pnpm-only requirements.
+
+Please inspect the entire repository and fix the deployment/package configuration so it works correctly with NPM.
+
+Current deployment environment:
+- Ubuntu 22.04
+- Node.js should be Node 22.18.0 or newer
+- npm is the package manager
+- PostgreSQL
+- Nginx
+- PM2
+- Production deployment is outside Replit
+
+Problems currently occurring:
+
+1. The project currently has a package.json install script that rejects npm with:
+   "Use pnpm instead"
+
+   Remove that pnpm enforcement completely. The project must allow:
+   npm install
+
+   Do not require pnpm.
+   Do not delete package-lock.json automatically.
+   Do not delete yarn.lock automatically unless there is a legitimate reason.
+
+2. Update the project to support Node.js 22.18.0 or newer.
+
+   Current dependencies report engine requirements including:
+   - @scalar/helpers requires Node >=22
+   - @scalar/json-magic requires Node >=22
+   - @scalar/openapi-parser requires Node >=22
+   - commander@15 requires Node >=22.12.0
+   - orval@8.26.0 requires Node >=22.18.0
+
+   Update package.json engines if appropriate so the project clearly requires Node >=22.18.0.
+
+3. Make sure the project uses the normal public npm registry:
+   https://registry.npmjs.org/
+
+   Remove any Replit-specific package registry configuration from the project.
+
+   In particular, I am currently getting:
+
+   npm error 409 Conflict - GET http://package-firewall.replit.local/npm/tailwindcss/-/tailwindcss-3.4.19.tgz
+
+   The production project must NOT depend on:
+   package-firewall.replit.local
+
+   Search the entire repository for:
+   - package-firewall.replit.local
+   - .npmrc
+   - npm registry overrides
+   - npm_config_registry
+   - custom package registries
+   - Replit-specific package installation settings
+
+   Remove or replace any configuration that redirects npm package downloads through Replit's internal package firewall.
+
+4. Ensure package-lock.json is compatible with npm and regenerate it if necessary.
+
+   Use npm, not pnpm, to regenerate dependencies.
+
+   The expected installation command must be:
+
+   npm install --legacy-peer-deps
+
+   or, if the dependency tree can be resolved cleanly:
+
+   npm install
+
+   Do not require:
+   pnpm install
+   yarn install
+
+5. Review the workspace configuration.
+
+   This project uses npm workspaces. Make sure all workspace dependencies and scripts work correctly with npm.
+
+   Verify commands such as:
+
+   npm run build --workspace=@workspace/solana-explorer
+
+   and any other workspace build commands used by the deployment script.
+
+6. Fix the deployment script.
+
+   The deployment script currently contains:
+
+   NODE_VERSION="20"
+
+   Change it to Node 22 and ensure the installed Node version is >=22.18.0.
+
+   The deployment script currently uses npm, and I want to KEEP npm.
+
+   Do not replace npm commands with pnpm commands.
+
+7. Review all package.json files in:
+   - the root project
+   - api/
+   - indexer/
+   - feature-gate-service/
+   - any other workspace/package directories
+
+   Make sure none of them contain a pnpm-only installation requirement or a Replit-specific registry.
+
+8. Review all scripts, including:
+   - preinstall
+   - install
+   - postinstall
+   - prepare
+   - build
+   - dev
+   - start
+
+   Remove any script that intentionally blocks npm.
+
+9. Do not make unrelated architectural changes.
+
+   Do not rewrite the application.
+   Do not change the database schema unless required for the build.
+   Do not change RPC endpoints.
+   Do not change the frontend architecture.
+   Do not migrate package managers.
+
+10. After making the changes, verify the project from a clean state.
+
+   The final production workflow should work approximately like this:
+
+   npm --version
+   node --version
+
+   npm config get registry
+   # Must resolve to:
+   # https://registry.npmjs.org/
+
+   npm install --legacy-peer-deps
+
+   npm run build
+
+11. Search the repository one final time for:
+   - "Use pnpm instead"
+   - "pnpm"
+   - "package-firewall.replit.local"
+   - "replit.local"
+
+   Report any remaining occurrences and explain whether each one is legitimate or should be removed.
+
+12. IMPORTANT: Do not simply tell me what to change. Actually modify the project files.
+
+At the end, give me a concise summary containing:
+- files changed
+- Node.js version requirement
+- npm registry configuration
+- package manager: npm
+- whether package-lock.json was regenerated
+- exact commands I should run on my Ubuntu server to deploy the fixed version
+- any remaining warnings or dependency issues

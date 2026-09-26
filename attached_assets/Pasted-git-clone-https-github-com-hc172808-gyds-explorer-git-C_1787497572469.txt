@@ -1,0 +1,136 @@
+git clone https://github.com/hc172808/gyds-explorer.git
+Cloning into 'gyds-explorer'...
+remote: Enumerating objects: 785, done.
+remote: Counting objects: 100% (785/785), done.
+remote: Compressing objects: 100% (442/442), done.
+remote: Total 785 (delta 427), reused 668 (delta 312), pack-reused 0 (from 0)
+Receiving objects: 100% (785/785), 722.98 KiB | 1.95 MiB/s, done.
+Resolving deltas: 100% (427/427), done.
+root@exproler-main:~# cd gyds-explorer
+root@exproler-main:~/gyds-explorer# ls
+artifacts        deploy-token.js  indexer  node-setup.sh      package.json  scripts             tsconfig.base.json  update.sh
+attached_assets  deploy.sh        lib      package-lock.json  replit.md     token-contract.sol  tsconfig.json
+root@exproler-main:~/gyds-explorer# bash deploy.sh
+
+╔════════════════════════════════════════════╗
+║   GYDS Explorer Deployment Script          ║
+║   Ubuntu 22.04                             ║
+╠════════════════════════════════════════════╣
+║   Steps:                                   ║
+║   1.  System packages                      ║
+║   2.  Node.js                              ║
+║   3.  PostgreSQL database                  ║
+║   4.  Clone repository                     ║
+║   5.  Generate .env configuration          ║
+║   6.  Create API server                    ║
+║   7.  Install dependencies & build         ║
+║   8.  Setup PM2 process manager            ║
+║   9.  Configure Nginx                      ║
+║  10.  pgAdmin web interface                ║
+║  11.  SSL certificate (optional)           ║
+╚════════════════════════════════════════════╝
+
+
+┌─────────────────────────────────────────────────────┐
+│   GYDS Blockchain Node Setup (Optional)             │
+│                                                     │
+│   Do you want to set up a GYDS blockchain node      │
+│   on this server? (main / full / lite / rpc / validator) │
+└─────────────────────────────────────────────────────┘
+
+Set up a blockchain node now? [y/N]: y
+[ℹ] Loading configuration from /root/gyds-explorer/.env ...
+
+╔════════════════════════════════════════════════╗
+║       GYDS Network - Node Setup Script         ║
+╠════════════════════════════════════════════════╣
+║                                                ║
+║   Select node type to install:                 ║
+║                                                ║
+║   1) MAIN      — Primary authority node        ║
+║                  (only ONE per network)        ║
+║                                                ║
+║   2) FULL      — Complete chain replica        ║
+║                  (syncs from Main node)        ║
+║                                                ║
+║   3) LITE      — Lightweight RPC endpoint      ║
+║                  (syncs from Full nodes)       ║
+║                  (wallets & websites connect)  ║
+║                                                ║
+║   4) RPC       — Full synced public RPC node   ║
+║   5) VALIDATOR — Full node + consensus         ║
+║                  (syncs from Main, seals)      ║
+║                                                ║
+╚════════════════════════════════════════════════╝
+
+Enter choice [1-5]: 1
+
+══════════════════════════════════════
+  Configuration for MAIN node
+══════════════════════════════════════
+
+Enter a friendly name for this node [gyds-main]: gyds-main
+
+══════════════════════════════════════
+  Step 1/9: Installing System Dependencies
+══════════════════════════════════════
+
+Hit:1 https://deb.nodesource.com/node_20.x nodistro InRelease                                           
+Hit:2 http://archive.ubuntu.com/ubuntu jammy InRelease                                                  
+Hit:3 http://archive.ubuntu.com/ubuntu jammy-updates InRelease                    
+Hit:4 http://archive.ubuntu.com/ubuntu jammy-security InRelease                   
+Hit:5 https://ppa.launchpadcontent.net/ethereum/ethereum/ubuntu jammy InRelease
+Reading package lists... Done
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+build-essential is already the newest version (12.9ubuntu3).
+ca-certificates is already the newest version (20260601~22.04.1).
+curl is already the newest version (7.81.0-1ubuntu1.26).
+git is already the newest version (1:2.34.1-1ubuntu1.17).
+jq is already the newest version (1.6-2.1ubuntu3.2).
+openssl is already the newest version (3.0.2-0ubuntu1.26).
+software-properties-common is already the newest version (0.99.22.9).
+ufw is already the newest version (0.36.1-4ubuntu0.1).
+wget is already the newest version (1.21.2-2ubuntu1.5).
+apt-transport-https is already the newest version (2.4.14).
+0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+[✓] System dependencies installed.
+
+══════════════════════════════════════
+  Step 2/9: Installing Geth
+══════════════════════════════════════
+
+[⚠] Geth already installed: Geth
+[✓] Geth installed: Geth
+
+══════════════════════════════════════
+  Step 3/9: Setting Up Directories
+══════════════════════════════════════
+
+[⚠] System user 'gyds' already exists.
+[✓] Directories ready: /var/lib/gyds, /etc/gyds, /var/log/gyds
+
+══════════════════════════════════════
+  Step 4/9: Chain Configuration
+══════════════════════════════════════
+
+[ℹ] Generating a new account for the MAIN node authority...
+[ℹ] Main node authority account: 0x248f69BBe4c9a17871D0A6B8bE999846f3Fb076B
+[✓] Genesis file created: /etc/gyds/genesis.json
+[ℹ] Initializing blockchain data directory...
+INFO [08-23|15:00:47.082] Maximum peer count                       ETH=50 total=50
+INFO [08-23|15:00:47.089] Smartcard socket not found, disabling    err="stat /run/pcscd/pcscd.comm: no such file or directory"
+WARN [08-23|15:00:47.100] Sanitizing cache to Go's GC limits       source=system provided=4096 updated=1453
+INFO [08-23|15:00:47.104] Set global gas cap                       cap=50,000,000
+INFO [08-23|15:00:47.106] Initializing the KZG library             backend=gokzg
+INFO [08-23|15:00:47.384] Using pebble as the backing database
+INFO [08-23|15:00:47.385] Allocated cache and file handles         database=/var/lib/gyds/geth/chaindata cache=726.00MiB handles=262,144
+INFO [08-23|15:00:51.227] Opened ancient database                  database=/var/lib/gyds/geth/chaindata/ancient/chain readonly=false
+INFO [08-23|15:00:51.227] Opened Era store                         datadir=/var/lib/gyds/geth/chaindata/ancient/chain/era
+INFO [08-23|15:00:51.227] State scheme set to already existing     scheme=path
+INFO [08-23|15:00:51.227] Load database journal from disk
+INFO [08-23|15:00:51.227] Failed to load journal, discard it       err="journal not found"
+INFO [08-23|15:00:51.339] Opened ancient database                  database=/var/lib/gyds/geth/chaindata/ancient/state readonly=false
+INFO [08-23|15:00:51.339] Initialized path database                triecache=16.00MiB statecache=16.00MiB buffer=64.00MiB state-history="last 90000 blocks" journal-dir=/var/lib/gyds/geth/triedb
+Fatal: Failed to write genesis block: database contains incompatible genesis (have 272334dc01a2b0b9546a880e0788a1a1b6a131c18e91312feda5a8d036be53f5, new 563e8b72e4c0f90400f5b974e693785c5cdf82f7c37a0b8dc9be544211c05d0d)
