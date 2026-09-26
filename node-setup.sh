@@ -1108,20 +1108,20 @@ MGMT
 cat > /usr/local/bin/gyds-console <<'MGMT'
 #!/bin/bash
 source /etc/gyds/node.env
-geth attach "http://127.0.0.1:${RPC_PORT}"
+geth attach "${DATA_DIR}/geth.ipc"
 MGMT
 
 cat > /usr/local/bin/gyds-enode <<'MGMT'
 #!/bin/bash
 source /etc/gyds/node.env
-geth attach --exec "admin.nodeInfo.enode" "http://127.0.0.1:${RPC_PORT}" 2>/dev/null \
+geth attach --exec "admin.nodeInfo.enode" "${DATA_DIR}/geth.ipc" 2>/dev/null \
   || echo "Node not running or RPC not available."
 MGMT
 
 cat > /usr/local/bin/gyds-peers <<'MGMT'
 #!/bin/bash
 source /etc/gyds/node.env
-geth attach --exec "admin.peers.length" "http://127.0.0.1:${RPC_PORT}" 2>/dev/null \
+geth attach --exec "admin.peers.length" "${DATA_DIR}/geth.ipc" 2>/dev/null \
   || echo "Node not running or RPC not available."
 MGMT
 
