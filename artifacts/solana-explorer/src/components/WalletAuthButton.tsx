@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, Loader2, ShieldCheck, Wallet } from "lucide-react";
+import { ExternalLink, LayoutDashboard, LogOut, Loader2, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,11 +37,8 @@ const WalletAuthButton = () => {
 
   const signIn = async () => {
     if (isEmbedded) {
-      const opened = window.open(window.location.href, "_blank", "noopener,noreferrer");
       toast.info("Open the explorer in a new tab", {
-        description: opened
-          ? "Wallet extensions cannot connect inside Replit's embedded preview."
-          : "Allow pop-ups, then open the explorer directly in a browser tab.",
+        description: "Wallet extensions cannot connect inside Replit's embedded preview.",
       });
       return;
     }
@@ -96,10 +93,19 @@ const WalletAuthButton = () => {
   }
 
   return (
-    <Button variant="outline" size="sm" className="gap-1.5" onClick={signIn} disabled={loading}>
-      {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
-      <span className="hidden sm:inline">{isEmbedded ? "Open to connect" : "Connect Wallet"}</span>
-    </Button>
+    isEmbedded ? (
+      <Button asChild variant="outline" size="sm" className="gap-1.5">
+        <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+          <ExternalLink className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Open to connect</span>
+        </a>
+      </Button>
+    ) : (
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={signIn} disabled={loading}>
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wallet className="w-3.5 h-3.5" />}
+        <span className="hidden sm:inline">Connect Wallet</span>
+      </Button>
+    )
   );
 };
 
