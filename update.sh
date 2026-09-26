@@ -131,13 +131,30 @@ info "Current commit: ${CURRENT_COMMIT} on branch '${CURRENT_BRANCH}'"
 # ============================================================
 log "Pulling latest code from git..."
 
-if [ -n "${BRANCH}" ] && [ "${BRANCH}" != "${CURRENT_BRANCH}" ]; then
-  info "Switching to branch '${BRANCH}'..."
-  git fetch origin "${BRANCH}"
-  git checkout "${BRANCH}"
+if ! git remote get-url origin >/dev/null 2>&1; then
+  err "No Git remote named 'origin' is configured in ${APP_DIR}."
 fi
 
-git fetch origin
+git fetch --prune origin
+
+TARGET_BRANCH="${BRANCH:-${CURRENT_BRANCH}}"
+if [ "${TARGET_BRANCH}" = "HEAD" ] || [ "${TARGET_BRANCH}" = "unknown" ]; then
+  TARGET_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
+fi
+[ -n "${TARGET_BRANCH}" ] || err "Could not determine the Git branch to update."
+
+if ! git show-ref --verify --quiet "refs/remotes/origin/${TARGET_BRANCH}"; then
+  err "Remote branch origin/${TARGET_BRANCH} does not exist."
+fi
+
+if [ "${CURRENT_BRANCH}" != "${TARGET_BRANCH}" ]; then
+  info "Switching to branch '${TARGET_BRANCH}'..."
+  if git show-ref --verify --quiet "refs/heads/${TARGET_BRANCH}"; then
+    git checkout "${TARGET_BRANCH}"
+  else
+    git checkout -b "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}"
+  fi
+fi
 
 # Check if there are local uncommitted changes
 if ! git diff --quiet HEAD; then
@@ -148,7 +165,7 @@ else
   STASHED=false
 fi
 
-PULL_OUTPUT=$(git pull origin "${BRANCH:-${CURRENT_BRANCH}}" 2>&1)
+PULL_OUTPUT=$(git pull --ff-only origin "${TARGET_BRANCH}" 2>&1)
 echo "$PULL_OUTPUT"
 
 NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")

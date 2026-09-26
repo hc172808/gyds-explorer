@@ -33,3 +33,37 @@ NODE_ENV = "production"
 
 [services.production.health.startup]
 path = "/api/healthz"
+
+[[services]]
+name = "Lite Node RPC"
+localPort = 8545
+paths = ["/node-lite"]
+
+[services.env]
+PORT = "8545"
+NODE_ROLE = "lite"
+RPC_MODE = "auto"
+RPC_MOCK_FALLBACK = "true"
+
+[services.development]
+run = "npm run node:lite --workspace=@workspace/scripts"
+
+[services.production.run]
+args = ["node", "scripts/src/local-node.mjs", "--role", "lite"]
+
+[[services]]
+name = "RPC Node"
+localPort = 8555
+paths = ["/node-rpc"]
+
+[services.env]
+PORT = "8555"
+NODE_ROLE = "rpc"
+RPC_MODE = "auto"
+RPC_MOCK_FALLBACK = "true"
+
+[services.development]
+run = "npm run node:rpc --workspace=@workspace/scripts"
+
+[services.production.run]
+args = ["node", "scripts/src/local-node.mjs", "--role", "rpc"]

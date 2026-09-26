@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "node:lite": "node ./src/local-node.mjs --role lite",
+    "node:rpc": "node ./src/local-node.mjs --role rpc",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

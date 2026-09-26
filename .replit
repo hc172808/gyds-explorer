@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "bash", "go-1.21", "web"]
+modules = ["nodejs-20", "bash", "go-1.21", "web", "python-base-3.13"]
 
 [deployment]
 router = "application"
@@ -28,15 +28,3 @@ VITE_RPC_URL_2 = "https://boost.netlifegy.com"
 
 [nix]
 channel = "stable-25_05"
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 8082
-externalPort = 3000
-
-[[ports]]
-localPort = 18680
-externalPort = 80
