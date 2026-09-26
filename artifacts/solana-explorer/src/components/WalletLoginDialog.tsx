@@ -11,8 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { requestNonce, verifySignature, setStoredToken } from "@/lib/featureGateApi";
-import { storeSession } from "@/lib/session";
+import { setStoredToken } from "@/lib/featureGateApi";
+import { requestSessionNonce, storeSession, verifySessionSignature } from "@/lib/session";
 
 interface WalletLoginDialogProps {
   onLoginSuccess: (walletAddress: string, label: string | null) => void;
@@ -86,7 +86,7 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   };
 
   const initiateAuth = async (address: string) => {
-    const { message } = await requestNonce(address);
+    const { message } = await requestSessionNonce(address);
     setPendingAddress(address);
     setSignMessage(message);
     setStep("sign");
@@ -108,14 +108,14 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   };
 
   const completeAuth = async (address: string, signature: string) => {
-    const result = await verifySignature(address, signature);
+    const result = await verifySessionSignature(address, signature);
     setStoredToken(result.token);
     storeSession({
       walletAddress: result.walletAddress,
       label: result.label,
       role: result.role,
     });
-    toast.success("Admin authenticated", {
+    toast.success(result.role === "user" ? "Wallet authenticated" : "Admin authenticated", {
       description: `Wallet: ${address.slice(0, 6)}...${address.slice(-4)}`,
     });
     setOpen(false);
@@ -135,10 +135,10 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-primary" />
-            Admin Wallet Login
+            Wallet Login
           </DialogTitle>
           <DialogDescription>
-            Connect your authorized GYDS wallet to access admin controls.
+            Sign in with your GYDS wallet. Admin wallets receive access to admin controls.
           </DialogDescription>
         </DialogHeader>
 

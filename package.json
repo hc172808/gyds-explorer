@@ -17,6 +17,7 @@
     "build": "cd artifacts/solana-explorer && PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} ../../node_modules/.bin/vite build --config vite.config.ts",
     "build:check": "npm run typecheck && npm run build",
     "build:dev": "npm run build",
+    "replit:dev": "bash scripts/replit-dev.sh",
     "typecheck:libs": "tsc --build",
     "typecheck": "bash scripts/typecheck-all.sh",
     "test": "cd artifacts/solana-explorer && ../../node_modules/.bin/vitest run --config vitest.config.ts",

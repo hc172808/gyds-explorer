@@ -1,4 +1,5 @@
-modules = ["nodejs-20", "bash", "go-1.21", "web"]
+modules = ["nodejs-20", "bash", "go-1.21", "web", "postgresql-16"]
+run = "bash scripts/replit-dev.sh"
 
 [deployment]
 router = "application"

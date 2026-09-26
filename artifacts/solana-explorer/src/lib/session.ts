@@ -93,6 +93,26 @@ export async function signInWithWallet(): Promise<WalletSession> {
   return session;
 }
 
+/** Request a public wallet session nonce without requiring admin authorization. */
+export async function requestSessionNonce(walletAddress: string): Promise<{ nonce: string; message: string }> {
+  return post<{ nonce: string; message: string }>("/auth/session/nonce", { walletAddress });
+}
+
+/** Verify a public wallet signature and return either a user or admin session. */
+export async function verifySessionSignature(walletAddress: string, signature: string): Promise<{
+  token: string;
+  walletAddress: string;
+  label: string | null;
+  role: "founder" | "admin" | "user";
+}> {
+  return post<{
+    token: string;
+    walletAddress: string;
+    label: string | null;
+    role: "founder" | "admin" | "user";
+  }>("/auth/session/verify", { walletAddress, signature });
+}
+
 /** Where a wallet should land right after signing in. */
 export function dashboardPathFor(session: WalletSession): string {
   return isPrivilegedSession(session) ? "/admin" : "/dashboard";

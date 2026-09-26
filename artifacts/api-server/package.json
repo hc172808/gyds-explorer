@@ -8,7 +8,7 @@
     "npm": ">=10"
   },
   "scripts": {
-    "dev": "export NODE_ENV=development && npm run build && npm run start",
+    "dev": "bash ../../scripts/replit-api-dev.sh",
     "build": "node ./build.mjs",
     "start": "node --env-file=../../.env --enable-source-maps ./dist/index.mjs",
     "seed:admin": "node --env-file=../../.env ./scripts/seed-admin.mjs",

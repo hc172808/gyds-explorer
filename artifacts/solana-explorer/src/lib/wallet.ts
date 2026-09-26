@@ -29,6 +29,14 @@ export function getEthereumProvider(): EthereumProvider | null {
 
 export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] {
   return [primaryRpc, secondaryRpc]
+    .map((url) => {
+      if (!url || !url.startsWith("/")) return url;
+      try {
+        return new URL(url, window.location.origin).toString();
+      } catch {
+        return url;
+      }
+    })
     .filter((url): url is string => Boolean(url))
     .filter((url, index, urls) => urls.indexOf(url) === index);
 }

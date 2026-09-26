@@ -16,6 +16,16 @@ const LS_KEY_RPC2     = "gyds_rpc_secondary";
 const LS_KEY_BOOTNODE = "gyds_bootnode_enode";
 const LS_KEY_NETWORK  = "gyds_network_type";
 
+function resolveRpcUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/")) return trimmed;
+  try {
+    return new URL(trimmed, window.location.origin).toString();
+  } catch {
+    return trimmed;
+  }
+}
+
 function lsGet(key: string, fallback: string): string {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
 }
@@ -48,8 +58,8 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
     }
   );
   const [customRpcUrl, setCustomRpcUrlState] = useState("");
-  const [primaryRpc, setPrimaryRpcState]     = useState(() => lsGet(LS_KEY_RPC1, ENV_RPC1));
-  const [secondaryRpc, setSecondaryRpcState] = useState(() => lsGet(LS_KEY_RPC2, ENV_RPC2));
+  const [primaryRpc, setPrimaryRpcState]     = useState(() => resolveRpcUrl(lsGet(LS_KEY_RPC1, ENV_RPC1)));
+  const [secondaryRpc, setSecondaryRpcState] = useState(() => resolveRpcUrl(lsGet(LS_KEY_RPC2, ENV_RPC2)));
   const [bootnodeEnode, setBootnodeEnodeState] = useState(() => lsGet(LS_KEY_BOOTNODE, ""));
 
   useEffect(() => { lsSet(LS_KEY_NETWORK, networkType); }, [networkType]);
@@ -59,13 +69,13 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
 
   const setNetworkType = (type: NetworkType) => setNetworkTypeState(type);
   const setCustomRpcUrl = (url: string) => setCustomRpcUrlState(url);
-  const setPrimaryRpc = (url: string) => setPrimaryRpcState(url);
-  const setSecondaryRpc = (url: string) => setSecondaryRpcState(url);
+  const setPrimaryRpc = (url: string) => setPrimaryRpcState(resolveRpcUrl(url));
+  const setSecondaryRpc = (url: string) => setSecondaryRpcState(resolveRpcUrl(url));
   const setBootnodeEnode = (enode: string) => setBootnodeEnodeState(enode);
 
   const resetToDefaults = () => {
-    setPrimaryRpcState(ENV_RPC1);
-    setSecondaryRpcState(ENV_RPC2);
+    setPrimaryRpcState(resolveRpcUrl(ENV_RPC1));
+    setSecondaryRpcState(resolveRpcUrl(ENV_RPC2));
     setBootnodeEnodeState("");
     setNetworkTypeState("mainnet");
     try {
