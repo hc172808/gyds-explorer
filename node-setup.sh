@@ -653,6 +653,7 @@ GETH_ARGS=""
 
 # Common args for all node types
 GETH_ARGS+=" --datadir ${DATA_DIR}"
+GETH_ARGS+=" --ipcpath ${DATA_DIR}/geth.ipc"
 GETH_ARGS+=" --networkid ${NETWORK_ID}"
 GETH_ARGS+=" --port ${P2P_PORT}"
 GETH_ARGS+=" --metrics --metrics.addr 127.0.0.1 --metrics.port ${METRICS_PORT}"
@@ -1125,6 +1126,39 @@ geth attach --exec "admin.peers.length" "${DATA_DIR}/geth.ipc" 2>/dev/null \
   || echo "Node not running or RPC not available."
 MGMT
 
+cat > /usr/local/bin/gyds-admin-check <<'MGMT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+source /etc/gyds/node.env
+IPC_PATH="${DATA_DIR:-/var/lib/gyds}/geth.ipc"
+
+[ -S "${IPC_PATH}" ] || {
+  echo "ERROR: Geth IPC socket not found: ${IPC_PATH}" >&2
+  echo "Check: sudo systemctl status gyds-node" >&2
+  exit 1
+}
+
+ADMIN_TYPE="$(geth attach --exec 'typeof admin' "${IPC_PATH}" 2>/dev/null | tr -d '\r')"
+[ "${ADMIN_TYPE}" = "object" ] || {
+  echo "ERROR: admin namespace is unavailable over the local IPC socket (got: ${ADMIN_TYPE:-empty})" >&2
+  exit 1
+}
+
+ENODE="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>/dev/null | tr -d '\r')"
+[ -n "${ENODE}" ] || {
+  echo "ERROR: admin.nodeInfo.enode returned no value." >&2
+  exit 1
+}
+
+PEERS="$(geth attach --exec 'admin.peers.length' "${IPC_PATH}" 2>/dev/null | tr -d '\r')"
+
+echo "admin namespace: available over IPC"
+echo "IPC socket:      ${IPC_PATH}"
+echo "enode:           ${ENODE}"
+echo "peer count:      ${PEERS:-unknown}"
+MGMT
+
 # Add / remove bootnode enodes in static-nodes.json at runtime
 cat > /usr/local/bin/gyds-add-bootnode <<'MGMT'
 #!/bin/bash
@@ -1217,8 +1251,8 @@ fi
 echo "Updated /etc/gyds/node.env with new bootnode enode."
 MGMT
 
-chmod +x /usr/local/bin/gyds-{start,stop,restart,status,logs,console,enode,peers,add-bootnode,set-bootnode}
-log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-status, gyds-logs, gyds-console, gyds-enode, gyds-peers"
+chmod +x /usr/local/bin/gyds-{start,stop,restart,status,logs,console,enode,peers,admin-check,add-bootnode,set-bootnode}
+log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-status, gyds-logs, gyds-console, gyds-enode, gyds-peers, gyds-admin-check"
 
 # ============================================================
 # STEP 9: Enable & Start the Node

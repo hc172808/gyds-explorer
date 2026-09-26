@@ -100,6 +100,27 @@ IPC_PATH="${DATA_DIR:-/var/lib/gyds}/geth.ipc"
 }
 exec geth attach --exec "admin.peers.length" "${IPC_PATH}"'
 
+install_tool /usr/local/bin/gyds-admin-check '#!/usr/bin/env bash
+set -euo pipefail
+source /etc/gyds/node.env
+IPC_PATH="${DATA_DIR:-/var/lib/gyds}/geth.ipc"
+[ -S "${IPC_PATH}" ] || {
+  echo "Geth IPC socket not found: ${IPC_PATH}" >&2
+  exit 1
+}
+ADMIN_TYPE="$(geth attach --exec "typeof admin" "${IPC_PATH}" 2>/dev/null | tr -d "\r")"
+[ "${ADMIN_TYPE}" = "object" ] || {
+  echo "admin namespace unavailable over IPC (got: ${ADMIN_TYPE:-empty})" >&2
+  exit 1
+}
+ENODE="$(geth attach --exec "admin.nodeInfo.enode" "${IPC_PATH}" 2>/dev/null | tr -d "\r")"
+[ -n "${ENODE}" ] || { echo "admin.nodeInfo.enode returned no value." >&2; exit 1; }
+PEERS="$(geth attach --exec "admin.peers.length" "${IPC_PATH}" 2>/dev/null | tr -d "\r")"
+echo "admin namespace: available over IPC"
+echo "IPC socket: ${IPC_PATH}"
+echo "enode: ${ENODE}"
+echo "peer count: ${PEERS:-unknown}"'
+
 log "Installed IPC-based GYDS management commands."
 
 if [ "${NO_RESTART}" = false ]; then
@@ -121,6 +142,9 @@ if [ -S "${IPC_PATH}" ]; then
   echo ""
   echo "Peers:"
   /usr/local/bin/gyds-peers || true
+  echo ""
+  echo "Admin check:"
+  /usr/local/bin/gyds-admin-check || true
 else
   warn "Geth IPC socket is not available yet: ${IPC_PATH}"
   warn "Check the node with: sudo systemctl status gyds-node"
