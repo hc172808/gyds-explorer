@@ -18,7 +18,7 @@ workspace layout and uses Nginx for the browser UI.
 | 8546/tcp | GYDS WebSocket RPC | Only for `rpc`, `boost`, `full`, or `lite` nodes |
 | 5432/tcp | PostgreSQL | No |
 | 6060/tcp | Node metrics | No |
-| 8008/tcp | pgAdmin's local Apache backend | No; use `/pgadmin4/` through Nginx |
+| 8008/tcp | pgAdmin's local Apache backend (only with `--with-pgadmin`) | No; use `/pgadmin4/` through Nginx |
 
 The frontend is a static build. `PORT=8080` during `npm run build` does not
 start a web server. After deployment, use either:
@@ -53,14 +53,41 @@ Deploy with a domain and direct UI port:
 sudo ./deploy.sh example.com --web-port=8080
 ```
 
-The script installs Node.js 22.18 or newer, PostgreSQL, Nginx, PM2, and the
-frontend dependencies. It creates `/var/www/gyds-explorer/dist`, writes the
-server `.env`, configures Nginx, and prints the final URLs.
+The script installs Node.js 22.18 or newer, local PostgreSQL, Nginx, PM2, and
+the frontend dependencies. It creates `/var/www/gyds-explorer/dist`, writes
+the server `.env`, configures Nginx, and prints the final URLs. It does **not**
+install or configure Supabase.
+
+pgAdmin is optional and is not installed by the normal command. To explicitly
+install it and expose it at `/pgadmin4`, run:
+
+```bash
+sudo ./deploy.sh --with-pgadmin
+```
+
+The `--with-pgadmin` option installs `pgadmin4-web`, configures Apache on its
+private port `8008`, adds the Nginx `/pgadmin4/` proxy, and writes generated
+pgAdmin credentials to `.env`. `--no-web --with-pgadmin` skips pgAdmin because
+there is no web interface to proxy it through.
 
 The script asks whether to install a blockchain node. Answer `N` if this
 machine should only host the explorer. The explorer itself reads the public RPC
 values in `.env` directly from the browser and does not require the API service
 for normal browsing.
+
+## 2a. What `update.sh` does
+
+`update.sh` does not install PostgreSQL, Supabase, pgAdmin, Apache, Nginx, or
+any other system service. It pulls the selected Git branch, runs the workspace
+`npm install` steps unless `--skip-deps` is supplied, builds the frontend unless
+`--skip-build` is supplied, restarts existing PM2 services and reloads Nginx
+unless `--no-restart` is supplied, then runs the health check.
+
+If pgAdmin was already installed on a server, `update.sh` leaves it installed
+but does not configure, upgrade, or remove it. A normal `deploy.sh` rerun
+without `--with-pgadmin` will not install pgAdmin and will remove the
+pgAdmin proxy from the newly generated Nginx config; it will not uninstall an
+existing pgAdmin package.
 
 ## 3. Verify the UI and firewall
 

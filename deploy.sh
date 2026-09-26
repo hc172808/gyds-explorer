@@ -7,7 +7,8 @@
 #   - PostgreSQL database
 #   - Express API server (PM2 managed)
 #   - Nginx reverse proxy + static frontend
-#   - pgAdmin web interface (Apache on port 8008)
+#   - Optional pgAdmin web interface (Apache on port 8008)
+#   - Supabase is not installed or configured by this script
 #   - Optional SSL via Certbot
 #
 # Usage:
@@ -16,6 +17,7 @@
 #   sudo ./deploy.sh --node-only --node-type=boost
 #   sudo ./deploy.sh --web-port=8080 [domain.com]
 #   sudo ./deploy.sh --no-web [domain.com]
+#   sudo ./deploy.sh --with-pgadmin [domain.com]
 #
 # Prerequisites: Ubuntu 22.04 with root/sudo access
 # ============================================================
@@ -33,6 +35,7 @@ NODE_VERSION="22"
 MIN_NODE_VERSION="22.18.0"
 NPM_REGISTRY="https://registry.npmjs.org/"
 DEPLOY_WEB=true
+INSTALL_PGADMIN=false
 NODE_ONLY=false
 NODE_TYPE_OVERRIDE="${NODE_TYPE:-}"
 
@@ -78,6 +81,9 @@ for ARG in "$@"; do
     --with-web)
       DEPLOY_WEB=true
       ;;
+    --with-pgadmin)
+      INSTALL_PGADMIN=true
+      ;;
     --web-port=*)
       WEB_PORT="${ARG#*=}"
       ;;
@@ -89,8 +95,9 @@ for ARG in "$@"; do
       NODE_TYPE_OVERRIDE="${ARG#*=}"
       ;;
     --help|-h)
-      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|boost|validator] [--validator] [--no-web]"
+      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|boost|validator] [--validator] [--no-web] [--with-pgadmin]"
       echo "       On an existing deployment, the script asks before deleting database/node state."
+      echo "       pgAdmin is not installed unless --with-pgadmin is supplied. Supabase is never installed."
       exit 0
       ;;
     --*)
@@ -105,6 +112,11 @@ for ARG in "$@"; do
       ;;
   esac
 done
+
+if [ "$INSTALL_PGADMIN" = true ] && [ "$DEPLOY_WEB" = false ]; then
+  warn "--with-pgadmin requires the web interface; skipping pgAdmin because --no-web was supplied."
+  INSTALL_PGADMIN=false
+fi
 
 
 version_at_least() {
@@ -201,7 +213,7 @@ echo "║   6.  Create API server                    ║"
 echo "║   7.  Install dependencies & build         ║"
 echo "║   8.  Setup PM2 process manager            ║"
 echo "║   9.  Configure Nginx                      ║"
-echo "║  10.  pgAdmin web interface                ║"
+echo "║  10.  pgAdmin web interface (optional)     ║"
 echo "║  11.  SSL certificate (optional)           ║"
 echo "╚════════════════════════════════════════════╝"
 echo ""
@@ -1224,6 +1236,24 @@ else
   WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT} default_server;"
 fi
 
+PGADMIN_PROXY_BLOCK=""
+if [ "$INSTALL_PGADMIN" = true ]; then
+  PGADMIN_PROXY_BLOCK=$(cat <<'NGINX_PGADMIN'
+    # Proxy pgAdmin (Apache runs on port 8008 to avoid nginx conflict)
+    location /pgadmin4/ {
+        proxy_pass http://127.0.0.1:8008/pgadmin4/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Script-Name /pgadmin4;
+        proxy_redirect off;
+    }
+NGINX_PGADMIN
+)
+fi
+
 cat > "${NGINX_CONF}" <<EOF
 server {
     listen 80 default_server;
@@ -1269,17 +1299,7 @@ ${WEB_LISTEN_DIRECTIVE}
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # Proxy pgAdmin (Apache runs on port 8008 to avoid nginx conflict)
-    location /pgadmin4/ {
-        proxy_pass http://127.0.0.1:8008/pgadmin4/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Script-Name /pgadmin4;
-        proxy_redirect off;
-    }
+${PGADMIN_PROXY_BLOCK}
 
     # SPA fallback — all other routes serve index.html
     location / {
@@ -1344,7 +1364,7 @@ fi
 # ============================================================
 # STEP 10: Install pgAdmin Web Interface (optional)
 # ============================================================
-if [ "$DEPLOY_WEB" = true ]; then
+if [ "$INSTALL_PGADMIN" = true ]; then
 log "Step 10/11 — Installing pgAdmin web interface..."
 
 if ! dpkg -l pgadmin4-web &>/dev/null; then
@@ -1410,7 +1430,7 @@ info "  Access via: http://your-server/pgadmin4"
 info "  Email:      ${PGADMIN_EMAIL}"
 info "  Password:   ${PGADMIN_PASSWORD}  (also saved in ${APP_DIR}/.env)"
 else
-  info "Web interface disabled. Skipping pgAdmin installation."
+  info "pgAdmin not requested. Skipping pgAdmin installation."
 fi
 
 # ============================================================
@@ -1478,8 +1498,10 @@ printf "║   🔌 API server:     %-35s║\n" "http://localhost:${API_PORT}/api
 printf "║   🗄️  Database:       %-35s║\n" "${DB_NAME} @ localhost:${DB_PORT}"
 printf "║   👤 DB User:        %-35s║\n" "${DB_USER}"
 echo "║   🔑 DB Password:    saved in ${APP_DIR}/.env          ║"
-if [ "$DEPLOY_WEB" = true ]; then
+if [ "$INSTALL_PGADMIN" = true ]; then
   printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
+else
+  echo "║   📊 pgAdmin:        not installed (optional)             ║"
 fi
 echo "║                                                        ║"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then

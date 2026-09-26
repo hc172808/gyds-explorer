@@ -21,7 +21,9 @@ set -e
 # ---------- Configuration ----------
 APP_DIR="/var/www/gyds-explorer"
 API_DIR="${APP_DIR}/api"
-FRONTEND_BUILD_DIR="${APP_DIR}/artifacts/solana-explorer/dist/public"
+# The current Vite config writes the production build directly to the
+# workspace-level dist directory.
+FRONTEND_BUILD_DIR="${APP_DIR}/dist"
 HEALTH_CHECK="${APP_DIR}/check-services.sh"
 LOG_FILE="/var/log/gyds-explorer-update.log"
 MIN_NODE_VERSION="22.18.0"
@@ -226,8 +228,6 @@ if [ "${SKIP_BUILD}" = "false" ]; then
   if [ ! -f "${FRONTEND_BUILD_DIR}/index.html" ]; then
     err "Build failed — frontend index.html not found in ${FRONTEND_BUILD_DIR}."
   fi
-  rm -rf "${APP_DIR}/dist"
-  cp -R "${FRONTEND_BUILD_DIR}" "${APP_DIR}/dist"
   chmod 755 "${APP_DIR}/dist" "${APP_DIR}" /var/www 2>/dev/null || true
   if id -u www-data >/dev/null 2>&1; then
     chown -R www-data:www-data "${APP_DIR}/dist"
