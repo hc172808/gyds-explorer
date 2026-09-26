@@ -7,6 +7,7 @@ const router = Router();
 const LOCAL_RPC_ENDPOINT = process.env.REPLIT_RPC_URL || process.env.LOCAL_RPC_URL;
 const RPC_ENDPOINTS = [
   LOCAL_RPC_ENDPOINT,
+  process.env.REPLIT_LITE_RPC_URL,
   process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
   process.env.BOOSTNODE_RPC_URL || process.env.VITE_BOOSTNODE_RPC_URL || process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
 ].filter((endpoint): endpoint is string => Boolean(endpoint));
