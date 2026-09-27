@@ -5,22 +5,29 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 ## Run & Operate
 
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY` or `JWT_SECRET_KEY` is configured
+- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run node:lite --workspace=@workspace/scripts` — run the Replit-testable lite RPC gateway on port `8545`
 - `npm run node:rpc --workspace=@workspace/scripts` — run the Replit-testable RPC gateway on port `8555`
+- `artifacts/solana-explorer: web` workflow — runs the frontend preview
+- `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
+- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend by itself
+- `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run typecheck` — full typecheck across all packages
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
+- `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
 - Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
-- Required env: `VITE_RPC_URL_2` — secondary/boost node endpoint (default: https://boost.netlifegy.com)
+- Required env: `VITE_RPC_URL_2` or `VITE_BOOSTNODE_RPC_URL` — boost node endpoint (default: https://boost.netlifegy.com)
 - Network chain ID: `198282` (hex: `0x3068a`)
-- Local node gateways try `RPC_URL` / `RPC_URL_2`, reject incompatible chain IDs, and fall back to deterministic mock data when upstream access is unavailable. Check `/status` for `source: "upstream"` or `source: "mock"`.
-- API service env: `API_SECRET_KEY` or `JWT_SECRET_KEY` — required JWT signing secret; the API workflow will not start without one
-- Replit preview: the frontend and mockup workflows are the runnable preview targets; the optional API artifact remains available but requires an explicitly configured API/JWT secret and is not part of the frontend's normal runtime path
+- Local node gateways try configured upstreams, reject incompatible chain IDs, and fall back to deterministic mock data when upstream access is unavailable. Check `/status` for the active source.
+- API service env: `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` — required JWT signing secret; the API workflow will not start without one
+- Replit preview: the managed frontend proxies `/api` requests to the managed API service on localhost port 8080
+- Ubuntu deployment: Nginx serves the static explorer on port 80 and port 8080 by default; `--web-port=PORT` changes the direct web port
+- Validator setup: `node-setup.sh` configures Clique proof-of-authority authority nodes. It does not implement proof-of-stake staking.
 
 ## Stack
 
-- npm workspaces, Node.js 22.18.0+, TypeScript 5.9
+- npm workspaces, Node.js 22+, TypeScript 5.9
 - Frontend: React + Vite, Tailwind v3, shadcn/ui
 - Routing: react-router-dom v7 with `basename={import.meta.env.BASE_URL}`
 - Charts: recharts, framer-motion
@@ -37,14 +44,14 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Architecture decisions
 
-- Explorer reads GYDS RPC through the same-origin `/api/rpc` proxy to avoid browser CORS failures; the API service is required for that proxy plus authenticated admin and feature-gate routes
-- The standalone deployment keeps the explorer UI optional: the API/database can run headlessly, or `--node-only` can install only the blockchain node
+- The explorer calls Solana/GYDS RPC endpoints directly from the browser; authenticated admin and feature-gate routes use the local API service
+- The API service must use `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` from Replit Secrets; do not invent or reuse another secret
+- Admin login uses a wallet signature. The wallet must be seeded as an active `admin_wallets` row; API/JWT secrets only sign the resulting session token.
+- Wallet extensions reject connection/signature requests from embedded Replit previews; open the explorer in a new browser tab before using Admin Login.
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
 - RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
-- Replit's API artifact starts both local node services from `artifacts/api-server/.replit-artifact/artifact.toml`; the lite gateway is on `8545` and the separate RPC gateway is on `8555`
-- Standalone deployment modes: `sudo ./deploy.sh [domain]` installs the web stack, `sudo ./deploy.sh --no-web` installs API/database without Explorer, and `sudo ./deploy.sh --node-only --node-type rpc` installs only an RPC-serving blockchain node
-- Node setup supports `main`, `full`, `lite`, `rpc`, and `validator`; RPC nodes expose HTTP on `8545` and WebSocket RPC on `8546` without installing the Explorer web interface
+- The API proxy prefers the local lite gateway at `http://127.0.0.1:8545`; the separate local RPC gateway listens on `8555`
 
 ## Product
 
@@ -58,8 +65,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - Do NOT run `npm run dev` at workspace root — use the workflow or `npm run dev --workspace=@workspace/solana-explorer`
 - Tailwind is v3 (with tailwind.config.ts + postcss), NOT the v4 vite plugin
-- The app uses `/api/rpc`; if the API service is absent, configure the frontend to use an RPC endpoint that explicitly allows browser CORS
-- The local Replit gateways speak HTTP JSON-RPC for testing; production `node-setup.sh` remains the path for a real Geth lite/full/RPC node with WebSocket support
+- The app talks directly to RPC nodes and proxies `/api` to the API service on localhost port 8080 during Replit development
+- The local Replit gateways speak HTTP JSON-RPC for testing; production `node-setup.sh` remains the path for a real synced Geth node with WebSocket support
 
 ## Pointers
 

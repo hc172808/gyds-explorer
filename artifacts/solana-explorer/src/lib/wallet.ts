@@ -6,7 +6,7 @@ export const GYDS_NETWORK = {
   nativeCurrency: {
     name: import.meta.env.VITE_NATIVE_COIN_NAME || "GYDSChain",
     symbol: import.meta.env.VITE_NATIVE_COIN_SYMBOL || "GYDS",
-    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 9),
+    decimals: Number(import.meta.env.VITE_NATIVE_COIN_DECIMALS || 18),
   },
   blockExplorerUrl: import.meta.env.VITE_EXPLORER_URL || window.location.origin,
   iconUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",
@@ -28,16 +28,29 @@ export function getEthereumProvider(): EthereumProvider | null {
 }
 
 export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] {
-  return [primaryRpc, secondaryRpc].filter(
-    (url, index, urls): url is string => Boolean(url) && urls.indexOf(url) === index,
-  );
+  return [primaryRpc, secondaryRpc]
+    .filter((url): url is string => Boolean(url))
+    .filter((url, index, urls) => urls.indexOf(url) === index);
+}
+
+function isWalletSafeRpc(url: string) {
+  // Wallets require HTTPS for public hosts but accept HTTP on localhost / plain IPs.
+  try {
+    const { protocol, hostname } = new URL(url);
+    if (protocol === "https:") return true;
+    if (protocol !== "http:") return false;
+    return hostname === "localhost" || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+  } catch {
+    return false;
+  }
 }
 
 export async function addGydsNetwork(rpcUrls: string[], provider = getEthereumProvider()) {
   if (!provider) throw new Error("No compatible wallet was detected. Use the manual setup details below.");
-  if (!rpcUrls.length || rpcUrls.some((url) => !/^https:\/\//i.test(url))) {
-    throw new Error("A public HTTPS RPC endpoint is required before adding the network.");
+  if (!rpcUrls.length || !rpcUrls.every(isWalletSafeRpc)) {
+    throw new Error("A reachable RPC endpoint is required (HTTPS, or HTTP on localhost/an IP address).");
   }
+
 
   await provider.request({
     method: "wallet_addEthereumChain",
@@ -76,6 +89,9 @@ export async function addGydToken(provider = getEthereumProvider()) {
 export function getWalletError(error: unknown): string {
   const code = (error as { code?: number })?.code;
   if (code === 4001) return "The request was rejected in your wallet.";
+  if (code === 4002) return "The wallet request timed out. Unlock the wallet and try again.";
+  if (code === -32002) return "A wallet request is already pending. Open the wallet extension and finish it.";
+  if (code === -32603) return "The wallet could not complete the request. Check that the GYDS RPC URL is reachable.";
   if (code === 4902) return "This wallet could not add the network. Use the manual setup details below.";
   return error instanceof Error ? error.message : "The wallet request could not be completed.";
 }

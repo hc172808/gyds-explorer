@@ -12,13 +12,23 @@
     "scripts"
   ],
   "scripts": {
-    "build": "npm run typecheck && npm run build --workspaces --if-present",
+    "dev": "cd artifacts/solana-explorer && PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite --config vite.config.ts --host 0.0.0.0",
+    "start": "cd artifacts/solana-explorer && PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite preview --config vite.config.ts --host 0.0.0.0",
+    "build": "npm run build --workspace=@workspace/solana-explorer",
+    "build:check": "npm run typecheck && npm run build",
+    "build:dev": "npm run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
+    "typecheck": "bash scripts/typecheck-all.sh",
+    "test": "npm run test --workspace=@workspace/solana-explorer",
+    "check:decimals": "node scripts/check-decimals.mjs"
   },
   "private": true,
   "devDependencies": {
     "prettier": "^3.8.4",
     "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0"
   }
 }

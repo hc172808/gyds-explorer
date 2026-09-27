@@ -1130,3 +1130,242 @@ protocol balances have been erased.
 - [ ] Legal, custody, stablecoin, consumer-protection, and compliance review
       is complete before enabling real-money purchases or describing GYD as
       USD-pegged.
+### Deployment milestone status — 2026-08-27
+
+- [x] Removed the stale `package-firewall.replit.local` tarball URLs that
+      remained inside `package-lock.json` (they broke `ethers@6.17.0` installs);
+      all resolved URLs now point at `https://registry.npmjs.org/`.
+- [x] Dependency install completes and `ethers` + `dotenv` resolve correctly.
+- [x] Added root `dev` and `start` scripts so the explorer workspace can be
+      served with the required `PORT` / `BASE_PATH` variables (npm only).
+- [x] Fixed a TypeScript error in `artifacts/solana-explorer/src/lib/wallet.ts`
+      (`getRpcUrls` returned `(string | undefined)[]`) that blocked
+      `npm run build`.
+- [x] `npm run build` (typecheck + all workspace builds) now passes end to end.
+- [x] Preview/dev server verified serving HTTP 200 on port 8080.
+- [x] Final repo search: remaining `pnpm` / `replit.local` matches are only in
+      `todo.md`, `attached_assets/` (historical prompts), and
+      `.migration-backup/` — none affect npm install or production deploy.
+      `update.sh` sets `npm_config_registry` to the public registry, which is
+      intentional.
+
+### Continuation log — 2026-08-31
+
+- [x] Split typechecking out of the default `npm run build` (now
+      `npm run build:check`) so the production/preview build finishes inside the
+      build deadline. Full typecheck still runs via `npm run typecheck`.
+- [x] Added a Vite dev proxy for `/api` (override with `API_PROXY_TARGET`,
+      defaults to `http://127.0.0.1:3001`) so local dev hits the API server.
+- [x] Hardened `featureGateApi.ts`: unreachable API now reports
+      "API server unreachable …" instead of a raw `Failed to fetch`, and
+      non-JSON error responses fall back to an `HTTP <status>` message.
+
+## Explorer reliability & correctness backlog — added 2026-09-05
+
+### A. RPC / decimals / UX
+
+- [ ] **Staging end-to-end smoke test** that hits `rpc.netlifegy.com` and
+      `rpc2.netlifegy.com` from a staging environment and verifies chain id,
+      latest block, and a sample transfer render correctly with 18 decimals
+      (run in CI against staging, not the sandbox).
+- [ ] **UI decimals guard**: detect when fetched/assumed GYDS decimals differ
+      from `chain-spec.json` and show a clear warning banner stating the
+      expected decimals instead of silently formatting wrong values.
+- [ ] **Token-aware totals on `/search`**: each address result shows the
+      formatted GYDS balance and transfer count, with pagination over the
+      address's transfers.
+- [ ] **Extend `/tx/:hash`**: display gas used, effective gas price, and total
+      fee, all converted from raw values with the shared decimals-aware
+      formatting utilities.
+- [ ] **RPC caching + rate limiting**: cache repeated calls (latest block,
+      chain id, address/tx detail) with short TTLs, de-duplicate in-flight
+      requests, and throttle bursts so heavy search usage stays fast and
+      stable.
+
+### B. Node files — gaps found in `node-setup.sh` / `node-verify.sh` /
+`check-services.sh` / `node.env.example`
+
+- [ ] Add automated **chain data backup & restore** (periodic snapshot of the
+      datadir/LevelDB plus a documented restore path).
+- [ ] Add **log rotation** (`logrotate` or journald limits) for node logs so
+      disks do not fill on long-running validators.
+- [ ] Add a **node health monitor**: periodic peer count / block-height-stall
+      check with alerting and automatic restart on a stuck node.
+- [ ] Restrict RPC exposure: bind RPC/WS to localhost by default and only open
+      the firewall when the operator explicitly requests a public RPC, plus an
+      RPC method allow-list.
+- [ ] Add **rate limiting / DDoS protection** in front of public RPC nodes.
+- [ ] Add **key/keystore protection**: strict file permissions, optional
+      passphrase file outside the repo, and a documented key rotation path.
+- [ ] Extend `node-verify.sh` to check chain id, sync status, peer count,
+      disk space, and systemd unit state — not just service liveness.
+- [ ] Add a **node upgrade / rollback script** (versioned binary, graceful
+      stop, restart, verify, revert on failure).
+- [ ] Document and script **bootnode/enode registration** so new nodes can
+      join without manual editing.
+- [ ] Add **time sync (chrony/NTP)** setup — clock drift breaks PoS block
+      timing.
+- [ ] Add all node environment variables to `node.env.example` with comments
+      and safe defaults, and validate required ones at startup.
+- [ ] Add a **multi-node integration test** (boot + full + lite node) that
+      verifies block propagation and dual-coin balances before release.
+
+## Node & admin-dashboard backlog — added 2026-09-06
+
+### C. Node configuration & operations
+
+- [ ] **Refresh `node.env.example`**: document every variable used by
+      `node-setup.sh` / `node-verify.sh` (NODE_TYPE, NODE_NAME, CHAIN_ID,
+      NETWORK_ID, DATA_DIR, CONFIG_DIR, LOG_DIR, RPC_PORT, WS_PORT, P2P_PORT,
+      PUBLIC_RPC, RPC_ALLOWED_METHODS, RPC_RATE_LIMIT, MAIN_NODE_IP,
+      MAIN_NODE_ENODE, FULL_NODE_IPS, VALIDATOR_ADDRESS, ADMIN_WALLET,
+      ADMIN_WALLET_LABEL, ADMIN_SUPPLY, EXPLORER_API_URL) with safe defaults,
+      and set `NATIVE_DECIMALS=18` (currently still 9).
+- [ ] **GYDS = 18 decimals everywhere**: sweep node scripts, genesis
+      generation, env examples and docs so no 9-decimal assumption remains;
+      keep GYD at 6. Add the check to `scripts/check-decimals.mjs`.
+- [ ] **Refresh `check-services.sh`**: match current unit names
+      (`gyds-node`, `nginx`, `postgresql`, PM2 `gyds-api` / `gyds-indexer` /
+      `gyds-feature-gates`), respect `PUBLIC_RPC` when deciding whether an
+      external RPC listener is expected, check sync status and peer count, and
+      report the restart/auto-heal state of each unit.
+- [ ] **Public RPC rate limiting & throttling** for the `PUBLIC_RPC=yes` path:
+      Nginx `limit_req` / `limit_conn` zones per IP, request body size caps,
+      method allow-list, upstream timeouts, and a burst policy documented in
+      the env example.
+- [ ] **Key rotation & key operations doc**: keystore file permissions
+      (0600 / 0700 dirs, dedicated user), passphrase file kept outside the
+      repo, step-by-step rotation for validator and admin keys (create new key,
+      register, drain, retire old key), backup and recovery procedure, and what
+      to do on suspected compromise.
+- [ ] **Multi-node integration test**: script that brings up boot + full +
+      lite (+ validator) nodes locally or in CI and asserts peer discovery,
+      block propagation across all nodes, sync progress reaching head, and
+      correct dual-coin balances; fail the run on stall or divergence.
+
+### D. Admin dashboard — node management
+
+- [ ] **Add node from the dashboard with automatic enode discovery**: on save,
+      the API calls the node's RPC (`admin_nodeInfo` / `net_info`) to fetch the
+      enode URL and public key, stores it, and shows an error if unreachable
+      instead of requiring manual entry.
+- [ ] **Bind discovery to `0.0.0.0`** so nodes accept local and LAN peers, while
+      advertising the correct external address; make the bind address and the
+      advertised address separate settings.
+- [ ] **All settings editable from the dashboard or `.env`**: dashboard values
+      override file defaults, with the effective source shown per setting.
+- [ ] **Enable / disable nodes** from the dashboard (already partly present in
+      `artifacts/api-server/src/routes/nodes.ts` — surface it in the UI and make
+      disabling drop the node from public RPC rotation).
+- [ ] **Sync gating**: a node only reports "online"/eligible for traffic once it
+      has fully caught up; a lagging node stays "syncing" and is excluded from
+      the public rotation until complete.
+- [ ] **Sync percentage per node in the dashboard**: poll each node's
+      `eth_syncing` / latest block vs. network head and show a percentage plus
+      blocks-behind, peer count, last-seen time, and version.
+
+### E. Additional items worth covering
+
+- [ ] Node status polling service (background job) so the dashboard reads
+      cached status instead of hitting every node per page load.
+- [ ] Alerting when a node falls behind, loses peers, or goes offline.
+- [ ] Role-scoped admin actions and an audit log of node add/remove/toggle.
+- [ ] Automatic failover: public RPC endpoint list rebuilt from healthy,
+      fully-synced nodes only.
+- [ ] Per-node resource metrics (disk, CPU, memory, datadir size) in the
+      dashboard.
+- [ ] Documented network bootstrap order (boot node first, then full, then
+      lite/validator) and a one-command node join flow using a token from the
+      dashboard.
+
+### F. Observability, security & recovery — added 2026-09-06
+
+- [ ] **Prometheus metrics per node**: expose block height, peer count, sync
+      status, RPC latency and restart count from each node (metrics port,
+      scrape config), plus a **Grafana dashboard** embedded/linked in the
+      explorer admin view.
+- [ ] **Alerting & notifications in the admin dashboard** for stalled sync,
+      falling peer count, failed health checks, and backup/restore errors, with
+      thresholds configurable via `.env` (e.g. `ALERT_MAX_BLOCKS_BEHIND`,
+      `ALERT_MIN_PEERS`, `ALERT_HEALTH_FAIL_COUNT`, notification channel URLs).
+- [ ] **Role-based access control** for the admin dashboard: only authorized
+      roles may add/enable/disable nodes or change `.env` settings; roles stored
+      in a separate `user_roles` table, checked server-side, with an **audit
+      log** recording actor, action, before/after values and timestamp for every
+      change.
+- [ ] **Enode validation & reachability checks on add**: validate enode URL
+      format and public key, attempt a real TCP/UDP connection on the P2P port,
+      and return detailed errors when discovery on `0.0.0.0` or local
+      connectivity fails (which port, which address, what the node replied).
+- [ ] **Backup/restore integration test**: automated run that takes a backup,
+      restores it onto a fresh node, and verifies the chain resumes syncing to
+      the expected block height with the expected peer count.
+- [ ] **Explorer RPC & cache metrics**: instrument the explorer's RPC layer and
+      request cache with Prometheus metrics — RPC call latency (per method/endpoint),
+      cache hit/miss rate, and error counts per RPC host (rpc.netlifegy.com /
+      rpc2.netlifegy.com); add matching **Grafana panels** to the admin view.
+- [ ] **OpenTelemetry tracing**: add tracing across the explorer and admin flows
+      (page load → RPC call spans, cache lookups, admin mutations, failures) and
+      export to Grafana (Tempo/Jaeger) so slow or failing RPC calls can be
+      visualized end-to-end.
+- [ ] **Notification channels for alerts**: configurable channels for email,
+      Slack, and generic webhook (URLs/credentials via `.env` or admin
+      dashboard), plus a **"send test alert" button** per alert type (stalled
+      sync, low peers, failed health check, backup/restore error) in the admin
+      dashboard.
+- [ ] **Scheduled backup verification**: periodic job that verifies backup
+      integrity (checksum/size/schema) and performs a **lightweight restore
+      check** confirming a node can resume syncing to the expected block height;
+      schedule and target height via `.env`, failures routed into the alerting
+      system above.
+
+### G. Pre-launch verification — added 2026-09-07
+
+- [x] **`pre-launch-check.sh`**: single go/no-go script run on a node before it is
+      promoted to production. Verifies env sanity (required vars, node type,
+      GYDS `NATIVE_DECIMALS=18` cross-checked against `chain-spec.json`, GYD 6,
+      no secrets in `node.env`, keystore mode 700, free disk), service active +
+      enabled at boot, NTP sync, required ports listening (RPC/WS localhost-only
+      unless `PUBLIC_RPC=yes`, P2P open, metrics localhost-only), RPC/metrics
+      endpoints responding with matching chain/network id, and sync state
+      (`eth_syncing`, peer count, minimum block height, live block progress,
+      genesis hash). Exits non-zero with a NOT READY verdict on any failure.
+- [x] **Go core debug pass** (`blockchain-go`): fixed a state-DB data race
+      (read paths created accounts under an RLock), made block hashes
+      reproducible (hash field excluded from hashing) and validated on receipt,
+      added a future-timestamp guard, moved the block reward into `AddBlock` so
+      replaying nodes reach identical state, replaced the stubbed tx root with a
+      real Merkle root, fixed a panic-prone state root slice, charged gas in
+      GYDS to the miner, and made `Miner.Stop` idempotent. Added race-enabled
+      unit tests covering all of the above.
+- [ ] Wire `pre-launch-check.sh` into the deploy flow (run automatically after
+      `node-setup.sh` and before a node is marked production in the admin
+      dashboard).
+
+### H. Single chain, two environments (mainnet + testnet) — added 2026-09-08
+
+- [ ] **One blockchain, different ports**: testnet and mainnet run the same
+      Guardian Chain codebase/genesis rules on one host, separated only by port
+      and data dir — not by a forked build. Testnet identifier/port: **198283**
+      (mainnet stays 198282).
+- [ ] **Port map**: document and script mainnet vs testnet ports (P2P, RPC, WS,
+      metrics) so both can run side by side without collisions; testnet base
+      offset derived from 198283.
+- [ ] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
+      id/port set, data dir (`/var/lib/gyds` vs `/var/lib/gyds-testnet`),
+      service name (`gyds-node` vs `gyds-node-testnet`) and firewall rules.
+- [ ] **Explorer network switch** points Testnet at the 198283 endpoints and
+      shows a clear testnet banner; faucet-style test coins optional.
+- [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
+      filtering, so nodes of both environments are managed in one place.
+- [ ] **Pre-launch + verify scripts**: accept the environment flag and check the
+      correct ports/chain id for testnet runs.
+
+### I. Wallet sign-in for everyone — added 2026-09-08
+
+- [x] Any wallet can sign in with Web3 (nonce + `personal_sign`), not just
+      admins; admins are detected automatically from the authorized wallet list.
+- [x] After sign-in users are redirected to their dashboard (`/dashboard`),
+      admins to `/admin`.
+- [x] Admin dashboard can edit each coin's logo URL, name and about text
+      (Coin Settings tab, saved server-side).

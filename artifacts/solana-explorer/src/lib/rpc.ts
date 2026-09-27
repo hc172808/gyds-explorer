@@ -1,28 +1,117 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
+import { formatUnitsRaw } from "./coins";
 
-export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
-  const res = await fetch("/api/rpc", {
+export const EXPECTED_CHAIN_ID = 198282;
+const RPC_TIMEOUT_MS = 5000;
+
+/** Use the same-origin proxy so public RPC servers do not need browser CORS headers. */
+export function getRpcEndpoints(): string[] {
+  return ["/api/rpc"];
+}
+
+async function callEndpoint(
+  endpoint: string,
+  method: string,
+  params: unknown[],
+): Promise<unknown> {
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
+    signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
   });
   const data = await res.json();
   if (!res.ok || data.error) {
     throw new Error(data.error?.message || `RPC call failed for method "${method}"`);
   }
+  if (method === "eth_chainId") {
+    const chainId = hexToNumber(data.result as string);
+    if (chainId !== EXPECTED_CHAIN_ID) {
+      throw new Error(`Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainId}`);
+    }
+  }
   return data.result;
+}
+
+/** Calls each configured RPC endpoint in order until one succeeds. */
+export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
+  const endpoints = getRpcEndpoints();
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    try {
+      return await callEndpoint(endpoint, method, params);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`All RPC endpoints failed for method "${method}"`);
+}
+
+export interface RpcEndpointHealth {
+  url: string;
+  online: boolean;
+  blockNumber?: number;
+  chainId?: number;
+  latencyMs: number;
+  error?: string;
+}
+
+export async function checkRpcEndpoint(url: string): Promise<RpcEndpointHealth> {
+  const started = performance.now();
+  try {
+    const [blockNumber, chainId] = await Promise.all([
+      callEndpoint(url, "eth_blockNumber", []),
+      callEndpoint(url, "eth_chainId", []),
+    ]);
+    if (chainId !== `0x${EXPECTED_CHAIN_ID.toString(16)}`) {
+      throw new Error(
+        `Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${hexToNumber(chainId as string)}`,
+      );
+    }
+    return {
+      url,
+      online: true,
+      blockNumber: hexToNumber(blockNumber as string),
+      chainId: hexToNumber(chainId as string),
+      latencyMs: Math.round(performance.now() - started),
+    };
+  } catch (err) {
+    return {
+      url,
+      online: false,
+      latencyMs: Math.round(performance.now() - started),
+      error: err instanceof Error ? err.message : "Unreachable",
+    };
+  }
+}
+
+export interface SyncStatus {
+  syncing: boolean;
+  currentBlock?: number;
+  highestBlock?: number;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  const result = await rpcCall("eth_syncing");
+  if (!result || result === false) return { syncing: false };
+  const s = result as { currentBlock: string; highestBlock: string };
+  return {
+    syncing: true,
+    currentBlock: hexToNumber(s.currentBlock),
+    highestBlock: hexToNumber(s.highestBlock),
+  };
 }
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
 export const hexToDecimal = (hex: string): string => BigInt(hex).toString();
-export const weiToEther = (wei: string): string => {
-  const val = BigInt(wei);
-  const eth = Number(val) / 1e18;
-  return eth.toFixed(6);
-};
-export const gweiFromWei = (wei: string): string => {
-  return (Number(BigInt(wei)) / 1e9).toFixed(2);
-};
+/** Raw wei (18 decimals) -> GYDS, BigInt-safe with 6 fraction digits. */
+export const weiToEther = (wei: string): string =>
+  formatUnitsRaw(wei, 18, { maxFractionDigits: 6, minFractionDigits: 6 });
+/** Raw wei -> gwei (1e9 wei), used for gas prices only. */
+export const gweiFromWei = (wei: string): string =>
+  formatUnitsRaw(wei, 9, { maxFractionDigits: 2, minFractionDigits: 2 });
 
 export const formatAddress = (addr: string): string =>
   `${addr.slice(0, 6)}...${addr.slice(-4)}`;

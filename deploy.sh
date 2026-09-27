@@ -7,18 +7,17 @@
 #   - PostgreSQL database
 #   - Express API server (PM2 managed)
 #   - Nginx reverse proxy + static frontend
-#   - pgAdmin web interface (Apache on port 8008)
+#   - Optional pgAdmin web interface (Apache on port 8008)
+#   - Supabase is not installed or configured by this script
 #   - Optional SSL via Certbot
 #
 # Usage:
 #   chmod +x deploy.sh
-#   sudo ./deploy.sh [domain.com] [--no-web] [--node-only] [--node-type TYPE]
-#
-# Modes:
-#   default             API, database, explorer UI, Nginx, and optional pgAdmin
-#   --no-web            API and database only; skip explorer UI, Nginx, pgAdmin
-#   --node-only         Install only the blockchain node; skip API, database, UI
-#   --node-type rpc     Configure an RPC-serving node without interactive selection
+#   sudo ./deploy.sh [domain.com]
+#   sudo ./deploy.sh --node-only --node-type=boost
+#   sudo ./deploy.sh --web-port=8080 [domain.com]
+#   sudo ./deploy.sh --no-web [domain.com]
+#   sudo ./deploy.sh --with-pgadmin [domain.com]
 #
 # Prerequisites: Ubuntu 22.04 with root/sudo access
 # ============================================================
@@ -29,99 +28,26 @@ set -e
 APP_NAME="gyds-explorer"
 APP_DIR="/var/www/${APP_NAME}"
 API_DIR="${APP_DIR}/api"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/hc172808/gyds-explorer.git"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 DOMAIN=""
 NODE_VERSION="22"
 MIN_NODE_VERSION="22.18.0"
 NPM_REGISTRY="https://registry.npmjs.org/"
-WEB_ENABLED=true
-PGADMIN_ENABLED=true
 DEPLOY_WEB=true
+INSTALL_PGADMIN=false
 NODE_ONLY=false
-NODE_TYPE_OVERRIDE=""
-SETUP_NODE=false
+NODE_TYPE_OVERRIDE="${NODE_TYPE:-}"
 
 # Database defaults (will be written to .env)
 DB_NAME="gyds_explorer"
 DB_USER="gyds_admin"
 DB_PORT="5432"
 API_PORT="3001"
+WEB_PORT="${WEB_PORT:-8080}"
 
-i=1
-while [ "$i" -le "$#" ]; do
-  arg="${!i}"
-  case "$arg" in
-    --help|-h)
-      sed -n '1,25p' "$0"
-      exit 0
-      ;;
-    --no-web|--headless)
-      WEB_ENABLED=false
-      DEPLOY_WEB=false
-      PGADMIN_ENABLED=false
-      ;;
-    --api-only)
-      WEB_ENABLED=false
-      DEPLOY_WEB=false
-      PGADMIN_ENABLED=false
-      ;;
-    --with-web)
-      WEB_ENABLED=true
-      DEPLOY_WEB=true
-      ;;
-    --no-pgadmin)
-      PGADMIN_ENABLED=false
-      ;;
-    --node-only)
-      NODE_ONLY=true
-      WEB_ENABLED=false
-      PGADMIN_ENABLED=false
-      SETUP_NODE=true
-      ;;
-    --node|--rpc-node)
-      NODE_ONLY=true
-      WEB_ENABLED=false
-      DEPLOY_WEB=false
-      PGADMIN_ENABLED=false
-      SETUP_NODE=true
-      if [ "$arg" = "--rpc-node" ]; then
-        NODE_TYPE_OVERRIDE="rpc"
-      fi
-      ;;
-    --setup-node)
-      SETUP_NODE=true
-      ;;
-    --node-type)
-      i=$((i + 1))
-      if [ "$i" -gt "$#" ]; then
-        echo "Missing value for --node-type" >&2
-        exit 1
-      fi
-      NODE_TYPE_OVERRIDE="${!i}"
-      SETUP_NODE=true
-      ;;
-    --node-type=*)
-      NODE_TYPE_OVERRIDE="${arg#*=}"
-      SETUP_NODE=true
-      ;;
-    --*)
-      echo "Unknown option: ${arg}. Use --help for usage." >&2
-      exit 1
-      ;;
-    *)
-      if [ -z "$DOMAIN" ]; then
-        DOMAIN="$arg"
-      else
-        echo "Unexpected argument: ${arg}" >&2
-        exit 1
-      fi
-      ;;
-  esac
-  i=$((i + 1))
-done
-
-# ---------- Colors ----------
+# ---------- Colors & logging (defined BEFORE argument parsing so err() exists) ----------
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -132,6 +58,67 @@ log()  { echo -e "${GREEN}[✓ STEP]${NC} $1"; }
 warn() { echo -e "${YELLOW}[⚠ WARN]${NC} $1"; }
 err()  { echo -e "${RED}[✗ ERROR]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[ℹ INFO]${NC} $1"; }
+
+RESET_EXISTING=false
+HAD_NODE_STATE=false
+DATABASE_RESET_DONE=false
+
+for ARG in "$@"; do
+  case "$ARG" in
+    --node-only|--node)
+      NODE_ONLY=true
+      ;;
+    --rpc-node)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="rpc"
+      ;;
+    --boost-node)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="boost"
+      ;;
+    --no-web|--api-only)
+      DEPLOY_WEB=false
+      ;;
+    --with-web)
+      DEPLOY_WEB=true
+      ;;
+    --with-pgadmin)
+      INSTALL_PGADMIN=true
+      ;;
+    --web-port=*)
+      WEB_PORT="${ARG#*=}"
+      ;;
+    --validator)
+      NODE_ONLY=true
+      NODE_TYPE_OVERRIDE="validator"
+      ;;
+    --node-type=*)
+      NODE_TYPE_OVERRIDE="${ARG#*=}"
+      ;;
+    --help|-h)
+      echo "Usage: sudo ./deploy.sh [domain.com] [--web-port=8080] [--node-only] [--node-type=main|full|lite|rpc|boost|validator] [--validator] [--no-web] [--with-pgadmin]"
+      echo "       On an existing deployment, the script asks before deleting database/node state."
+      echo "       pgAdmin is not installed unless --with-pgadmin is supplied. Supabase is never installed."
+      exit 0
+      ;;
+    --*)
+      err "Unknown option: ${ARG}. Use --help for usage."
+      ;;
+    *)
+      if [ -z "$DOMAIN" ]; then
+        DOMAIN="$ARG"
+      else
+        err "Only one domain may be supplied: ${DOMAIN}"
+      fi
+      ;;
+  esac
+done
+
+if [ "$INSTALL_PGADMIN" = true ] && [ "$DEPLOY_WEB" = false ]; then
+  warn "--with-pgadmin requires the web interface; skipping pgAdmin because --no-web was supplied."
+  INSTALL_PGADMIN=false
+fi
+
 
 version_at_least() {
   local current="$1"
@@ -162,9 +149,54 @@ check_node_version() {
   command -v npm >/dev/null 2>&1 || err "npm is required."
 }
 
+check_port_number() {
+  local name="$1"
+  local value="$2"
+  [[ "$value" =~ ^[0-9]+$ ]] || err "${name} must be a numeric TCP port; found '${value}'."
+  [ "$value" -ge 1 ] && [ "$value" -le 65535 ] || err "${name} must be between 1 and 65535; found '${value}'."
+}
+
 # ---------- Pre-flight ----------
 if [ "$EUID" -ne 0 ]; then
   err "Please run as root: sudo ./deploy.sh"
+fi
+
+check_port_number "WEB_PORT" "${WEB_PORT}"
+[ "${WEB_PORT}" != "${API_PORT}" ] || err "WEB_PORT ${WEB_PORT} conflicts with API_PORT ${API_PORT}."
+# This script creates an HTTP listener. HTTPS on 443 is configured by Certbot
+# when a domain is supplied; accepting --web-port=443 would serve plaintext
+# HTTP on the HTTPS port and make browsers report a connection/TLS failure.
+[ "${WEB_PORT}" != "443" ] || err "WEB_PORT 443 is reserved for HTTPS. Use the default port 80 or --web-port=8080."
+
+# ---------- Existing deployment reset prompt ----------
+# The source directory alone is not treated as a deployed-state marker:
+# deploy.sh may be run from a freshly cloned checkout before first install.
+if [ -f "${APP_DIR}/.env" ] ||
+   [ -d "/var/lib/gyds" ] ||
+   [ -f "/etc/gyds/node.env" ] ||
+   [ -f "/etc/systemd/system/gyds-node.service" ] ||
+   [ -f "/etc/nginx/sites-available/${APP_NAME}" ]; then
+  if [ -d "/var/lib/gyds" ] || [ -f "/etc/gyds/node.env" ] || [ -f "/etc/systemd/system/gyds-node.service" ]; then
+    HAD_NODE_STATE=true
+  fi
+
+  echo ""
+  echo -e "${RED}WARNING: An existing GYDS deployment was detected.${NC}"
+  echo "A reset permanently deletes:"
+  echo "  - the ${DB_NAME} database and all indexed/authentication data"
+  echo "  - GYDS node chain data, genesis, keystores, configuration, logs, and backups"
+  echo "  - the gyds-node systemd unit and PM2-managed API/indexer processes"
+  echo "The application source directory is kept and recreated from the repository."
+  echo ""
+  read -r -p "Reset all generated deployment data and recreate it? Type YES to continue: " RESET_CONFIRM || \
+    err "Could not read the reset confirmation. Existing data was not changed."
+  if [ "${RESET_CONFIRM}" = "YES" ]; then
+    RESET_EXISTING=true
+    warn "Confirmed: this deployment will be reset before setup continues."
+  else
+    info "Reset declined. Existing database and node data will be preserved."
+  fi
+  echo ""
 fi
 
 echo ""
@@ -199,6 +231,64 @@ generate_secret() {
 DB_PASSWORD=$(generate_password)
 API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-$(generate_secret)}}"
 
+drop_existing_database() {
+  [ "${RESET_EXISTING}" = true ] || return 0
+  [ "${DATABASE_RESET_DONE}" = true ] && return 0
+  if ! command -v psql >/dev/null 2>&1 || ! id postgres >/dev/null 2>&1; then
+    info "PostgreSQL is not installed yet; database reset will be retried after installation."
+    return 0
+  fi
+
+  systemctl start postgresql 2>/dev/null || true
+  if ! sudo -u postgres psql -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
+    info "PostgreSQL is not ready yet; database reset will be retried after installation."
+    return 0
+  fi
+
+  info "Dropping existing database '${DB_NAME}'..."
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DB_NAME}' AND pid <> pg_backend_pid();" >/dev/null
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres \
+    -c "DROP DATABASE IF EXISTS \"${DB_NAME}\";"
+  DATABASE_RESET_DONE=true
+  log "Database '${DB_NAME}' removed. It will be recreated now."
+}
+
+reset_managed_state() {
+  log "Resetting existing managed services and GYDS node state..."
+
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete gyds-api 2>/dev/null || true
+    pm2 delete gyds-indexer 2>/dev/null || true
+    pm2 delete gyds-feature-gates 2>/dev/null || true
+    pm2 save --force >/dev/null 2>&1 || true
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop gyds-node 2>/dev/null || true
+    systemctl disable gyds-node 2>/dev/null || true
+  fi
+
+  rm -rf \
+    /var/lib/gyds \
+    /etc/gyds \
+    /var/log/gyds \
+    /var/backups/gyds \
+    "${APP_DIR}/.env"
+  rm -f /etc/systemd/system/gyds-node.service /etc/logrotate.d/gyds-node
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    systemctl reset-failed gyds-node 2>/dev/null || true
+  fi
+  info "Node data, node configuration, generated secrets, and managed processes removed."
+}
+
+if [ "${RESET_EXISTING}" = true ]; then
+  reset_managed_state
+  drop_existing_database
+fi
+
 # ============================================================
 # OPTIONAL: Run node-setup.sh first
 # ============================================================
@@ -207,16 +297,18 @@ echo "┌───────────────────────�
 echo "│   GYDS Blockchain Node Setup (Optional)             │"
 echo "│                                                     │"
 echo "│   Do you want to set up a GYDS blockchain node      │"
-echo "│   on this server? (main / full / lite / rpc / validator) │"
+echo "│   on this server? (main / full / lite / rpc / boost / validator) │"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
-if [ "${SETUP_NODE}" = true ] || [ "${NODE_ONLY}" = true ] || [ -n "${NODE_TYPE_OVERRIDE}" ]; then
+if [ "$NODE_ONLY" = true ] || { [ "${RESET_EXISTING}" = true ] && [ "${HAD_NODE_STATE}" = true ]; }; then
   SETUP_NODE_CHOICE="y"
+  if [ "${RESET_EXISTING}" = true ] && [ "${HAD_NODE_STATE}" = true ] && [ "$NODE_ONLY" != true ]; then
+    info "An existing node was reset; node setup is required to recreate it."
+  fi
 else
   read -p "Set up a blockchain node now? [y/N]: " SETUP_NODE_CHOICE
 fi
 if [[ "$SETUP_NODE_CHOICE" =~ ^[Yy]$ ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   NODE_SETUP_SCRIPT="${SCRIPT_DIR}/node-setup.sh"
 
   if [ ! -f "${NODE_SETUP_SCRIPT}" ]; then
@@ -274,11 +366,6 @@ else
   fi
 fi
 
-if [ "${NODE_ONLY}" = true ]; then
-  log "Node-only mode selected. Skipping database, API, explorer UI, Nginx, and pgAdmin."
-  exit 0
-fi
-
 # Install npm if missing (bundled with nodejs from nodesource, but just in case)
 if ! command -v npm &> /dev/null; then
   apt-get install -y npm
@@ -309,13 +396,25 @@ fi
 # Wait for PostgreSQL to be ready
 sleep 2
 
+# Retry the reset here when PostgreSQL was not installed or ready before the
+# optional node setup ran. This also covers --node-only reruns cleanly.
+drop_existing_database
+
 # Create database user and database
 info "Creating database user '${DB_USER}' and database '${DB_NAME}'..."
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';"
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+  # A rerun generates a fresh .env password. Keep the existing role usable
+  # when the database was preserved, and after a reset as well.
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "ALTER ROLE \"${DB_USER}\" WITH LOGIN PASSWORD '${DB_PASSWORD}';"
+else
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "CREATE USER \"${DB_USER}\" WITH LOGIN PASSWORD '${DB_PASSWORD}';"
+fi
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+  sudo -u postgres psql -v ON_ERROR_STOP=1 \
+    -c "CREATE DATABASE \"${DB_NAME}\" OWNER \"${DB_USER}\";"
 
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 
@@ -374,7 +473,38 @@ CREATE TABLE IF NOT EXISTS network_stats (
     recorded_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Admin wallets (wallet-signature login)
+CREATE TABLE IF NOT EXISTS admin_wallets (
+    id SERIAL PRIMARY KEY,
+    wallet_address VARCHAR(42) UNIQUE NOT NULL,
+    label TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- One-time nonces for wallet signature auth
+CREATE TABLE IF NOT EXISTS auth_nonces (
+    wallet_address VARCHAR(42) PRIMARY KEY,
+    nonce TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Feature gates
+CREATE TABLE IF NOT EXISTS feature_gates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    status BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Seed the founder admin wallet (lowercase)
+INSERT INTO admin_wallets (wallet_address, label, is_active)
+VALUES ('0x6422d12bfaddee5142bfad21b3006a74d09017b1', 'Founder', TRUE)
+ON CONFLICT (wallet_address) DO UPDATE SET is_active = TRUE, label = EXCLUDED.label;
+
 -- Indexes for performance
+
 CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_number);
 CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address);
 CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address);
@@ -418,7 +548,7 @@ elif [ -d "${APP_DIR}" ] && [ -f "${APP_DIR}/package.json" ]; then
   warn "Directory ${APP_DIR} exists with code but no git repo. Using existing files."
   cd "${APP_DIR}"
 else
-  git clone --branch "${REPO_BRANCH}" "${REPO_URL}" "${APP_DIR}"
+  git clone "${REPO_URL}" "${APP_DIR}"
   cd "${APP_DIR}"
 fi
 
@@ -427,12 +557,16 @@ fi
 # ============================================================
 log "Step 5/11 — Generating .env configuration..."
 
-BASE_URL="http://localhost:8080"
-API_URL="http://localhost:${API_PORT}/api"
+SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+BASE_URL="http://localhost:${WEB_PORT}"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   BASE_URL="https://${DOMAIN}"
-  API_URL="https://${DOMAIN}/api"
+elif [ -n "${SERVER_IP}" ]; then
+  BASE_URL="http://${SERVER_IP}"
 fi
+# Frontend must use RELATIVE paths so the app works over the bare IP, over the
+# domain, and over both http and https. Absolute localhost URLs break the browser.
+API_URL="/api"
 
 cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
@@ -443,11 +577,12 @@ cat > "${APP_DIR}/.env" <<EOF
 # ---------- RPC Configuration ----------
 VITE_RPC_URL=https://rpc.netlifegy.com
 VITE_RPC_URL_2=https://boost.netlifegy.com
-RPC_URL=https://rpc.netlifegy.com
-RPC_URL_2=https://boost.netlifegy.com
+VITE_BOOSTNODE_RPC_URL=https://boost.netlifegy.com
+BOOSTNODE_RPC_URL=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------
-VITE_PORT=8080
+VITE_PORT=${WEB_PORT}
+WEB_PORT=${WEB_PORT}
 VITE_APP_TITLE=GYDS Explorer
 VITE_CHAIN_ID=198282
 VITE_BASE_URL=${BASE_URL}
@@ -465,17 +600,26 @@ API_PORT=${API_PORT}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 
-# ---------- Feature Gate Service ----------
+# ---------- Admin / Feature Gate API ----------
+# Same-origin relative path — works on an IP, a domain, HTTP or HTTPS.
 FEATURE_GATE_PORT=3002
-VITE_FEATURE_GATE_URL=http://localhost:3002
+VITE_FEATURE_GATE_URL=/api
+
+# ---------- Wallet (Add network / Add token) ----------
+VITE_NATIVE_COIN_NAME=GYDSChain
+VITE_NATIVE_COIN_SYMBOL=GYDS
+VITE_NATIVE_COIN_DECIMALS=18
+VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
+VITE_EXPLORER_URL=${BASE_URL}
+# Set this to the deployed GYD token contract before "Add GYD to wallet" can work.
+VITE_GYD_TOKEN_ADDRESS=${GYD_TOKEN_ADDRESS:-}
+VITE_GYD_SYMBOL=GYD
+VITE_GYD_DECIMALS=6
+VITE_GYD_LOGO_URL=/assets/gyd-logo.svg
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
-API_CORS_ORIGINS=http://localhost:8080,${BASE_URL}
-
-# ---------- Indexer ----------
-POLL_INTERVAL=5
-BATCH_SIZE=10
+API_CORS_ORIGINS=http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",http://${DOMAIN},https://${DOMAIN}" )
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -504,7 +648,9 @@ cat > "${API_DIR}/package.json" <<'EOF'
     "pg": "^8.12.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.4"
+    "express-rate-limit": "^7.1.4",
+    "ethers": "^6.13.4",
+    "jsonwebtoken": "^9.0.2"
   }
 }
 EOF
@@ -776,7 +922,171 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
+// ---------- Admin Wallet Auth (SIWE-style signature login) ----------
+const jwt = require("jsonwebtoken");
+const { ethers } = require("ethers");
+
+const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET || "change-me";
+const AUTH_MESSAGE = (nonce) =>
+  `Sign this message to authenticate as GYDS admin:\n\nNonce: ${nonce}`;
+
+function requireAdmin(req, res, next) {
+  const header = req.headers.authorization || "";
+  if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "No token provided" });
+  try {
+    req.admin = jwt.verify(header.slice(7), JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+app.post("/api/auth/nonce", async (req, res) => {
+  try {
+    const { walletAddress } = req.body || {};
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    const address = walletAddress.toLowerCase();
+    const admin = await pool.query(
+      "SELECT 1 FROM admin_wallets WHERE LOWER(wallet_address) = $1 AND is_active = TRUE",
+      [address]
+    );
+    if (admin.rows.length === 0) {
+      return res.status(403).json({ error: "Wallet not authorized as admin" });
+    }
+    const nonce = require("crypto").randomBytes(32).toString("hex");
+    await pool.query(
+      `INSERT INTO auth_nonces (wallet_address, nonce, created_at) VALUES ($1, $2, NOW())
+       ON CONFLICT (wallet_address) DO UPDATE SET nonce = EXCLUDED.nonce, created_at = NOW()`,
+      [address, nonce]
+    );
+    res.json({ nonce, message: AUTH_MESSAGE(nonce) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/auth/verify", async (req, res) => {
+  try {
+    const { walletAddress, signature } = req.body || {};
+    if (!walletAddress || !signature) {
+      return res.status(400).json({ error: "Missing walletAddress or signature" });
+    }
+    const address = walletAddress.toLowerCase();
+    const row = (
+      await pool.query("SELECT nonce, created_at FROM auth_nonces WHERE wallet_address = $1", [address])
+    ).rows[0];
+    if (!row) return res.status(400).json({ error: "No nonce found. Request a new one." });
+    if (Date.now() - new Date(row.created_at).getTime() > 5 * 60 * 1000) {
+      return res.status(400).json({ error: "Nonce expired. Request a new one." });
+    }
+    let recovered;
+    try {
+      recovered = ethers.verifyMessage(AUTH_MESSAGE(row.nonce), signature).toLowerCase();
+    } catch {
+      return res.status(401).json({ error: "Signature verification failed" });
+    }
+    if (recovered !== address) return res.status(401).json({ error: "Signature verification failed" });
+
+    const admin = (
+      await pool.query(
+        "SELECT label FROM admin_wallets WHERE LOWER(wallet_address) = $1 AND is_active = TRUE",
+        [address]
+      )
+    ).rows[0];
+    if (!admin) return res.status(403).json({ error: "Wallet not authorized" });
+
+    await pool.query("DELETE FROM auth_nonces WHERE wallet_address = $1", [address]);
+    const token = jwt.sign({ walletAddress: address, label: admin.label, role: "admin" }, JWT_SECRET, {
+      expiresIn: "24h",
+    });
+    res.json({ token, walletAddress: address, label: admin.label });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/auth/me", requireAdmin, (req, res) => {
+  res.json({ walletAddress: req.admin.walletAddress, label: req.admin.label, role: req.admin.role });
+});
+
+// ---------- Admin Wallet Management ----------
+app.get("/api/admin/wallets", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM admin_wallets ORDER BY id ASC");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/wallets", requireAdmin, async (req, res) => {
+  try {
+    const { walletAddress, label } = req.body || {};
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      return res.status(400).json({ error: "Invalid wallet address" });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO admin_wallets (wallet_address, label, is_active) VALUES ($1, $2, TRUE)
+       ON CONFLICT (wallet_address) DO UPDATE SET label = EXCLUDED.label, is_active = TRUE RETURNING *`,
+      [walletAddress.toLowerCase(), label || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/admin/wallets/:id/toggle", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "UPDATE admin_wallets SET is_active = $1 WHERE id = $2 RETURNING *",
+      [Boolean(req.body?.is_active), req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Wallet not found" });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/wallets/:id", requireAdmin, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query("DELETE FROM admin_wallets WHERE id = $1", [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ error: "Wallet not found" });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Feature Gates ----------
+app.get("/api/feature-gates", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM feature_gates ORDER BY id ASC");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/feature-gates/:id", requireAdmin, async (req, res) => {
+  try {
+    const status = Boolean(req.body?.status);
+    const { rows } = await pool.query(
+      `INSERT INTO feature_gates (id, name, status, updated_at) VALUES ($1, $1, $2, NOW())
+       ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW() RETURNING *`,
+      [req.params.id, status]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------- Start Server ----------
+
 app.listen(PORT, () => {
   console.log(`[API] GYDS Explorer API running on port ${PORT}`);
   console.log(`[API] Health check: http://localhost:${PORT}/api/health`);
@@ -815,20 +1125,42 @@ fi
 
 if [ "$DEPLOY_WEB" = true ]; then
   # Build frontend
-  PORT=8080 BASE_PATH=/ NODE_ENV=production \
+    PORT=${WEB_PORT} BASE_PATH=/ NODE_ENV=production \
     npm run build --workspace=@workspace/solana-explorer
 
-  FRONTEND_DIST="${APP_DIR}/artifacts/solana-explorer/dist/public"
-  if [ ! -d "${FRONTEND_DIST}" ]; then
-    err "Build failed — frontend output not found in ${FRONTEND_DIST}."
+  # vite.config.ts writes the frontend build to the workspace-level dist/
+  # directory so the same output is used by local and production builds.
+  FRONTEND_DIST="${APP_DIR}/dist"
+  if [ ! -f "${FRONTEND_DIST}/index.html" ]; then
+    err "Build failed — no index.html in ${FRONTEND_DIST}. Run 'npm run build --workspace=@workspace/solana-explorer' manually to see the error."
   fi
 
-  rm -rf "${APP_DIR}/dist"
-  cp -R "${FRONTEND_DIST}" "${APP_DIR}/dist"
-  info "Frontend built to ${APP_DIR}/dist"
+  # Nginx (www-data) must be able to traverse and read the web root, otherwise
+  # the browser gets a blank page / 403 even though the build succeeded.
+  chmod 755 /var/www "${APP_DIR}" 2>/dev/null || true
+  chown -R www-data:www-data "${APP_DIR}/dist"
+  find "${APP_DIR}/dist" -type d -exec chmod 755 {} \;
+  find "${APP_DIR}/dist" -type f -exec chmod 644 {} \;
+  info "Frontend built to ${APP_DIR}/dist ($(find "${APP_DIR}/dist" -type f | wc -l) files)"
 else
   info "Web interface disabled. Building API only."
   npm run build --workspace=@workspace/api-server
+fi
+
+# ============================================================
+# STEP 7b: Database schema + seed test admin wallet
+# ============================================================
+cd "${APP_DIR}"
+# Push drizzle schema (creates admin_wallets, feature_gates, etc. if missing)
+if ! npm run push --workspace=@workspace/db; then
+  npm run push-force --workspace=@workspace/db || warn "Schema push failed — run 'npm run push-force --workspace=@workspace/db' manually."
+fi
+# Seed admin wallet. Override with ADMIN_WALLET / ADMIN_WALLET_LABEL env vars.
+# Defaults to the test founder wallet 0x6422D12BFADdEE5142BFaD21b3006a74D09017B1.
+if npm run seed:admin --workspace=@workspace/api-server; then
+  info "Admin wallet seeded (${ADMIN_WALLET:-0x6422D12BFADdEE5142BFaD21b3006a74D09017B1})."
+else
+  warn "Admin wallet seed failed — run 'npm run seed:admin --workspace=@workspace/api-server' manually."
 fi
 
 # ============================================================
@@ -836,7 +1168,10 @@ fi
 # ============================================================
 log "Step 8/11 — Setting up PM2 process manager..."
 
-npm install -g pm2 2>/dev/null || true
+if ! command -v pm2 >/dev/null 2>&1; then
+  npm install -g pm2 || err "PM2 installation failed. Check the npm error above and verify Node.js/npm and network access."
+fi
+command -v pm2 >/dev/null 2>&1 || err "PM2 is not available after installation."
 
 # Stop existing processes if any
 pm2 delete gyds-api 2>/dev/null || true
@@ -868,10 +1203,29 @@ else
   fi
 fi
 
-pm2 save
+# ------------------------------------------------------------
+# Start everything automatically on server boot
+# ------------------------------------------------------------
+# `pm2 startup` only PRINTS the systemd command — it must be executed.
+PM2_STARTUP_CMD="$(env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>/dev/null | grep -E '^\s*sudo env' | tail -n 1 || true)"
+if [ -n "$PM2_STARTUP_CMD" ]; then
+  eval "${PM2_STARTUP_CMD#sudo }" || warn "Could not install the PM2 systemd unit automatically."
+fi
+systemctl enable pm2-root >/dev/null 2>&1 || true
 
-# Setup PM2 to start on boot
-env PATH="$PATH:/usr/bin" pm2 startup systemd -u root --hp /root 2>/dev/null || true
+# Persist the current process list so PM2 resurrects it after a reboot.
+pm2 save --force
+
+# Other services that must survive a reboot.
+systemctl enable postgresql >/dev/null 2>&1 || true
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl list-unit-files | grep -q '^gyds-node' && systemctl enable gyds-node >/dev/null 2>&1 || true
+
+if systemctl is-enabled pm2-root >/dev/null 2>&1; then
+  info "Auto-start on boot enabled (pm2-root, nginx, postgresql)."
+else
+  warn "PM2 boot service not enabled. Run manually: pm2 startup systemd -u root --hp /root"
+fi
 
 cd "${APP_DIR}"
 info "Services running via PM2. Use 'pm2 list' to check status."
@@ -889,14 +1243,44 @@ if ! command -v nginx &> /dev/null; then
 fi
 
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
-SERVER_NAME="${DOMAIN:-_}"
+# Match the bare IP, the domain, and anything else pointed at this box.
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  SERVER_NAME="${DOMAIN} www.${DOMAIN} _"
+else
+  SERVER_NAME="_"
+fi
+if [ "${WEB_PORT}" = "80" ]; then
+  WEB_LISTEN_DIRECTIVE=""
+else
+  WEB_LISTEN_DIRECTIVE="    listen ${WEB_PORT} default_server;"
+fi
+
+PGADMIN_PROXY_BLOCK=""
+if [ "$INSTALL_PGADMIN" = true ]; then
+  PGADMIN_PROXY_BLOCK=$(cat <<'NGINX_PGADMIN'
+    # Proxy pgAdmin (Apache runs on port 8008 to avoid nginx conflict)
+    location /pgadmin4/ {
+        proxy_pass http://127.0.0.1:8008/pgadmin4/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Script-Name /pgadmin4;
+        proxy_redirect off;
+    }
+NGINX_PGADMIN
+)
+fi
 
 cat > "${NGINX_CONF}" <<EOF
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
+${WEB_LISTEN_DIRECTIVE}
     server_name ${SERVER_NAME};
 
-    root ${APP_DIR}/dist/public;
+    root ${APP_DIR}/dist;
     index index.html;
 
     # Gzip compression
@@ -934,17 +1318,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # Proxy pgAdmin (Apache runs on port 8008 to avoid nginx conflict)
-    location /pgadmin4/ {
-        proxy_pass http://127.0.0.1:8008/pgadmin4/;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Script-Name /pgadmin4;
-        proxy_redirect off;
-    }
+${PGADMIN_PROXY_BLOCK}
 
     # SPA fallback — all other routes serve index.html
     location / {
@@ -962,8 +1336,29 @@ EOF
 ln -sf "${NGINX_CONF}" /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
+# Another enabled vhost claiming default_server would make nginx -t fail.
+for OTHER in /etc/nginx/sites-enabled/*; do
+  [ -e "$OTHER" ] || continue
+  case "$(readlink -f "$OTHER")" in
+    "$(readlink -f "${NGINX_CONF}")") continue ;;
+  esac
+  if grep -q "default_server" "$OTHER" 2>/dev/null; then
+    warn "Disabling conflicting vhost $(basename "$OTHER") (also declares default_server)."
+    rm -f "$OTHER"
+  fi
+done
+
 nginx -t || err "Nginx config test failed! Check the config at ${NGINX_CONF}"
-systemctl reload nginx
+systemctl enable nginx >/dev/null 2>&1 || true
+systemctl restart nginx || err "Nginx failed to start. Check: systemctl status nginx"
+
+# Verify the site actually answers locally before declaring success.
+sleep 2
+if curl -fsS -o /dev/null -w '%{http_code}' "http://127.0.0.1/" | grep -q '^200$'; then
+  info "Nginx is serving the explorer on port 80 (HTTP 200)."
+else
+  warn "http://127.0.0.1/ did not return 200. Check: nginx -t, ls ${APP_DIR}/dist, journalctl -u nginx -n 50, and tail /var/log/nginx/error.log"
+fi
 
 info "Nginx configured with API reverse proxy."
 else
@@ -971,9 +1366,24 @@ else
 fi
 
 # ============================================================
+# STEP 9b: Allow only the public web/node ports
+# ============================================================
+if [ "$DEPLOY_WEB" = true ] && command -v ufw &>/dev/null; then
+  log "Opening firewall ports for SSH and the explorer..."
+  ufw allow ssh >/dev/null 2>&1 || true
+  ufw allow 80/tcp >/dev/null 2>&1 || true
+  ufw allow "${WEB_PORT}/tcp" >/dev/null 2>&1 || true
+  if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+    ufw allow 443/tcp >/dev/null 2>&1 || true
+  fi
+  ufw --force enable >/dev/null 2>&1 || warn "UFW could not be enabled; open the listed ports in your cloud firewall."
+  info "Web ports open: 80/tcp and ${WEB_PORT}/tcp. API/database ports remain private."
+fi
+
+# ============================================================
 # STEP 10: Install pgAdmin Web Interface (optional)
 # ============================================================
-if [ "$DEPLOY_WEB" = true ]; then
+if [ "$INSTALL_PGADMIN" = true ]; then
 log "Step 10/11 — Installing pgAdmin web interface..."
 
 if ! dpkg -l pgadmin4-web &>/dev/null; then
@@ -1024,28 +1434,61 @@ PGADMIN_PASSWORD=${PGADMIN_PASSWORD}
 PGADMIN_URL=http://your-server/pgadmin4
 EOF
 
-# Reload nginx so the /pgadmin4/ proxy block takes effect
-nginx -t && systemctl reload nginx
+# Reload nginx so the /pgadmin4/ proxy block takes effect. The pgAdmin install
+# pulls in Apache, which tries to grab port 80 — make sure nginx still owns it.
+if ss -ltnp 2>/dev/null | grep -q ':80 .*apache2'; then
+  warn "Apache grabbed port 80 — moving it off and restoring nginx."
+  systemctl stop apache2 || true
+  sed -i 's/^Listen 80$/Listen 8008/' /etc/apache2/ports.conf || true
+  systemctl start apache2 || true
+fi
+nginx -t && systemctl restart nginx
 
 info "pgAdmin configured."
 info "  Access via: http://your-server/pgadmin4"
 info "  Email:      ${PGADMIN_EMAIL}"
 info "  Password:   ${PGADMIN_PASSWORD}  (also saved in ${APP_DIR}/.env)"
 else
-  info "Web interface disabled. Skipping pgAdmin installation."
+  info "pgAdmin not requested. Skipping pgAdmin installation."
 fi
 
 # ============================================================
 # STEP 11: SSL with Certbot (optional)
 # ============================================================
-if [ "${WEB_ENABLED}" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   log "Step 11/11 — Setting up SSL with Certbot..."
   apt-get install -y certbot python3-certbot-nginx
   certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos \
     --email "admin@${DOMAIN}" || warn "Certbot failed — run manually: certbot --nginx -d ${DOMAIN}"
-elif [ "${WEB_ENABLED}" = true ]; then
+else
   log "Step 11/11 — Skipping SSL (no domain provided)."
   warn "To add SSL later: sudo certbot --nginx -d yourdomain.com"
+fi
+
+# ============================================================
+# FINAL VERIFICATION — catch "nothing loads" before we claim success
+# ============================================================
+if [ "$DEPLOY_WEB" = true ]; then
+  log "Verifying the deployment..."
+  VERIFY_FAILED=false
+
+  [ -f "${APP_DIR}/dist/index.html" ] || { warn "Missing ${APP_DIR}/dist/index.html — the frontend was never copied."; VERIFY_FAILED=true; }
+  systemctl is-active --quiet nginx || { warn "nginx is not running: systemctl status nginx"; VERIFY_FAILED=true; }
+  ss -ltn 2>/dev/null | grep -q ':80 ' || { warn "Nothing is listening on port 80."; VERIFY_FAILED=true; }
+
+  HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1/" || echo "000")
+  [ "${HTTP_CODE}" = "200" ] || { warn "Local HTTP check returned ${HTTP_CODE} (expected 200). See /var/log/nginx/error.log"; VERIFY_FAILED=true; }
+
+  API_CODE=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${API_PORT}/api/health" || echo "000")
+  [ "${API_CODE}" = "200" ] || warn "API health check returned ${API_CODE} — check 'pm2 logs gyds-api'."
+
+  if [ "${VERIFY_FAILED}" = true ]; then
+    warn "Deployment finished with problems — the site may not load in a browser."
+    warn "Debug: nginx -t | systemctl status nginx | pm2 list | tail -50 /var/log/nginx/error.log"
+    warn "If the local check passed but the public IP/domain does not load, the port is blocked by your cloud provider's firewall (open 80/443) or DNS is not pointing here."
+  else
+    info "All local checks passed. Open TCP 80 (and 443 after SSL) in your cloud firewall and confirm the DNS A record points to this server."
+  fi
 fi
 
 # ============================================================
@@ -1061,6 +1504,12 @@ echo "║                                                        ║"
 printf "║   📁 App directory:  %-35s║\n" "${APP_DIR}"
 if [ "$DEPLOY_WEB" = true ]; then
   printf "║   🌐 Web root:       %-35s║\n" "${APP_DIR}/dist"
+  if [ "${WEB_PORT}" = "80" ]; then
+    WEB_PORT_SUMMARY="80"
+  else
+    WEB_PORT_SUMMARY="80 and ${WEB_PORT}"
+  fi
+  printf "║   🌐 Web ports:      %-35s║\n" "${WEB_PORT_SUMMARY}"
 else
   echo "║   🌐 Web interface:  disabled                           ║"
 fi
@@ -1068,24 +1517,19 @@ printf "║   🔌 API server:     %-35s║\n" "http://localhost:${API_PORT}/api
 printf "║   🗄️  Database:       %-35s║\n" "${DB_NAME} @ localhost:${DB_PORT}"
 printf "║   👤 DB User:        %-35s║\n" "${DB_USER}"
 echo "║   🔑 DB Password:    saved in ${APP_DIR}/.env          ║"
-if [ "$DEPLOY_WEB" = true ]; then
+if [ "$INSTALL_PGADMIN" = true ]; then
   printf "║   📊 pgAdmin:        %-35s║\n" "http://${SERVER_IP}/pgadmin4"
+else
+  echo "║   📊 pgAdmin:        not installed (optional)             ║"
 fi
 echo "║                                                        ║"
 if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
   printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
 else
-  if [ "$DEPLOY_WEB" = false ]; then
-    printf "║   📊 pgAdmin:        %-35s║\n" "disabled"
-  fi
-fi
-echo "║                                                        ║"
-if [ "$DEPLOY_WEB" = true ] && [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
-  printf "║   🌍 URL: %-47s║\n" "https://${DOMAIN}"
-elif [ "$DEPLOY_WEB" = true ]; then
   printf "║   🌍 URL: %-47s║\n" "http://${SERVER_IP}"
-else
-  printf "║   🌍 URL: %-47s║\n" "not installed"
+fi
+if [ "$DEPLOY_WEB" = true ]; then
+  printf "║   🌍 Direct port: %-43s║\n" "http://${SERVER_IP}:${WEB_PORT}"
 fi
 echo "║                                                        ║"
 echo "╠════════════════════════════════════════════════════════╣"

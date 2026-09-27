@@ -11,7 +11,8 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite build --config vite.config.ts",
     "serve": "PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

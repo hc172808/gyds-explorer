@@ -4,9 +4,15 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Coins, Search, Loader2, RefreshCw, ExternalLink, AlertCircle, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useNetwork } from "@/contexts/NetworkContext";
 import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
-import { JsonRpcProvider, formatEther } from "ethers";
+import { fetchCoinSettings, proxyRpcUrl, type CoinSetting } from "@/lib/networkApi";
+import { GYD_TOKEN } from "@/lib/wallet";
+import { JsonRpcProvider } from "ethers";
+
+const DEFAULT_COINS: CoinSetting[] = [
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
+];
 
 function fmt(raw: bigint, decimals: number, maxDecimals = 6): string {
   if (raw === 0n) return "0";
@@ -25,8 +31,7 @@ function shortAddr(addr: string) {
 export default function TokenBalances() {
   const { address: paramAddress } = useParams<{ address?: string }>();
   const navigate = useNavigate();
-  const { primaryRpc } = useNetwork();
-  const rpcUrl = primaryRpc || import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+  const rpcUrl = proxyRpcUrl();
 
   const [inputAddress, setInputAddress] = useState(paramAddress ?? "");
   const [activeAddress, setActiveAddress] = useState(paramAddress ?? "");
@@ -36,6 +41,7 @@ export default function TokenBalances() {
     try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
     catch { return []; }
   });
+  const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
 
   const [nativeBalance, setNativeBalance]       = useState<bigint | null>(null);
   const [tokenBalances, setTokenBalances]       = useState<TokenBalance[]>([]);
@@ -44,6 +50,17 @@ export default function TokenBalances() {
   const [lastFetched, setLastFetched]           = useState<Date | null>(null);
 
   const isValidAddress = (addr: string) => /^0x[0-9a-fA-F]{40}$/.test(addr);
+  const configuredAddresses = [
+    ...(GYD_TOKEN.address ? [GYD_TOKEN.address] : []),
+    ...coins.map((coin) => coin.contractAddress).filter((address): address is string => Boolean(address)),
+    ...registeredTokens.map((token) => token.address),
+  ].filter((address, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === address.toLowerCase()) === index);
+
+  useEffect(() => {
+    fetchCoinSettings().then((settings) => {
+      if (settings.length) setCoins(settings);
+    }).catch(() => undefined);
+  }, []);
 
   const lookup = async (addr: string) => {
     if (!isValidAddress(addr)) {
@@ -60,8 +77,8 @@ export default function TokenBalances() {
 
       const [native, tokens] = await Promise.all([
         provider.getBalance(addr),
-        registeredTokens.length > 0
-          ? fetchTokenBalances(addr, registeredTokens.map((t) => t.address), rpcUrl)
+        configuredAddresses.length > 0
+          ? fetchTokenBalances(addr, configuredAddresses, rpcUrl)
           : Promise.resolve([]),
       ]);
 
@@ -128,7 +145,7 @@ export default function TokenBalances() {
         </form>
 
         {/* No registered tokens warning */}
-        {registeredTokens.length === 0 && (
+         {configuredAddresses.length === 0 && (
           <div className="flex items-start gap-3 p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 text-sm">
             <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
             <div>
@@ -173,13 +190,27 @@ export default function TokenBalances() {
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">G</div>
               <div className="flex-1">
-                <p className="text-sm font-medium">GYDS (Native Coin)</p>
+                 <p className="text-sm font-medium">{coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.name || "GYDS"} (Native Coin)</p>
                 <p className="text-xs text-muted-foreground font-mono">Native chain currency · Chain ID 198282</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold font-mono">{fmt(nativeBalance, 18)} <span className="text-sm text-muted-foreground">GYDS</span></p>
                 <p className="text-xs text-muted-foreground">{nativeBalance.toString()} wei</p>
               </div>
+            </div>
+
+            <div className="rounded-xl border border-primary/20 bg-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-border bg-secondary/30 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2"><Wallet className="w-4 h-4 text-primary" /><span className="text-sm font-semibold">Combined balances</span></div>
+                <span className="text-xs text-muted-foreground">{tokenBalances.length + 1} asset{tokenBalances.length === 0 ? "" : "s"}</span>
+              </div>
+              <div className="divide-y divide-border">
+                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals || 18)} GYDS</span></div>
+                {tokenBalances.map((token) => (
+                  <div key={`combined-${token.contractAddress}`} className="flex items-center justify-between px-5 py-3 text-sm"><span>{token.name} <span className="text-xs text-muted-foreground">({token.symbol})</span></span><span className="font-mono font-semibold">{fmt(token.balance, token.decimals)} {token.symbol}</span></div>
+                ))}
+              </div>
+              <p className="px-5 py-3 text-[11px] text-muted-foreground">Each asset remains in its own token unit; unlike tokens are not added into a misleading single number.</p>
             </div>
 
             {/* ERC-20 tokens */}
@@ -222,7 +253,7 @@ export default function TokenBalances() {
                   ))}
                 </div>
               </div>
-            ) : registeredTokens.length > 0 ? (
+             ) : configuredAddresses.length > 0 ? (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 No ERC-20 token balances found for this address.
               </div>

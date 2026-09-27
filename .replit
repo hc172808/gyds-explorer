@@ -1,17 +1,18 @@
-modules = ["nodejs-20", "bash", "go-1.21", "web", "python-base-3.13"]
+modules = ["nodejs-24", "python-3.11", "postgresql-16"]
 
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
 
 [deployment.postBuild]
-args = ["npm", "cache", "clean", "--force"]
+args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [workflows]
 runButton = "Project"
 
 [agent]
+stack = "PNPM_WORKSPACE"
 expertMode = true
 
 [postMerge]
@@ -21,10 +22,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-RPC_URL = "https://rpc.netlifegy.com"
-RPC_URL_2 = "https://boost.netlifegy.com"
-VITE_RPC_URL = "https://rpc.netlifegy.com"
-VITE_RPC_URL_2 = "https://boost.netlifegy.com"
 
 [nix]
 channel = "stable-25_05"

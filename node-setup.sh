@@ -27,13 +27,14 @@
 #   └──────────────────────────────────────────────┘
 #
 #   VALIDATOR NODES:
-#   - Full nodes that also participate in consensus
-#   - Sync from MAIN node, submit sealed blocks
+#   - Full nodes that also participate in Clique authority consensus
+#   - Sync from MAIN node, submit sealed blocks after authorization
+#   - This network is Clique proof-of-authority, not proof-of-stake
 #
 # Usage:
 #   chmod +x node-setup.sh
 #   sudo ./node-setup.sh
-#   sudo ./node-setup.sh --node-type rpc --main-node-ip MAIN_IP --main-node-enode ENODE
+#   sudo NODE_TYPE=boost ./node-setup.sh
 #
 # ============================================================
 
@@ -69,7 +70,7 @@ CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
 CHAIN_ID=198282
 NETWORK_ID=198282
-NATIVE_DECIMALS=9
+NATIVE_DECIMALS=18
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 
@@ -86,62 +87,34 @@ FULL_NODE_IPS=""
 VALIDATOR_ADDRESS=""
 VALIDATOR_PASSWORD=""
 MAIN_ACCOUNT=""
-NODE_TYPE="${NODE_TYPE:-}"
 
-# Optional command-line overrides. These are useful on headless servers where
-# the operator wants to select a node type without editing an environment file.
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --help|-h)
-      sed -n '1,42p' "$0"
-      exit 0
-      ;;
-    --node-type|--type)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      NODE_TYPE="$2"
-      shift 2
-      ;;
-    --main-node-ip)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      MAIN_NODE_IP="$2"
-      shift 2
-      ;;
-    --main-node-enode|--bootnode-enode)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      MAIN_NODE_ENODE="$2"
-      shift 2
-      ;;
-    --full-node-ips)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      FULL_NODE_IPS="$2"
-      shift 2
-      ;;
-    --rpc-port)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      RPC_PORT="$2"
-      shift 2
-      ;;
-    --ws-port)
-      [ "$#" -ge 2 ] || err "Missing value for $1"
-      WS_PORT="$2"
-      shift 2
-      ;;
-    *)
-      err "Unknown option: $1. Use --help for usage."
-      ;;
-  esac
-done
+# Admin / founder wallet (MAIN node only). Either supplied by the operator or
+# created here as a fresh geth keystore account.
+ADMIN_WALLET="${ADMIN_WALLET:-}"
+ADMIN_WALLET_LABEL="${ADMIN_WALLET_LABEL:-Founder}"
+ADMIN_WALLET_CREATED="no"
+ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
+EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
+
+# Public RPC exposure. "no" keeps RPC/WS reachable only from localhost/VPN.
+# RPC nodes are public by definition unless the operator explicitly opts out.
+PUBLIC_RPC="${PUBLIC_RPC:-}"
+# Backups & health monitoring
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+HEALTH_MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 
 # ---- Load settings from .env if present --------------------
 # Place a .env file next to this script (or at /var/www/gyds-explorer/.env)
 # with any of these variables pre-filled to skip the interactive prompts:
-#   NODE_TYPE           main | full | lite | rpc | validator
+#   NODE_TYPE           main | full | lite | rpc | boost | validator
 #   MAIN_NODE_IP        IP of the main node
 #   MAIN_NODE_ENODE     enode://... URL of the main node
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
-#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 18)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for ENV_FILE in \
@@ -173,6 +146,16 @@ for ENV_FILE in \
         RPC_PORT)           RPC_PORT="$val" ;;
         WS_PORT)            WS_PORT="$val" ;;
         P2P_PORT)           P2P_PORT="$val" ;;
+        METRICS_PORT)       METRICS_PORT="$val" ;;
+        ADMIN_WALLET)       [ -z "$ADMIN_WALLET"       ] && ADMIN_WALLET="$val" ;;
+        ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
+        ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
+        EXPLORER_API_URL)   EXPLORER_API_URL="${val:-$EXPLORER_API_URL}" ;;
+        PUBLIC_RPC)         PUBLIC_RPC="${val:-$PUBLIC_RPC}" ;;
+        BACKUP_DIR)         BACKUP_DIR="${val:-$BACKUP_DIR}" ;;
+        BACKUP_KEEP)        BACKUP_KEEP="${val:-$BACKUP_KEEP}" ;;
+        HEALTH_MIN_PEERS)   HEALTH_MIN_PEERS="${val:-$HEALTH_MIN_PEERS}" ;;
+        HEALTH_STALL_SECONDS) HEALTH_STALL_SECONDS="${val:-$HEALTH_STALL_SECONDS}" ;;
       esac
     done < "$ENV_FILE"
     break
@@ -186,11 +169,12 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
+[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
 [ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
 [ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
-NATIVE_SUPPLY_BASE_UNITS=$((NATIVE_SUPPLY * 1000000000))
+ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
+NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY}${ZEROS}"   # wei-style base units (18 decimals)
 info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""
@@ -210,29 +194,59 @@ echo "║   3) LITE      — Lightweight RPC endpoint      ║"
 echo "║                  (syncs from Full nodes)       ║"
 echo "║                  (wallets & websites connect)  ║"
 echo "║                                                ║"
-echo "║   4) RPC       — Full node + RPC service       ║"
-echo "║                  (no explorer web interface)   ║"
-echo "║                                                ║"
-echo "║   5) VALIDATOR — Full node + consensus         ║"
+echo "║   4) RPC       — Full synced public RPC node   ║"
+echo "║   5) BOOST     — Dedicated RPC failover node   ║"
+echo "║   6) VALIDATOR — Full node + consensus         ║"
 echo "║                  (syncs from Main, seals)      ║"
 echo "║                                                ║"
 echo "╚════════════════════════════════════════════════╝"
 echo ""
 if [ -z "$NODE_TYPE" ]; then
-  read -p "Enter choice [1-5]: " NODE_TYPE_CHOICE
+  read -p "Enter choice [1-6]: " NODE_TYPE_CHOICE
   case "$NODE_TYPE_CHOICE" in
     1) NODE_TYPE="main" ;;
     2) NODE_TYPE="full" ;;
     3) NODE_TYPE="lite" ;;
     4) NODE_TYPE="rpc" ;;
-    5) NODE_TYPE="validator" ;;
-    *) err "Invalid choice. Please enter 1, 2, 3, 4, or 5." ;;
+    5) NODE_TYPE="boost" ;;
+    6) NODE_TYPE="validator" ;;
+    *) err "Invalid choice. Please enter 1, 2, 3, 4, 5, or 6." ;;
   esac
 else
   case "$NODE_TYPE" in
-    main|full|lite|rpc|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
-    *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, rpc, or validator." ;;
+    main|full|lite|rpc|boost|validator) info "Node type '${NODE_TYPE}' loaded from .env — skipping prompt." ;;
+    *) err "Invalid NODE_TYPE '${NODE_TYPE}' in .env. Must be: main, full, lite, rpc, boost, or validator." ;;
   esac
+fi
+
+if [ -z "${PUBLIC_RPC}" ]; then
+  if [ "${NODE_TYPE}" = "rpc" ] || [ "${NODE_TYPE}" = "boost" ]; then
+    PUBLIC_RPC="yes"
+  else
+    PUBLIC_RPC="no"
+  fi
+fi
+case "${PUBLIC_RPC,,}" in
+  yes|no) PUBLIC_RPC="${PUBLIC_RPC,,}" ;;
+  *) err "PUBLIC_RPC must be yes or no; found '${PUBLIC_RPC}'." ;;
+esac
+
+validate_port() {
+  local name="$1"
+  local value="$2"
+  [[ "${value}" =~ ^[0-9]+$ ]] || err "${name} must be a numeric TCP/UDP port; found '${value}'."
+  [ "${value}" -ge 1 ] && [ "${value}" -le 65535 ] || \
+    err "${name} must be between 1 and 65535; found '${value}'."
+}
+
+validate_port "RPC_PORT" "${RPC_PORT}"
+validate_port "WS_PORT" "${WS_PORT}"
+validate_port "P2P_PORT" "${P2P_PORT}"
+validate_port "METRICS_PORT" "${METRICS_PORT}"
+if [ "${RPC_PORT}" = "${WS_PORT}" ] || [ "${RPC_PORT}" = "${P2P_PORT}" ] ||
+   [ "${RPC_PORT}" = "${METRICS_PORT}" ] || [ "${WS_PORT}" = "${P2P_PORT}" ] ||
+   [ "${WS_PORT}" = "${METRICS_PORT}" ] || [ "${P2P_PORT}" = "${METRICS_PORT}" ]; then
+  err "RPC_PORT, WS_PORT, P2P_PORT, and METRICS_PORT must all be different."
 fi
 
 NODE_NAME="gyds-${NODE_TYPE}"
@@ -245,8 +259,8 @@ NODE_NAME="${CUSTOM_NAME:-$NODE_NAME}"
 
 if [ "$NODE_TYPE" != "main" ]; then
   echo ""
-  if [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "validator" ]; then
-    info "Full/RPC/Validator nodes sync from the MAIN node."
+  if [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "boost" ] || [ "$NODE_TYPE" = "validator" ]; then
+    info "Full/Validator nodes sync from the MAIN node."
     if [ -z "$MAIN_NODE_IP" ]; then
       read -p "Enter MAIN node IP address: " MAIN_NODE_IP
       [ -z "$MAIN_NODE_IP" ] && err "Main node IP is required for ${NODE_TYPE} nodes."
@@ -275,12 +289,32 @@ if [ "$NODE_TYPE" != "main" ]; then
   fi
 fi
 
+if [ "$NODE_TYPE" = "main" ]; then
+  echo ""
+  info "The MAIN node registers the first admin (founder) wallet for the explorer."
+  info "This wallet can sign in to the Admin Dashboard and authorize other admins."
+  if [ -n "$ADMIN_WALLET" ]; then
+    info "ADMIN_WALLET=${ADMIN_WALLET} (loaded from .env)"
+  else
+    read -p "Enter admin wallet address (0x...), or press Enter to create a new one: " ADMIN_WALLET
+  fi
+  ADMIN_WALLET="$(echo "${ADMIN_WALLET}" | tr -d '[:space:]')"
+  if [ -n "$ADMIN_WALLET" ] && ! [[ "$ADMIN_WALLET" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+    err "Invalid admin wallet address: ${ADMIN_WALLET} (expected 0x + 40 hex characters)"
+  fi
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "No address given — a new admin wallet will be created on this server."
+  fi
+  read -p "Label for this admin wallet [${ADMIN_WALLET_LABEL}]: " CUSTOM_ADMIN_LABEL
+  ADMIN_WALLET_LABEL="${CUSTOM_ADMIN_LABEL:-$ADMIN_WALLET_LABEL}"
+fi
+
+
 if [ "$NODE_TYPE" = "validator" ]; then
   echo ""
   info "Validator nodes need a signing account."
   if [ -z "$VALIDATOR_ADDRESS" ]; then
-    read -p "Enter validator account address (0x...): " VALIDATOR_ADDRESS
-    [ -z "$VALIDATOR_ADDRESS" ] && err "Validator account address is required."
+    read -p "Enter validator account address (0x...), or press Enter to create one: " VALIDATOR_ADDRESS
   else
     info "VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS} (loaded from .env)"
   fi
@@ -298,7 +332,7 @@ header "Step 1/9: Installing System Dependencies"
 
 apt-get update -y
 apt-get install -y curl wget git build-essential software-properties-common \
-  apt-transport-https ca-certificates openssl ufw jq
+  apt-transport-https ca-certificates openssl ufw jq chrony logrotate bc
 
 log "System dependencies installed."
 
@@ -346,6 +380,11 @@ else
   }
 fi
 
+if [ "$NODE_TYPE" = "validator" ]; then
+  [[ -z "${VALIDATOR_ADDRESS}" || "${VALIDATOR_ADDRESS}" =~ ^0x[a-fA-F0-9]{40}$ ]] || \
+    err "VALIDATOR_ADDRESS must be a 40-hex-character address beginning with 0x."
+fi
+
 if command -v geth &>/dev/null; then
   log "Geth installed: $(geth version 2>/dev/null | head -1)"
 else
@@ -372,6 +411,25 @@ chown -R gyds:gyds "${DATA_DIR}" "${LOG_DIR}"
 
 log "Directories ready: ${DATA_DIR}, ${CONFIG_DIR}, ${LOG_DIR}"
 
+if [ "$NODE_TYPE" = "validator" ]; then
+  # The node service signs blocks with a local geth keystore account. Never
+  # accept an address that is not actually available to the service.
+  printf '%s\n' "${VALIDATOR_PASSWORD}" > "${CONFIG_DIR}/validator-password.txt"
+  chmod 600 "${CONFIG_DIR}/validator-password.txt"
+
+  if [ -z "${VALIDATOR_ADDRESS}" ]; then
+    if geth account list --datadir "${DATA_DIR}" 2>/dev/null | grep -qE '0x[a-fA-F0-9]{40}'; then
+      err "A validator keystore already exists. Re-run with VALIDATOR_ADDRESS set to the existing account."
+    fi
+    ACCOUNT_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/validator-password.txt" 2>&1)
+    VALIDATOR_ADDRESS=$(echo "${ACCOUNT_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
+    [ -n "${VALIDATOR_ADDRESS}" ] || err "Failed to create the validator account. Output was:\n${ACCOUNT_OUTPUT}"
+    log "Validator account created: ${VALIDATOR_ADDRESS}"
+  elif ! geth account list --datadir "${DATA_DIR}" 2>/dev/null | grep -qi "${VALIDATOR_ADDRESS#0x}"; then
+    err "Validator account ${VALIDATOR_ADDRESS} is not in ${DATA_DIR}/keystore. Import the account there, then rerun."
+  fi
+fi
+
 # ============================================================
 # STEP 4: Genesis File Configuration
 # ============================================================
@@ -392,6 +450,34 @@ if [ "$NODE_TYPE" = "main" ]; then
   fi
 
   info "Main node authority account: ${MAIN_ACCOUNT}"
+
+  # ---------- Admin / founder wallet ----------
+  if [ -z "$ADMIN_WALLET" ]; then
+    info "Creating a new admin (founder) wallet..."
+    ADMIN_PASSWORD=$(openssl rand -base64 16)
+    printf '%s\n' "${ADMIN_PASSWORD}" > "${CONFIG_DIR}/admin-password.txt"
+    chmod 600 "${CONFIG_DIR}/admin-password.txt"
+    ADMIN_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/admin-password.txt" 2>&1)
+    ADMIN_WALLET=$(echo "${ADMIN_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
+    [ -n "$ADMIN_WALLET" ] || err "Failed to create the admin wallet. Output was:\n${ADMIN_OUTPUT}"
+    ADMIN_WALLET_CREATED="yes"
+    log "Admin wallet created: ${ADMIN_WALLET}"
+    warn "Keystore: ${DATA_DIR}/keystore  •  Password: ${CONFIG_DIR}/admin-password.txt"
+    warn "Export this key and back it up — it controls the Admin Dashboard."
+  else
+    log "Using operator-supplied admin wallet: ${ADMIN_WALLET}"
+  fi
+
+  # Genesis allocation for the admin wallet (skipped when it's the authority account)
+  ADMIN_ALLOC_ENTRY=""
+  if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
+    ADMIN_SUPPLY_BASE_UNITS="${ADMIN_SUPPLY}${ZEROS}"
+    ADMIN_ALLOC_ENTRY=",
+    \"${ADMIN_WALLET}\": {
+      \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
+    }"
+    info "Admin wallet genesis allocation: ${ADMIN_SUPPLY} GYDS"
+  fi
 
   # Build extradata: 32 zero bytes + 20-byte signer address (no 0x) + 65 zero bytes
   SIGNER_HEX="${MAIN_ACCOUNT:2}"   # strip leading 0x
@@ -422,7 +508,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   "alloc": {
     "${MAIN_ACCOUNT}": {
       "balance": "${NATIVE_SUPPLY_BASE_UNITS}"
-    }
+    }${ADMIN_ALLOC_ENTRY}
   }
 }
 GENESIS
@@ -501,9 +587,24 @@ FULL_NODE_IPS=${FULL_NODE_IPS}
 # ---------- Validator Settings ----------
 VALIDATOR_ADDRESS=${VALIDATOR_ADDRESS}
 
+# ---------- Admin / Founder Wallet (main node) ----------
+MAIN_ACCOUNT=${MAIN_ACCOUNT}
+ADMIN_WALLET=${ADMIN_WALLET}
+ADMIN_WALLET_LABEL=${ADMIN_WALLET_LABEL}
+
 # ---------- Performance ----------
 CACHE_SIZE=1024
 MAX_PEERS=50
+
+# ---------- Security ----------
+# yes = RPC/WS ports opened to the internet, no = localhost/VPN only
+PUBLIC_RPC=${PUBLIC_RPC}
+
+# ---------- Backups & health ----------
+BACKUP_DIR=${BACKUP_DIR}
+BACKUP_KEEP=${BACKUP_KEEP}
+HEALTH_MIN_PEERS=${HEALTH_MIN_PEERS}
+HEALTH_STALL_SECONDS=${HEALTH_STALL_SECONDS}
 NODEENV
 
 chmod 600 "${CONFIG_DIR}/node.env"
@@ -515,6 +616,32 @@ if [ "$NODE_TYPE" = "validator" ] && [ -n "$VALIDATOR_PASSWORD" ]; then
 fi
 
 log "Environment written to ${CONFIG_DIR}/node.env"
+
+# ---------- Register the admin wallet with the explorer ----------
+if [ "$NODE_TYPE" = "main" ] && [ -n "$ADMIN_WALLET" ]; then
+  info "Registering admin wallet with the explorer API (${EXPLORER_API_URL}) ..."
+  BOOTSTRAP_CODE=$(curl -s -o /tmp/gyds-bootstrap.json -w '%{http_code}' \
+    --max-time 10 -X POST "${EXPLORER_API_URL%/}/admin/wallets/bootstrap" \
+    -H 'Content-Type: application/json' \
+    -d "{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}" 2>/dev/null || echo "000")
+
+  case "$BOOTSTRAP_CODE" in
+    200|201) log "Admin wallet registered — sign in at /admin with this wallet." ;;
+    403|409)
+      warn "Explorer already has admin wallets configured."
+      warn "Add this one from the Admin Dashboard, or run directly on the DB host:"
+      echo "  psql \"\$DATABASE_URL\" -c \"INSERT INTO admin_wallets (wallet_address,label) VALUES ('${ADMIN_WALLET,,}','${ADMIN_WALLET_LABEL}') ON CONFLICT DO NOTHING;\""
+      ;;
+    *)
+      warn "Could not reach the explorer API (HTTP ${BOOTSTRAP_CODE}). Register later with:"
+      echo "  curl -X POST ${EXPLORER_API_URL%/}/admin/wallets/bootstrap \\"
+      echo "       -H 'Content-Type: application/json' \\"
+      echo "       -d '{\"walletAddress\":\"${ADMIN_WALLET}\",\"label\":\"${ADMIN_WALLET_LABEL}\"}'"
+      ;;
+  esac
+  rm -f /tmp/gyds-bootstrap.json
+fi
+
 
 # ============================================================
 # STEP 6: Build Geth Command & Create Systemd Service
@@ -528,9 +655,20 @@ GETH_ARGS=""
 GETH_ARGS+=" --datadir ${DATA_DIR}"
 GETH_ARGS+=" --networkid ${NETWORK_ID}"
 GETH_ARGS+=" --port ${P2P_PORT}"
-GETH_ARGS+=" --metrics --metrics.addr 0.0.0.0 --metrics.port ${METRICS_PORT}"
+GETH_ARGS+=" --metrics --metrics.addr 127.0.0.1 --metrics.port ${METRICS_PORT}"
 GETH_ARGS+=" --verbosity 3"
 GETH_ARGS+=" --log.file ${LOG_DIR}/node.log"
+
+RPC_BIND_ADDR="127.0.0.1"
+WS_BIND_ADDR="127.0.0.1"
+HTTP_VHOSTS="localhost"
+WS_ORIGINS="localhost"
+if [ "${PUBLIC_RPC}" = "yes" ]; then
+  RPC_BIND_ADDR="0.0.0.0"
+  WS_BIND_ADDR="0.0.0.0"
+  HTTP_VHOSTS="*"
+  WS_ORIGINS="*"
+fi
 
 case "$NODE_TYPE" in
   main)
@@ -552,12 +690,12 @@ case "$NODE_TYPE" in
     ;;
 
   full)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode full"
     GETH_ARGS+=" --gcmode full"
     GETH_ARGS+=" --maxpeers 50"
@@ -567,16 +705,15 @@ case "$NODE_TYPE" in
     fi
     ;;
 
-  rpc)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+  rpc|boost)
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3,txpool"
-    GETH_ARGS+=" --http.corsdomain *"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3,txpool"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode full"
-    GETH_ARGS+=" --gcmode full"
+    GETH_ARGS+=" --gcmode archive"
     GETH_ARGS+=" --maxpeers 50"
     GETH_ARGS+=" --nat extip:${SERVER_IP}"
     if [ -n "$MAIN_NODE_ENODE" ]; then
@@ -585,12 +722,12 @@ case "$NODE_TYPE" in
     ;;
 
   lite)
-    GETH_ARGS+=" --http --http.addr 0.0.0.0 --http.port ${RPC_PORT}"
+    GETH_ARGS+=" --http --http.addr ${RPC_BIND_ADDR} --http.port ${RPC_PORT}"
     GETH_ARGS+=" --http.api eth,net,web3"
-    GETH_ARGS+=" --http.vhosts *"
-    GETH_ARGS+=" --ws --ws.addr 0.0.0.0 --ws.port ${WS_PORT}"
+    GETH_ARGS+=" --http.vhosts ${HTTP_VHOSTS}"
+    GETH_ARGS+=" --ws --ws.addr ${WS_BIND_ADDR} --ws.port ${WS_PORT}"
     GETH_ARGS+=" --ws.api eth,net,web3"
-    GETH_ARGS+=" --ws.origins *"
+    GETH_ARGS+=" --ws.origins ${WS_ORIGINS}"
     GETH_ARGS+=" --syncmode light"
     GETH_ARGS+=" --maxpeers 25"
     GETH_ARGS+=" --nat extip:${SERVER_IP}"
@@ -620,7 +757,7 @@ case "$NODE_TYPE" in
 esac
 
 # Write static-nodes.json for full/validator nodes
-if { [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "validator" ]; } && [ -n "$MAIN_NODE_ENODE" ]; then
+if { [ "$NODE_TYPE" = "full" ] || [ "$NODE_TYPE" = "rpc" ] || [ "$NODE_TYPE" = "boost" ] || [ "$NODE_TYPE" = "validator" ]; } && [ -n "$MAIN_NODE_ENODE" ]; then
   mkdir -p "${DATA_DIR}/geth"
   cat > "${DATA_DIR}/geth/static-nodes.json" <<STATIC
 [
@@ -671,28 +808,263 @@ log "Systemd service created: /etc/systemd/system/gyds-node.service"
 # ============================================================
 header "Step 7/9: Configuring Firewall"
 
+ufw default deny incoming 2>/dev/null || true
+ufw default allow outgoing 2>/dev/null || true
 ufw allow ssh 2>/dev/null || true
 ufw allow "${P2P_PORT}/tcp" 2>/dev/null || true
 ufw allow "${P2P_PORT}/udp" 2>/dev/null || true
 
-case "$NODE_TYPE" in
-  main|full|rpc)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "${NODE_TYPE^} node: RPC (${RPC_PORT}), WS (${WS_PORT}), P2P (${P2P_PORT}) opened."
-    ;;
-  lite)
-    ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
-    ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
-    info "Lite node: RPC (${RPC_PORT}), WS (${WS_PORT}) opened for wallets/websites."
-    ;;
-  validator)
-    info "Validator: Only P2P (${P2P_PORT}) opened. RPC restricted to localhost."
-    ;;
-esac
+if [ "$NODE_TYPE" = "validator" ]; then
+  info "Validator: only P2P (${P2P_PORT}) opened. RPC stays on localhost."
+elif [ "${PUBLIC_RPC,,}" = "yes" ]; then
+  ufw allow "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw allow "${WS_PORT}/tcp" 2>/dev/null || true
+  warn "PUBLIC_RPC=yes — RPC (${RPC_PORT}) and WS (${WS_PORT}) are open to the internet."
+  warn "Put Nginx (rate limiting + TLS + method allow-list) in front of this node."
+else
+  ufw deny "${RPC_PORT}/tcp" 2>/dev/null || true
+  ufw deny "${WS_PORT}/tcp" 2>/dev/null || true
+  info "RPC/WS restricted to localhost and the VPN. Set PUBLIC_RPC=yes to expose them."
+fi
 
 ufw --force enable 2>/dev/null || warn "UFW not available or already enabled. Configure firewall manually if needed."
 log "Firewall configured."
+
+# ============================================================
+# STEP 7b: Hardening — time sync, keystore, log rotation
+# ============================================================
+header "Step 7b/9: Hardening"
+
+# --- Time sync (clock drift breaks PoS/clique block timing) ---
+systemctl enable --now chrony 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || \
+  warn "chrony not available — install an NTP client manually."
+timedatectl set-ntp true 2>/dev/null || true
+log "Time synchronisation enabled."
+
+# --- Keystore & secret permissions ---
+if [ -d "${DATA_DIR}/keystore" ]; then
+  chmod 700 "${DATA_DIR}/keystore"
+  find "${DATA_DIR}/keystore" -type f -exec chmod 600 {} \;
+fi
+chmod 700 "${CONFIG_DIR}" 2>/dev/null || true
+for SECRET in "${CONFIG_DIR}"/*password*.txt; do
+  [ -f "$SECRET" ] && chmod 600 "$SECRET"
+done
+log "Keystore and password files locked down (700/600)."
+
+# --- Log rotation ---
+cat > /etc/logrotate.d/gyds-node <<LOGROTATE
+${LOG_DIR}/*.log {
+  daily
+  rotate 14
+  size 100M
+  missingok
+  notifempty
+  compress
+  delaycompress
+  copytruncate
+}
+LOGROTATE
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/gyds.conf <<JOURNALD
+[Journal]
+SystemMaxUse=1G
+MaxRetentionSec=1month
+JOURNALD
+systemctl restart systemd-journald 2>/dev/null || true
+log "Log rotation configured (logrotate + journald caps)."
+
+# ============================================================
+# STEP 7c: Backups, health monitor, upgrade/rollback
+# ============================================================
+header "Step 7c/9: Backups & Monitoring"
+
+mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+
+cat > /usr/local/bin/gyds-backup <<'MGMT'
+#!/bin/bash
+# Snapshot chain data, genesis, keystore and node.env.
+set -euo pipefail
+source /etc/gyds/node.env
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUT="${BACKUP_DIR}/gyds-${NODE_TYPE}-${STAMP}.tar.gz"
+mkdir -p "$BACKUP_DIR"
+
+WAS_RUNNING=no
+if systemctl is-active --quiet gyds-node; then WAS_RUNNING=yes; systemctl stop gyds-node; fi
+trap '[ "$WAS_RUNNING" = yes ] && systemctl start gyds-node || true' EXIT
+
+tar -czf "$OUT" \
+  -C / \
+  "${DATA_DIR#/}" \
+  "${CONFIG_DIR#/}" 2>/dev/null
+chmod 600 "$OUT"
+sha256sum "$OUT" > "${OUT}.sha256"
+echo "Backup written: $OUT"
+
+# Retention
+ls -1t "${BACKUP_DIR}"/gyds-*.tar.gz 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while read -r OLD; do
+  rm -f "$OLD" "${OLD}.sha256"
+  echo "Removed old backup: $OLD"
+done
+MGMT
+
+cat > /usr/local/bin/gyds-restore <<'MGMT'
+#!/bin/bash
+# Usage: gyds-restore /var/backups/gyds/gyds-main-YYYYmmdd-HHMMSS.tar.gz
+set -euo pipefail
+ARCHIVE="${1:-}"
+[ -f "$ARCHIVE" ] || { echo "Usage: gyds-restore <backup.tar.gz>"; exit 1; }
+if [ -f "${ARCHIVE}.sha256" ]; then
+  sha256sum -c "${ARCHIVE}.sha256" || { echo "Checksum mismatch — refusing to restore."; exit 1; }
+fi
+source /etc/gyds/node.env 2>/dev/null || true
+read -r -p "This overwrites ${DATA_DIR:-/var/lib/gyds} and ${CONFIG_DIR:-/etc/gyds}. Continue? [y/N] " OK
+[ "${OK,,}" = "y" ] || exit 1
+systemctl stop gyds-node || true
+tar -xzf "$ARCHIVE" -C /
+systemctl start gyds-node
+echo "Restore complete. Verify with: gyds-health"
+MGMT
+
+cat > /usr/local/bin/gyds-health <<'MGMT'
+#!/bin/bash
+# Peer-count and block-stall health check. Restarts a stuck node.
+set -uo pipefail
+source /etc/gyds/node.env
+RPC="http://127.0.0.1:${RPC_PORT}"
+MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
+STALL="${HEALTH_STALL_SECONDS:-300}"
+STATE_FILE="/var/lib/gyds/.health-state"
+RESTART="${1:-}"
+
+rpc() { curl -fsS --max-time 8 "$RPC" -H 'content-type: application/json' \
+        --data "{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":${2:-[]},\"id\":1}"; }
+
+if ! systemctl is-active --quiet gyds-node; then
+  echo "CRITICAL: gyds-node is not running."
+  [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node
+  exit 2
+fi
+
+BLOCK_HEX="$(rpc eth_blockNumber | jq -r '.result // empty')"
+PEERS_HEX="$(rpc net_peerCount | jq -r '.result // empty')"
+SYNCING="$(rpc eth_syncing | jq -r '.result')"
+[ -n "$BLOCK_HEX" ] || { echo "CRITICAL: RPC not answering."; [ "$RESTART" = "--auto-restart" ] && systemctl restart gyds-node; exit 2; }
+
+BLOCK=$((16#${BLOCK_HEX#0x}))
+PEERS=$((16#${PEERS_HEX#0x}))
+NOW=$(date +%s)
+
+LAST_BLOCK=0; LAST_TS=$NOW
+[ -f "$STATE_FILE" ] && read -r LAST_BLOCK LAST_TS < "$STATE_FILE"
+
+STATUS=OK
+if [ "$BLOCK" -gt "$LAST_BLOCK" ]; then
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+elif [ $((NOW - LAST_TS)) -ge "$STALL" ]; then
+  STATUS=STALLED
+fi
+
+[ "$PEERS" -lt "$MIN_PEERS" ] && STATUS="${STATUS}/LOW_PEERS"
+
+echo "block=${BLOCK} peers=${PEERS} syncing=${SYNCING} status=${STATUS}"
+
+if [ "$STATUS" != "OK" ] && [ "$RESTART" = "--auto-restart" ]; then
+  logger -t gyds-health "Node unhealthy (${STATUS}) — restarting gyds-node"
+  systemctl restart gyds-node
+  echo "$BLOCK $NOW" > "$STATE_FILE"
+  exit 1
+fi
+[ "$STATUS" = "OK" ] || exit 1
+MGMT
+
+cat > /usr/local/bin/gyds-upgrade <<'MGMT'
+#!/bin/bash
+# Versioned geth upgrade with automatic rollback.
+# Usage: gyds-upgrade /path/to/new/geth   |   gyds-upgrade --rollback
+set -euo pipefail
+GETH_BIN="$(command -v geth)"
+BACKUP="/var/backups/gyds/geth.previous"
+mkdir -p /var/backups/gyds
+
+if [ "${1:-}" = "--rollback" ]; then
+  [ -f "$BACKUP" ] || { echo "No previous binary to roll back to."; exit 1; }
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  echo "Rolled back to previous geth build."
+  exit 0
+fi
+
+NEW="${1:-}"
+[ -x "$NEW" ] || { echo "Usage: gyds-upgrade /path/to/geth  (or --rollback)"; exit 1; }
+
+gyds-backup || echo "Warning: pre-upgrade data backup failed."
+cp "$GETH_BIN" "$BACKUP"
+systemctl stop gyds-node
+cp "$NEW" "$GETH_BIN"; chmod +x "$GETH_BIN"
+systemctl start gyds-node
+sleep 10
+
+if gyds-health >/dev/null 2>&1; then
+  echo "Upgrade OK: $(geth version | head -3 | tr '\n' ' ')"
+else
+  echo "Health check failed — rolling back."
+  systemctl stop gyds-node
+  cp "$BACKUP" "$GETH_BIN"
+  systemctl start gyds-node
+  exit 1
+fi
+MGMT
+
+chmod +x /usr/local/bin/gyds-backup /usr/local/bin/gyds-restore \
+         /usr/local/bin/gyds-health /usr/local/bin/gyds-upgrade
+
+# --- Timers: nightly backup, health check every 2 minutes ---
+cat > /etc/systemd/system/gyds-backup.service <<'UNIT'
+[Unit]
+Description=GYDS chain data backup
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-backup
+UNIT
+
+cat > /etc/systemd/system/gyds-backup.timer <<'UNIT'
+[Unit]
+Description=Nightly GYDS chain data backup
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+
+cat > /etc/systemd/system/gyds-health.service <<'UNIT'
+[Unit]
+Description=GYDS node health check
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gyds-health --auto-restart
+UNIT
+
+cat > /etc/systemd/system/gyds-health.timer <<'UNIT'
+[Unit]
+Description=Run GYDS node health check every 2 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now gyds-backup.timer gyds-health.timer 2>/dev/null || \
+  warn "Could not enable backup/health timers — enable them manually."
+log "Backups (nightly), health monitor (2 min) and upgrade/rollback installed."
 
 # ============================================================
 # STEP 8: Install Management Commands
@@ -854,16 +1226,20 @@ log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-st
 header "Step 9/9: Starting Node"
 
 systemctl enable gyds-node
-systemctl start gyds-node
+systemctl restart gyds-node
 
-sleep 3
+for ATTEMPT in $(seq 1 10); do
+  systemctl is-active --quiet gyds-node && break
+  sleep 1
+done
 
 if systemctl is-active --quiet gyds-node; then
   log "GYDS ${NODE_TYPE^^} node is running!"
 else
-  warn "Node may have failed to start. Check logs with:"
-  warn "  gyds-logs"
-  warn "  journalctl -u gyds-node -n 50 --no-pager"
+  warn "GYDS ${NODE_TYPE^^} node failed to start. Recent service output:"
+  systemctl --no-pager --full status gyds-node || true
+  journalctl -u gyds-node -n 50 --no-pager || true
+  err "Node setup did not complete because gyds-node is not active."
 fi
 
 # ============================================================
@@ -896,16 +1272,21 @@ case "$NODE_TYPE" in
     echo "║                                                          ║"
     printf "║   Main account:   %-39s║\n" "${MAIN_ACCOUNT}"
     printf "║   Account key:    %-39s║\n" "${CONFIG_DIR}/account-password.txt"
+    echo "║                                                          ║"
+    printf "║   Admin wallet:   %-39s║\n" "${ADMIN_WALLET}"
+    printf "║   Admin label:    %-39s║\n" "${ADMIN_WALLET_LABEL}"
+    if [ "$ADMIN_WALLET_CREATED" = "yes" ]; then
+      printf "║   Admin key pass: %-39s║\n" "${CONFIG_DIR}/admin-password.txt"
+      printf "║   Admin keystore: %-39s║\n" "${DATA_DIR}/keystore"
+    fi
     ;;
   full)
     printf "║   Syncing from MAIN: %-37s║\n" "${MAIN_NODE_IP}"
     echo "║   Once synced, share your enode with lite nodes.         ║"
     echo "║     gyds-enode                                           ║"
     ;;
-  rpc)
+  rpc|boost)
     printf "║   Syncing from MAIN: %-37s║\n" "${MAIN_NODE_IP}"
-    echo "║   Explorer UI is not installed in RPC-node mode.         ║"
-    echo "║   HTTP and WebSocket RPC are enabled for clients.         ║"
     echo "║   Public RPC endpoint for wallets/websites.              ║"
     printf "║     HTTP RPC: %-43s║\n" "http://${SERVER_IP}:${RPC_PORT}"
     printf "║     WS RPC:   %-43s║\n" "ws://${SERVER_IP}:${WS_PORT}"
@@ -923,6 +1304,7 @@ case "$NODE_TYPE" in
   validator)
     printf "║   Validator:  %-43s║\n" "${VALIDATOR_ADDRESS}"
     printf "║   MAIN node:  %-43s║\n" "${MAIN_NODE_IP}"
+    echo "║   Consensus:  Clique proof-of-authority (not PoS staking) ║"
     echo "║   Ask the MAIN node admin to authorize you:              ║"
     printf "║     clique.propose(\"%s\", true)%-18s║\n" "${VALIDATOR_ADDRESS}" ""
     ;;
@@ -960,10 +1342,14 @@ case "$NODE_TYPE" in
   rpc)
     echo "  1. Verify genesis.json matches the MAIN node"
     echo "  2. Wait for sync:           gyds-console → eth.syncing"
-    printf "  3. Test HTTP RPC:           curl http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
-    echo "  4. Keep RPC behind TLS/authentication or a trusted network."
     printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
     echo "  4. Use this RPC in the explorer's VITE_RPC_URL"
+    ;;
+  boost)
+    echo "  1. Verify genesis.json matches the MAIN node"
+    echo "  2. Wait for sync:           gyds-console → eth.syncing"
+    printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
+    echo "  4. Use this RPC as VITE_RPC_URL_2 / BOOSTNODE_RPC_URL"
     ;;
   lite)
     printf "  1. Add full node enodes to %s/geth/static-nodes.json\n" "${DATA_DIR}"
@@ -974,8 +1360,10 @@ case "$NODE_TYPE" in
   validator)
     echo "  1. Ask the MAIN node admin to run:"
     printf "       clique.propose(\"%s\", true)\n" "${VALIDATOR_ADDRESS}"
-    echo "  2. Wait for sync, then mining begins automatically"
-    echo "  3. Monitor:                 gyds-logs"
+    echo "  2. Wait for sync, then authority sealing begins automatically"
+    echo "  3. Confirm authorization on MAIN: clique.getSigners()"
+    echo "  4. Monitor:                 gyds-logs"
+    echo "  Note: this chain uses Clique authority, not proof-of-stake staking."
     ;;
 esac
 

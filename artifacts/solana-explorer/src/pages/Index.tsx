@@ -6,6 +6,7 @@ import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
 import SearchBar from "@/components/SearchBar";
+import RpcStatusPanel from "@/components/RpcStatusPanel";
 import { getNetworkStats, getLatestBlocks, gweiFromWei, hexToNumber } from "@/lib/rpc";
 import { Transaction } from "@/lib/types";
 
@@ -73,6 +74,10 @@ const Index = () => {
               value={statsLoading ? "..." : (stats?.peerCount ?? 0)}
               icon={Users}
             />
+          </div>
+
+          <div className="mt-4">
+            <RpcStatusPanel />
           </div>
         </div>
       </section>

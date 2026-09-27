@@ -1,0 +1,38 @@
+ Step 2/9: Installing Geth
+══════════════════════════════════════
+
+[⚠] Geth already installed: Geth
+[✓] Geth installed: Geth
+
+══════════════════════════════════════
+  Step 3/9: Setting Up Directories
+══════════════════════════════════════
+
+[⚠] System user 'gyds' already exists.
+[✓] Directories ready: /var/lib/gyds, /etc/gyds, /var/log/gyds
+
+══════════════════════════════════════
+  Step 4/9: Chain Configuration
+══════════════════════════════════════
+
+[ℹ] Generating a new account for the MAIN node authority...
+[ℹ] Main node authority account: 0xA0D9Fd4D24eFB124f3879896Ec84a63b37FfbA25
+[✓] Using operator-supplied admin wallet: 0x6422D12BFADdEE5142BFaD21b3006a74D09017B1
+[ℹ] Admin wallet genesis allocation: 1000000 GYDS
+[✓] Genesis file created: /etc/gyds/genesis.json
+[ℹ] Initializing blockchain data directory...
+INFO [09-16|16:34:23.597] Maximum peer count                       ETH=50 total=50
+INFO [09-16|16:34:23.603] Smartcard socket not found, disabling    err="stat /run/pcscd/pcscd.comm: no such file or directory"
+WARN [09-16|16:34:23.630] Sanitizing cache to Go's GC limits       source=system provided=4096 updated=1453
+INFO [09-16|16:34:23.635] Set global gas cap                       cap=50,000,000
+INFO [09-16|16:34:23.637] Initializing the KZG library             backend=gokzg
+INFO [09-16|16:34:23.642] Using pebble as the backing database
+INFO [09-16|16:34:23.643] Allocated cache and file handles         database=/var/lib/gyds/geth/chaindata cache=726.00MiB handles=262,144
+INFO [09-16|16:34:24.276] Opened ancient database                  database=/var/lib/gyds/geth/chaindata/ancient/chain readonly=false
+INFO [09-16|16:34:24.276] Opened Era store                         datadir=/var/lib/gyds/geth/chaindata/ancient/chain/era
+INFO [09-16|16:34:24.276] State scheme set to already existing     scheme=path
+INFO [09-16|16:34:24.276] Load database journal from disk
+INFO [09-16|16:34:24.276] Failed to load journal, discard it       err="journal not found"
+INFO [09-16|16:34:24.410] Opened ancient database                  database=/var/lib/gyds/geth/chaindata/ancient/state readonly=false
+INFO [09-16|16:34:24.410] Initialized path database                triecache=16.00MiB statecache=16.00MiB buffer=64.00MiB state-history="last 90000 blocks" journal-dir=/var/lib/gyds/geth/triedb
+Fatal: Failed to write genesis block: database contains incompatible genesis (have a3136f975d7af50d0be8781058dedcd6e7832dd39da871f902177ea8ac640a75, new 23b8f9789f3100912b66db3f63f2825d6f95660a124dc058140312ac7ab19f89)

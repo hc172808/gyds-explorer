@@ -2,3 +2,8 @@
 - [Replit local RPC gateway](local-rpc-gateway.md) — validate GYDS chain identity before upstream use and label deterministic mock fallback responses.
 - [npm workspace migration](npm-workspace-migration.md) — npm cannot resolve pnpm catalog or workspace protocols; use concrete versions and local file links.
 - [npm lockfile registry refresh](npm-lockfile-registry-refresh.md) — npm preserves stale resolved URLs; full lockfile regeneration is required to remove internal registries.
+- [Replit managed artifact workflows](replit-managed-workflows.md) — registered artifact services expose managed names and ports; align proxies to them instead of replacing workflows.
+- [Go dependency firewall](go-dependency-firewall.md) — Replit may block x/crypto module downloads for CVEs; verify the firewall before changing archived Go code.
+- [GYDS RPC exposure](gyds-rpc-exposure.md) — RPC nodes default to public bindings; full/lite nodes stay local unless PUBLIC_RPC is explicitly enabled.
+- [GYDS deployment reset](gyds-deployment-reset.md) — destructive reruns require explicit YES and reset node state plus the explorer database before recreation.
+- [Wallet auth schema](wallet-auth-schema.md) — wallet nonce/session routes require the Drizzle schema to be pushed before the API can authenticate.

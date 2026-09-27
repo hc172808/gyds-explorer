@@ -1,0 +1,168 @@
+sudo ss -lntup | grep -E ':(8545|30303)\b'
+root@mainn:~# sudo systemctl stop gyds-node
+sudo journalctl -u gyds-node -b -n 100 --no-pager
+Sep 05 16:02:00 mainn geth[70443]:           Do not maintain log search index
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --history.logs.export value                                            ($GETH_HISTORY_LOGS_EXPORT)
+Sep 05 16:02:00 mainn geth[70443]:           Export checkpoints to file in go source file format
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --history.state value               (default: 90000)                   ($GETH_HISTORY_STATE)
+Sep 05 16:02:00 mainn geth[70443]:           Number of recent blocks to retain state history for, only relevant in
+Sep 05 16:02:00 mainn geth[70443]:           state.scheme=path (default = 90,000 blocks, 0 = entire chain)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --history.transactions value        (default: 2350000)                 ($GETH_HISTORY_TRANSACTIONS)
+Sep 05 16:02:00 mainn geth[70443]:           Number of recent blocks to maintain transactions index for (default = about one
+Sep 05 16:02:00 mainn geth[70443]:           year, 0 = entire chain)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --history.trienode value            (default: -1)                      ($GETH_HISTORY_TRIENODE)
+Sep 05 16:02:00 mainn geth[70443]:           Number of recent blocks to retain trienode history for, only relevant in
+Sep 05 16:02:00 mainn geth[70443]:           state.scheme=path (default/negative = disabled, 0 = entire chain)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --history.trienode.full-value-checkpoint value (default: 8)
+Sep 05 16:02:00 mainn geth[70443]:           The frequency of full-value encoding. Every n-th node is stored in full-value
+Sep 05 16:02:00 mainn geth[70443]:           format; all other nodes are stored as diffs relative to their predecessor
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --snap.v2                           (default: false)                   ($GETH_SNAP_V2)
+Sep 05 16:02:00 mainn geth[70443]:           Enable the experimental snap/2 (EIP-8189, BAL-based) sync protocol (advertises
+Sep 05 16:02:00 mainn geth[70443]:           and syncs via snap/2; not safe on public networks)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --state.scheme value                                                   ($GETH_STATE_SCHEME)
+Sep 05 16:02:00 mainn geth[70443]:           Scheme to use for storing ethereum state ('hash' or 'path')
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --state.size-tracking               (default: false)                   ($GETH_STATE_SIZE_TRACKING)
+Sep 05 16:02:00 mainn geth[70443]:           Enable state size tracking, retrieve state size with debug_stateSize.
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --syncmode value                    (default: "snap")                  ($GETH_SYNCMODE)
+Sep 05 16:02:00 mainn geth[70443]:           Blockchain sync mode ("snap" or "full")
+Sep 05 16:02:00 mainn geth[70443]:    TRANSACTION POOL (BLOB)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --blobpool.datacap value            (default: 2684354560)              ($GETH_BLOBPOOL_DATACAP)
+Sep 05 16:02:00 mainn geth[70443]:           Disk space to allocate for pending blob transactions (soft limit)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --blobpool.datadir value            (default: "blobpool")              ($GETH_BLOBPOOL_DATADIR)
+Sep 05 16:02:00 mainn geth[70443]:           Data directory to store blob transactions in
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --blobpool.pricebump value          (default: 100)                     ($GETH_BLOBPOOL_PRICEBUMP)
+Sep 05 16:02:00 mainn geth[70443]:           Price bump percentage to replace an already existing blob transaction
+Sep 05 16:02:00 mainn geth[70443]:    TRANSACTION POOL (EVM)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.accountqueue value         (default: 64)                      ($GETH_TXPOOL_ACCOUNTQUEUE)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum number of non-executable transaction slots permitted per account
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.accountslots value         (default: 16)                      ($GETH_TXPOOL_ACCOUNTSLOTS)
+Sep 05 16:02:00 mainn geth[70443]:           Minimum number of executable transaction slots guaranteed per account
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.globalqueue value          (default: 1024)                    ($GETH_TXPOOL_GLOBALQUEUE)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum number of non-executable transaction slots for all accounts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.globalslots value          (default: 5120)                    ($GETH_TXPOOL_GLOBALSLOTS)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum number of executable transaction slots for all accounts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.journal value              (default: "transactions.rlp")      ($GETH_TXPOOL_JOURNAL)
+Sep 05 16:02:00 mainn geth[70443]:           Disk journal for local transaction to survive node restarts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.lifetime value             (default: 3h0m0s)                  ($GETH_TXPOOL_LIFETIME)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum amount of time non-executable transaction are queued
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.locals value                                                  ($GETH_TXPOOL_LOCALS)
+Sep 05 16:02:00 mainn geth[70443]:           Comma separated accounts to treat as locals (no flush, priority inclusion)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.nolocals                   (default: false)                   ($GETH_TXPOOL_NOLOCALS)
+Sep 05 16:02:00 mainn geth[70443]:           Disables price exemptions for locally submitted transactions
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.pricebump value            (default: 10)                      ($GETH_TXPOOL_PRICEBUMP)
+Sep 05 16:02:00 mainn geth[70443]:           Price bump percentage to replace an already existing transaction
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.pricelimit value           (default: 1)                       ($GETH_TXPOOL_PRICELIMIT)
+Sep 05 16:02:00 mainn geth[70443]:           Minimum gas price tip to enforce for acceptance into the pool
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.rejournal value            (default: 1h0m0s)                  ($GETH_TXPOOL_REJOURNAL)
+Sep 05 16:02:00 mainn geth[70443]:           Time interval to regenerate the local transaction journal
+Sep 05 16:02:00 mainn geth[70443]:    VIRTUAL MACHINE
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --stateless-self-validation         (default: false)                   ($GETH_STATELESS_SELF_VALIDATION)
+Sep 05 16:02:00 mainn geth[70443]:           Generate execution witnesses and self-check against them (testing purpose)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn systemd[1]: gyds-node.service: Main process exited, code=exited, status=1/FAILURE
+Sep 05 16:02:00 mainn geth[70443]:     --vmdebug                           (default: false)                   ($GETH_VMDEBUG)
+Sep 05 16:02:00 mainn geth[70443]:           Record information useful for VM and contract debugging
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmtrace value                                                        ($GETH_VMTRACE)
+Sep 05 16:02:00 mainn geth[70443]:           Name of tracer which should record internal VM operations (costly)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmtrace.jsonconfig value          (default: "{}")                    ($GETH_VMTRACE_JSONCONFIG)
+Sep 05 16:02:00 mainn geth[70443]:           Tracer configuration (JSON)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmwitnessstats                    (default: false)                   ($GETH_VMWITNESSSTATS)
+Sep 05 16:02:00 mainn geth[70443]:           Enable collection of witness trie access statistics (automatically enables
+Sep 05 16:02:00 mainn geth[70443]:           witness generation)
+Sep 05 16:02:00 mainn geth[70443]: COPYRIGHT:
+Sep 05 16:02:00 mainn geth[70443]:    Copyright 2013-2026 The go-ethereum Authors
+Sep 05 16:02:00 mainn geth[70443]: flag provided but not defined: -mine
+Sep 05 16:02:00 mainn systemd[1]: gyds-node.service: Failed with result 'exit-code'.
+Sep 05 16:02:03 mainn systemd[1]: Stopped GYDS MAIN Node (gyds-main).
+root@mainn:~# sudo systemctl start gyds-node
+sudo journalctl -u gyds-node -b -n 50 --no-pager
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.globalqueue value          (default: 1024)                    ($GETH_TXPOOL_GLOBALQUEUE)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum number of non-executable transaction slots for all accounts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.globalslots value          (default: 5120)                    ($GETH_TXPOOL_GLOBALSLOTS)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum number of executable transaction slots for all accounts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.journal value              (default: "transactions.rlp")      ($GETH_TXPOOL_JOURNAL)
+Sep 05 16:02:00 mainn geth[70443]:           Disk journal for local transaction to survive node restarts
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.lifetime value             (default: 3h0m0s)                  ($GETH_TXPOOL_LIFETIME)
+Sep 05 16:02:00 mainn geth[70443]:           Maximum amount of time non-executable transaction are queued
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.locals value                                                  ($GETH_TXPOOL_LOCALS)
+Sep 05 16:02:00 mainn geth[70443]:           Comma separated accounts to treat as locals (no flush, priority inclusion)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.nolocals                   (default: false)                   ($GETH_TXPOOL_NOLOCALS)
+Sep 05 16:02:00 mainn geth[70443]:           Disables price exemptions for locally submitted transactions
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.pricebump value            (default: 10)                      ($GETH_TXPOOL_PRICEBUMP)
+Sep 05 16:02:00 mainn geth[70443]:           Price bump percentage to replace an already existing transaction
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.pricelimit value           (default: 1)                       ($GETH_TXPOOL_PRICELIMIT)
+Sep 05 16:02:00 mainn geth[70443]:           Minimum gas price tip to enforce for acceptance into the pool
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --txpool.rejournal value            (default: 1h0m0s)                  ($GETH_TXPOOL_REJOURNAL)
+Sep 05 16:02:00 mainn geth[70443]:           Time interval to regenerate the local transaction journal
+Sep 05 16:02:00 mainn geth[70443]:    VIRTUAL MACHINE
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --stateless-self-validation         (default: false)                   ($GETH_STATELESS_SELF_VALIDATION)
+Sep 05 16:02:00 mainn geth[70443]:           Generate execution witnesses and self-check against them (testing purpose)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn systemd[1]: gyds-node.service: Main process exited, code=exited, status=1/FAILURE
+Sep 05 16:02:00 mainn geth[70443]:     --vmdebug                           (default: false)                   ($GETH_VMDEBUG)
+Sep 05 16:02:00 mainn geth[70443]:           Record information useful for VM and contract debugging
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmtrace value                                                        ($GETH_VMTRACE)
+Sep 05 16:02:00 mainn geth[70443]:           Name of tracer which should record internal VM operations (costly)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmtrace.jsonconfig value          (default: "{}")                    ($GETH_VMTRACE_JSONCONFIG)
+Sep 05 16:02:00 mainn geth[70443]:           Tracer configuration (JSON)
+Sep 05 16:02:00 mainn geth[70443]:    
+Sep 05 16:02:00 mainn geth[70443]:     --vmwitnessstats                    (default: false)                   ($GETH_VMWITNESSSTATS)
+Sep 05 16:02:00 mainn geth[70443]:           Enable collection of witness trie access statistics (automatically enables
+Sep 05 16:02:00 mainn geth[70443]:           witness generation)
+Sep 05 16:02:00 mainn geth[70443]: COPYRIGHT:
+Sep 05 16:02:00 mainn geth[70443]:    Copyright 2013-2026 The go-ethereum Authors
+Sep 05 16:02:00 mainn geth[70443]: flag provided but not defined: -mine
+Sep 05 16:02:00 mainn systemd[1]: gyds-node.service: Failed with result 'exit-code'.
+Sep 05 16:02:03 mainn systemd[1]: Stopped GYDS MAIN Node (gyds-main).
+Sep 05 16:02:52 mainn systemd[1]: Started GYDS MAIN Node (gyds-main).
+root@mainn:~# sudo stat -c 'permissions=%a owner=%U group=%G size=%s' \
+  /etc/gyds/account-password.txt
+permissions=600 owner=root group=root size=25
+root@mainn:~# sudo geth account list --datadir /var/lib/gyds
+sudo grep '^MAIN_ACCOUNT=' /etc/gyds/node.env
+INFO [09-05|16:04:24.955] Maximum peer count                       ETH=50 total=50
+INFO [09-05|16:04:24.961] Smartcard socket not found, disabling    err="stat /run/pcscd/pcscd.comm: no such file or directory"
+Account #0: {9e71444dfca7d1dc8a4532d64f1211fe329e6958} keystore:///var/lib/gyds/keystore/UTC--2026-08-27T10-19-28.238831371Z--9e71444dfca7d1dc8a4532d64f1211fe329e6958
+Account #1: {9f12580b0b553691b85df8bd3854eba5643415bf} keystore:///var/lib/gyds/keystore/UTC--2026-08-27T11-41-12.334003411Z--9f12580b0b553691b85df8bd3854eba5643415bf
+Account #2: {b83a6d0e5b664654fdf078632c88d24036c9d6d3} keystore:///var/lib/gyds/keystore/UTC--2026-08-27T12-09-03.117837676Z--b83a6d0e5b664654fdf078632c88d24036c9d6d3
+Account #3: {e1b8a00e10cae006776b391cb190588067138c88} keystore:///var/lib/gyds/keystore/UTC--2026-09-02T18-16-04.535932670Z--e1b8a00e10cae006776b391cb190588067138c88
+Account #4: {d1f694e1e124f9d9d6f78a0f2367478d900b4b90} keystore:///var/lib/gyds/keystore/UTC--2026-09-02T18-41-21.652017093Z--d1f694e1e124f9d9d6f78a0f2367478d900b4b90
+Account #5: {05675df73c3ea5d0932f77a14513028208856ec4} keystore:///var/lib/gyds/keystore/UTC--2026-09-05T15-39-33.426333537Z--05675df73c3ea5d0932f77a14513028208856ec4

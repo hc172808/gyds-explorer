@@ -1,11 +1,15 @@
 import { Router } from "express";
+import { db } from "@workspace/db";
+import { networkNodesTable } from "@workspace/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 const router = Router();
 const RPC_ENDPOINTS = [
   process.env.RPC_LOCAL_URL || "http://127.0.0.1:8545",
-  process.env.VITE_RPC_URL || process.env.RPC_URL || "https://rpc.netlifegy.com",
-  process.env.VITE_RPC_URL_2 || process.env.RPC_URL_2 || "https://boost.netlifegy.com",
+  process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
+  process.env.BOOSTNODE_RPC_URL || process.env.VITE_BOOSTNODE_RPC_URL || process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
 ].filter((endpoint, index, endpoints) => endpoint && endpoints.indexOf(endpoint) === index);
+const EXPECTED_CHAIN_ID = "0x3068a";
 const RPC_TIMEOUT_MS = Number(process.env.RPC_TIMEOUT_MS || 5000);
 
 router.post("/", async (req, res) => {
@@ -16,16 +20,58 @@ router.post("/", async (req, res) => {
     return;
   }
 
+  let endpoints = RPC_ENDPOINTS;
+  const nodeId = Number(req.query.nodeId);
+  try {
+    if (Number.isSafeInteger(nodeId) && nodeId > 0) {
+      const [node] = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
+        .from(networkNodesTable)
+        .where(and(eq(networkNodesTable.id, nodeId), eq(networkNodesTable.isActive, true)))
+        .limit(1);
+      if (!node) {
+        res.status(404).json({ jsonrpc: "2.0", error: { code: -32001, message: "Configured node not found" }, id });
+        return;
+      }
+      endpoints = [node.rpcUrl];
+    } else {
+      const nodes = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
+        .from(networkNodesTable)
+        .where(and(eq(networkNodesTable.isActive, true), inArray(networkNodesTable.type, ["main", "full", "lite", "rpc", "boost"])));
+      endpoints = [...new Set([...nodes.map((node) => node.rpcUrl), ...RPC_ENDPOINTS])];
+    }
+  } catch {
+    // The environment fallbacks remain usable if the optional node catalog is unavailable.
+  }
+
   let lastError: unknown;
-  for (const endpoint of RPC_ENDPOINTS) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+  for (const endpoint of endpoints) {
     try {
+      const chainResponse = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id }),
+        signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      });
+      const chainPayload = await chainResponse.json() as { result?: string; error?: { message?: string } };
+      if (!chainResponse.ok || chainPayload.error) {
+        lastError = new Error(chainPayload.error?.message || `RPC responded with ${chainResponse.status}`);
+        continue;
+      }
+      if (chainPayload.result !== EXPECTED_CHAIN_ID) {
+        lastError = new Error(`Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainPayload.result || "none"}`);
+        continue;
+      }
+
+      if (method === "eth_chainId") {
+        res.status(200).json(chainPayload);
+        return;
+      }
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", method, params, id }),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
       });
       const payload = await response.json();
       if (response.ok) {
@@ -36,8 +82,6 @@ router.post("/", async (req, res) => {
       lastError = new Error(`RPC responded with ${response.status}`);
     } catch (error) {
       lastError = error;
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
