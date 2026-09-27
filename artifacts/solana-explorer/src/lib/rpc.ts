@@ -1,7 +1,8 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 import { formatUnitsRaw } from "./coins";
+import { GYDS_CHAIN_ID } from "./useTokenDeploy";
 
-export const EXPECTED_CHAIN_ID = 198282;
+export const EXPECTED_CHAIN_ID = Number(GYDS_CHAIN_ID);
 const RPC_TIMEOUT_MS = 5000;
 
 /** Use the same-origin proxy so public RPC servers do not need browser CORS headers. */

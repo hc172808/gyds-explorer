@@ -25,14 +25,15 @@ const fallbackEnabled = !["false", "0", "off", "disabled"].includes(
   (process.env.RPC_MOCK_FALLBACK || "true").toLowerCase(),
 );
 const timeoutMs = Number(process.env.RPC_TIMEOUT_MS || 1200);
-const chainId = 198282;
-const chainIdHex = "0x3068a";
-const networkId = "198282";
+const configuredChainId = Number(process.env.REPLIT_CHAIN_ID || 198281);
+const chainId = Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198281;
+const chainIdHex = `0x${chainId.toString(16)}`;
+const networkId = String(chainId);
 const mockBlockNumber = Number(process.env.MOCK_BLOCK_NUMBER || 123456);
 const mockTimestamp = "0x65b2a9c0";
 const zeroAddress = "0x0000000000000000000000000000000000000000";
 const zeroHash = `0x${"0".repeat(64)}`;
-const mockBlockHash = `0x${"3068a".padStart(64, "0")}`;
+const mockBlockHash = `0x${chainId.toString(16).padStart(64, "0")}`;
 const connectionMode = (process.env.GYDS_RPC_MODE || "auto").toLowerCase();
 const localUpstreams = [
   process.env.GYDS_LOCAL_RPC_URL,

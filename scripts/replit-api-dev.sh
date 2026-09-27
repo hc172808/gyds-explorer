@@ -9,6 +9,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RPC_PORT="${REPLIT_RPC_PORT:-18545}"
 LITE_RPC_PORT="${REPLIT_LITE_RPC_PORT:-18555}"
 NODE_PIDS=()
+export REPLIT_CHAIN_ID="${REPLIT_CHAIN_ID:-198281}"
+export GYDS_RPC_MODE="${GYDS_RPC_MODE:-local}"
 
 cleanup() {
   trap - EXIT INT TERM

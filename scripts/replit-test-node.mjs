@@ -24,7 +24,10 @@ for (let index = 2; index < process.argv.length; index += 1) {
 const type = args.get("type") || "rpc";
 const port = Number(args.get("port") || (type === "lite" ? 18555 : 18545));
 const stateFile = args.get("state") || path.resolve(".replit-node/test-network/state.json");
-const chainId = 198282;
+const configuredChainId = Number(process.env.REPLIT_CHAIN_ID || args.get("chain-id") || 198281);
+const chainId = Number.isSafeInteger(configuredChainId) && configuredChainId > 0
+  ? configuredChainId
+  : 198281;
 const blockPeriodMs = 5000;
 
 if (!["rpc", "lite"].includes(type)) throw new Error(`--type must be rpc or lite; got ${type}`);

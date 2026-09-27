@@ -30,7 +30,9 @@ const RPC_ENDPOINTS =
       ? REMOTE_RPC_ENDPOINTS
       : [...LOCAL_RPC_ENDPOINTS, ...REMOTE_RPC_ENDPOINTS]
         .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
-const EXPECTED_CHAIN_ID = "0x3068a";
+const defaultChainId = process.env.NODE_ENV === "production" ? 198282 : 198281;
+const configuredChainId = Number(process.env.REPLIT_CHAIN_ID || process.env.CHAIN_ID || defaultChainId);
+const EXPECTED_CHAIN_ID = `0x${(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : defaultChainId).toString(16)}`;
 const RPC_TIMEOUT_MS = Number(process.env.RPC_TIMEOUT_MS || 5000);
 
 router.post("/", async (req, res) => {
@@ -58,7 +60,9 @@ router.post("/", async (req, res) => {
       const nodes = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
         .from(networkNodesTable)
         .where(and(eq(networkNodesTable.isActive, true), inArray(networkNodesTable.type, ["main", "full", "lite", "rpc", "boost"])));
-      endpoints = [...new Set([...nodes.map((node) => node.rpcUrl), ...RPC_ENDPOINTS])];
+      // Prefer the local Replit test nodes so an unavailable production
+      // endpoint cannot delay or mask the development network.
+      endpoints = [...new Set([...RPC_ENDPOINTS, ...nodes.map((node) => node.rpcUrl)])];
     }
   } catch {
     // The environment fallbacks remain usable if the optional node catalog is unavailable.

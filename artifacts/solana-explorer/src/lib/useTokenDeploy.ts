@@ -2,8 +2,9 @@ import { useState } from "react";
 import { BrowserProvider, ContractFactory, JsonRpcProvider, Contract } from "ethers";
 import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
 
-export const GYDS_CHAIN_ID   = 198282n;
-export const GYDS_CHAIN_HEX  = "0x3068a";
+const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198281);
+export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198281);
+export const GYDS_CHAIN_HEX  = `0x${GYDS_CHAIN_ID.toString(16)}`;
 
 export type DeployStatus = "idle" | "connecting" | "switching" | "deploying" | "confirming" | "success" | "error";
 
