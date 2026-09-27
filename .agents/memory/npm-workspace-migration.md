@@ -7,4 +7,4 @@ The workspace must use npm-compatible dependency specifications: concrete semver
 
 **Why:** npm does not understand pnpm's `catalog:` or `workspace:*` protocols, and a root preinstall guard can make otherwise valid npm installs fail before dependencies are resolved.
 
-**How to apply:** Keep the root `package.json` `workspaces` list, commit `package-lock.json`, and use `npm run <script> --workspace=<workspace-name>` for targeted commands.
+**How to apply:** Keep the root `package.json` `workspaces` list, commit `package-lock.json`, and use `npm run <script> --workspace=<workspace-name>` for targeted commands. Do not assume a root `node_modules/.bin` symlink exists; root scripts should delegate to workspace scripts when invoking tools such as Vite or Vitest.
