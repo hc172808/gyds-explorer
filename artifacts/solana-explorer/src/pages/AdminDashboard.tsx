@@ -349,7 +349,11 @@ function NodesTab() {
       else await createNetworkNode(input);
       setEditingId(null);
       setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" });
-      toast.success(editingId ? "Network node updated" : "Network node added");
+       toast.success(editingId ? "Network node updated" : "Network node added", {
+         description: !form.enode.trim()
+           ? "The enode URL was automatically read from the node's admin RPC."
+           : "The supplied enode URL was saved.",
+       });
       loadNodes();
     } catch (error) {
       toast.error("Could not add node", { description: error instanceof Error ? error.message : "Request failed" });
@@ -415,7 +419,10 @@ function NodesTab() {
             <option value="boot">Boot node</option>
           </select>
           <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder="https://rpc.example.com" className="font-mono text-xs" />
-          <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="enode://… (optional)" className="font-mono text-xs" />
+           <div>
+             <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="Leave blank to auto-detect enode" className="font-mono text-xs" />
+             <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to read it from <code className="rounded bg-secondary px-1">admin_nodeInfo</code>; paste one manually if admin RPC is private.</p>
+           </div>
           <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
             <option value="connected">Connected</option>
             <option value="disconnected">Disconnected</option>

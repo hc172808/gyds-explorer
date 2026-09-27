@@ -37,6 +37,58 @@ function validHttpUrl(value: unknown): value is string {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
+function validEnode(value: unknown): value is string {
+  return typeof value === "string"
+    && /^enode:\/\/[0-9a-fA-F]{128}@[^/\s:]+:\d+(?:\?.*)?$/.test(value.trim())
+    && value.trim().length <= 65535;
+}
+
+async function discoverEnode(rpcUrl: string): Promise<{ enode?: string; error?: string }> {
+  if (!validHttpUrl(rpcUrl)) {
+    return { error: "Automatic enode discovery requires an HTTP(S) RPC URL." };
+  }
+
+  try {
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "admin_nodeInfo", params: [], id: 1 }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const payload = await response.json() as {
+      result?: { enode?: unknown };
+      error?: { message?: string };
+    };
+    const enode = payload.result?.enode;
+
+    if (!response.ok || payload.error) {
+      return {
+        error: payload.error?.message || `RPC returned HTTP ${response.status}`,
+      };
+    }
+    if (!validEnode(enode)) {
+      return { error: "RPC returned no valid enode URL from admin_nodeInfo." };
+    }
+    return { enode: enode.trim() };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "RPC unreachable during enode discovery",
+    };
+  }
+}
+
+async function autoDiscoverEnode(values: Record<string, unknown>): Promise<string | null> {
+  const rpcUrl = values.rpcUrl;
+  if (typeof rpcUrl !== "string") return "An RPC URL is required for enode discovery.";
+
+  const result = await discoverEnode(rpcUrl);
+  if (!result.enode) {
+    return result.error || "Could not discover the node enode URL.";
+  }
+  values.enode = result.enode;
+  return null;
+}
+
 function nodeValues(body: Record<string, unknown>, partial = false) {
   const values: Record<string, unknown> = {};
 
@@ -62,7 +114,11 @@ function nodeValues(body: Record<string, unknown>, partial = false) {
     if (body.enode !== null && (typeof body.enode !== "string" || body.enode.length > 65535)) {
       return { error: "enode must be a string or null" };
     }
-    values.enode = typeof body.enode === "string" ? body.enode.trim() : null;
+    const enode = typeof body.enode === "string" ? body.enode.trim() : null;
+    if (enode && !validEnode(enode)) {
+      return { error: "enode must be a valid enode:// URL" };
+    }
+    values.enode = enode || null;
   }
   if ("status" in body) {
     if (typeof body.status !== "string" || !NODE_STATUSES.includes(body.status as typeof NODE_STATUSES[number])) {
@@ -196,6 +252,16 @@ router.post("/", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: result.error });
       return;
     }
+    if (!result.values.enode) {
+      const discoveryError = await autoDiscoverEnode(result.values);
+      if (discoveryError) {
+        res.status(422).json({
+          error: `Could not automatically discover this node's enode URL: ${discoveryError}`,
+          hint: "Enable admin_nodeInfo only on a trusted/private RPC endpoint, or paste the enode URL manually.",
+        });
+        return;
+      }
+    }
     const [node] = await db.insert(networkNodesTable).values(result.values as typeof networkNodesTable.$inferInsert).returning();
     req.log.info({ id: node.id, by: req.admin!.walletAddress }, "Network node created");
     res.status(201).json(node);
@@ -216,6 +282,14 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: "Invalid node id" });
       return;
     }
+    const [existingNode] = await db.select({
+      rpcUrl: networkNodesTable.rpcUrl,
+      enode: networkNodesTable.enode,
+    }).from(networkNodesTable).where(eq(networkNodesTable.id, id));
+    if (!existingNode) {
+      res.status(404).json({ error: "Node not found" });
+      return;
+    }
     const result = nodeValues(req.body as Record<string, unknown>, true);
     if ("error" in result) {
       res.status(400).json({ error: result.error });
@@ -224,6 +298,18 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
     if (Object.keys(result.values).length === 0) {
       res.status(400).json({ error: "At least one node field must be provided" });
       return;
+    }
+    if ("enode" in result.values && !result.values.enode) {
+      const rpcUrl = result.values.rpcUrl ?? existingNode.rpcUrl;
+      result.values.rpcUrl = rpcUrl;
+      const discoveryError = await autoDiscoverEnode(result.values);
+      if (discoveryError) {
+        res.status(422).json({
+          error: `Could not automatically discover this node's enode URL: ${discoveryError}`,
+          hint: "Enable admin_nodeInfo only on a trusted/private RPC endpoint, or paste the enode URL manually.",
+        });
+        return;
+      }
     }
     const [node] = await db.update(networkNodesTable)
       .set({ ...result.values, updatedAt: new Date() } as typeof networkNodesTable.$inferInsert)

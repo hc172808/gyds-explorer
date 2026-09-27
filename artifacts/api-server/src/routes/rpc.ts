@@ -4,11 +4,14 @@ import { networkNodesTable } from "@workspace/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
 const router = Router();
+const LOCAL_RPC_ENDPOINT = process.env.REPLIT_RPC_URL || process.env.LOCAL_RPC_URL;
 const RPC_ENDPOINTS = [
-  process.env.RPC_LOCAL_URL || "http://127.0.0.1:8545",
+  process.env.RPC_LOCAL_URL || LOCAL_RPC_ENDPOINT || "http://127.0.0.1:8545",
+  process.env.REPLIT_LITE_RPC_URL,
   process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
   process.env.BOOSTNODE_RPC_URL || process.env.VITE_BOOSTNODE_RPC_URL || process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
-].filter((endpoint, index, endpoints) => endpoint && endpoints.indexOf(endpoint) === index);
+].filter((endpoint): endpoint is string => Boolean(endpoint))
+  .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const EXPECTED_CHAIN_ID = "0x3068a";
 const RPC_TIMEOUT_MS = Number(process.env.RPC_TIMEOUT_MS || 5000);
 

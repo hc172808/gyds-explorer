@@ -11,8 +11,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { requestNonce, verifySignature, setStoredToken } from "@/lib/featureGateApi";
-import { storeSession } from "@/lib/session";
+import { setStoredToken } from "@/lib/featureGateApi";
+import { requestSessionNonce, storeSession, verifySessionSignature } from "@/lib/session";
+import { getEthereumProvider } from "@/lib/wallet";
 
 interface WalletLoginDialogProps {
   onLoginSuccess: (walletAddress: string, label: string | null) => void;
@@ -20,10 +21,7 @@ interface WalletLoginDialogProps {
 
 declare global {
   interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-      isMetaMask?: boolean;
-    };
+    ethereum?: ReturnType<typeof getEthereumProvider>;
   }
 }
 
@@ -51,11 +49,12 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
     }
     setLoading(true);
     try {
-      if (!window.ethereum) {
+       const ethereum = getEthereumProvider();
+       if (!ethereum) {
         toast.error("No wallet detected", { description: "Please install a GYDS-compatible wallet extension" });
         return;
       }
-      const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
+       const accounts = (await ethereum.request({ method: "eth_requestAccounts" })) as string[];
       if (!accounts || accounts.length === 0) {
         toast.error("No accounts found");
         return;
@@ -86,16 +85,17 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   };
 
   const initiateAuth = async (address: string) => {
-    const { message } = await requestNonce(address);
+    const { message } = await requestSessionNonce(address);
     setPendingAddress(address);
     setSignMessage(message);
     setStep("sign");
 
     // Auto-sign if wallet extension available
-    if (window.ethereum) {
+     const ethereum = getEthereumProvider();
+     if (ethereum) {
       try {
         setLoading(true);
-        const signature = (await window.ethereum.request({
+         const signature = (await ethereum.request({
           method: "personal_sign",
           params: [message, address],
         })) as string;
@@ -108,14 +108,14 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
   };
 
   const completeAuth = async (address: string, signature: string) => {
-    const result = await verifySignature(address, signature);
+    const result = await verifySessionSignature(address, signature);
     setStoredToken(result.token);
     storeSession({
       walletAddress: result.walletAddress,
       label: result.label,
       role: result.role,
     });
-    toast.success("Admin authenticated", {
+    toast.success(result.role === "user" ? "Wallet authenticated" : "Admin authenticated", {
       description: `Wallet: ${address.slice(0, 6)}...${address.slice(-4)}`,
     });
     setOpen(false);
@@ -135,10 +135,10 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-primary" />
-            Admin Wallet Login
+            Wallet Login
           </DialogTitle>
           <DialogDescription>
-            Connect your authorized GYDS wallet to access admin controls.
+            Sign in with your GYDS wallet. Admin wallets receive access to admin controls.
           </DialogDescription>
         </DialogHeader>
 
@@ -197,7 +197,7 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
               <p className="font-mono text-xs text-primary break-all">{pendingAddress}</p>
             </div>
             <p className="text-sm text-muted-foreground">
-              {window.ethereum
+               {getEthereumProvider()
                 ? "Please approve the signature request in your wallet..."
                 : "Sign the message below with your wallet and paste the signature:"}
             </p>
@@ -206,7 +206,7 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
             )}
-            {!window.ethereum && !loading && (
+             {!getEthereumProvider() && !loading && (
               <div className="space-y-2">
                 <div className="bg-secondary/30 rounded p-2 max-h-24 overflow-auto">
                   <code className="text-xs break-all">{signMessage}</code>

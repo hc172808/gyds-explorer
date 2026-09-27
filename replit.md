@@ -4,15 +4,19 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Run & Operate
 
+- `bash scripts/replit-dev.sh` — run the local Replit stack: explorer, API, and a disposable GYDS test node
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
 - `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run node:lite --workspace=@workspace/scripts` — run the Replit-testable lite RPC gateway on port `8545`
 - `npm run node:rpc --workspace=@workspace/scripts` — run the Replit-testable RPC gateway on port `8555`
+- `bash scripts/replit-dev.sh` — run the clone-safe local Replit stack with the explorer, API, and disposable GYDS test node
 - `artifacts/solana-explorer: web` workflow — runs the frontend preview
 - `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend by itself
 - `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run typecheck` — full typecheck across all packages
+- `REPLIT_NODE_TYPE=rpc bash scripts/replit-dev.sh` — start the local mining RPC profile
+- `REPLIT_NODE_TYPE=lite bash scripts/replit-dev.sh` — start the lightweight local node profile
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
@@ -52,6 +56,8 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
 - RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
 - The API proxy prefers the local lite gateway at `http://127.0.0.1:8545`; the separate local RPC gateway listens on `8555`
+- The clone-safe Replit launcher overrides the frontend RPC values to `/api/rpc`; the API proxies that path to the local node at `REPLIT_RPC_PORT`
+- The first Replit start builds and caches Geth under `.replit-node/bin`; chain data and keys stay under `.replit-node/` and are disposable local test state
 
 ## Product
 

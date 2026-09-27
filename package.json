@@ -17,6 +17,7 @@
     "build": "npm run build --workspace=@workspace/solana-explorer",
     "build:check": "npm run typecheck && npm run build",
     "build:dev": "npm run build",
+    "replit:dev": "bash scripts/replit-dev.sh",
     "typecheck:libs": "tsc --build",
     "typecheck": "bash scripts/typecheck-all.sh",
     "test": "npm run test --workspace=@workspace/solana-explorer",
