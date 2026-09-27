@@ -33,11 +33,23 @@ const mockTimestamp = "0x65b2a9c0";
 const zeroAddress = "0x0000000000000000000000000000000000000000";
 const zeroHash = `0x${"0".repeat(64)}`;
 const mockBlockHash = `0x${"3068a".padStart(64, "0")}`;
-const configuredUpstreams = [
+const connectionMode = (process.env.GYDS_RPC_MODE || "auto").toLowerCase();
+const localUpstreams = [
+  process.env.GYDS_LOCAL_RPC_URL,
+  process.env.LOCAL_RPC_URL,
+  process.env.RPC_LOCAL_URL,
+];
+const remoteUpstreams = [
+  process.env.GYDS_REMOTE_RPC_URL,
+  process.env.GYDS_REMOTE_RPC_URL_2,
   process.env.RPC_URL,
   process.env.RPC_URL_2,
   process.env.VITE_RPC_URL,
   process.env.VITE_RPC_URL_2,
+];
+const configuredUpstreams = [
+  ...(connectionMode === "remote" ? [] : localUpstreams),
+  ...(connectionMode === "local" ? [] : remoteUpstreams),
 ]
   .filter((value) => typeof value === "string" && value.trim())
   .map((value) => value.trim())

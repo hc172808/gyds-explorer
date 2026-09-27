@@ -575,9 +575,13 @@ cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
 
 # ---------- RPC Configuration ----------
-VITE_RPC_URL=https://rpc.netlifegy.com
-VITE_RPC_URL_2=https://boost.netlifegy.com
-VITE_BOOSTNODE_RPC_URL=https://boost.netlifegy.com
+GYDS_RPC_MODE=auto
+GYDS_LOCAL_RPC_URL=http://127.0.0.1:${RPC_PORT}
+GYDS_REMOTE_RPC_URL=https://rpc.netlifegy.com
+GYDS_REMOTE_RPC_URL_2=https://boost.netlifegy.com
+VITE_RPC_URL=/api/rpc
+VITE_RPC_URL_2=/api/rpc
+VITE_BOOSTNODE_RPC_URL=/api/rpc
 BOOSTNODE_RPC_URL=https://boost.netlifegy.com
 
 # ---------- Application Settings ----------

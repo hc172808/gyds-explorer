@@ -36,6 +36,18 @@ const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.
 const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
 
 type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens";
+type RpcConnectionMode = "auto" | "server" | "remote";
+
+const RPC_CONNECTION_MODE_KEY = "gyds_rpc_connection_mode";
+
+function storedRpcConnectionMode(): RpcConnectionMode {
+  try {
+    const value = localStorage.getItem(RPC_CONNECTION_MODE_KEY);
+    return value === "server" || value === "remote" ? value : "auto";
+  } catch {
+    return "auto";
+  }
+}
 
 interface AdminWallet {
   id: number;
@@ -70,6 +82,7 @@ function NodeSettingsTab() {
   const [rpc1,  setRpc1]  = useState(primaryRpc);
   const [rpc2,  setRpc2]  = useState(secondaryRpc);
   const [boot,  setBoot]  = useState(bootnodeEnode);
+  const [connectionMode, setConnectionMode] = useState<RpcConnectionMode>(storedRpcConnectionMode);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -95,10 +108,17 @@ function NodeSettingsTab() {
 
   useEffect(() => { loadConfiguredNodes(); }, [loadConfiguredNodes]);
 
+  const envConnectionMode = connectionMode === "server" ? "local" : connectionMode;
+  const localRpcForEnv = connectionMode === "server" ? rpc1 : "http://127.0.0.1:8545";
+  const remoteRpcForEnv = connectionMode === "server" ? rpc2 : rpc1;
   const ENV_SNIPPET = `# ── GYDS Node / RPC Configuration ──────────────────
+GYDS_RPC_MODE=${envConnectionMode}
+GYDS_LOCAL_RPC_URL=${localRpcForEnv}
+GYDS_REMOTE_RPC_URL=${remoteRpcForEnv}
+GYDS_REMOTE_RPC_URL_2=${rpc2}
 VITE_RPC_URL=${rpc1}
-VITE_RPC_URL_2=${rpc2}
-VITE_BOOSTNODE_RPC_URL=${rpc2}${boot ? `
+VITE_RPC_URL_2=/api/rpc
+VITE_BOOSTNODE_RPC_URL=/api/rpc${boot ? `
 
 # ── Bootnode (add to static-nodes.json on your geth node)
 BOOTNODE_ENODE=${boot}` : ""}`;
@@ -121,8 +141,13 @@ ${configuredNodes.map((node) => [
     : "[]";
 
   useEffect(() => {
-    setDirty(rpc1 !== primaryRpc || rpc2 !== secondaryRpc || boot !== bootnodeEnode);
-  }, [rpc1, rpc2, boot, primaryRpc, secondaryRpc, bootnodeEnode]);
+    setDirty(
+      rpc1 !== primaryRpc
+      || rpc2 !== secondaryRpc
+      || boot !== bootnodeEnode
+      || connectionMode !== storedRpcConnectionMode(),
+    );
+  }, [rpc1, rpc2, boot, primaryRpc, secondaryRpc, bootnodeEnode, connectionMode]);
 
   const save = async () => {
     setSaving(true);
@@ -131,9 +156,14 @@ ${configuredNodes.map((node) => [
       setPrimaryRpc(rpc1.trim());
       setSecondaryRpc(rpc2.trim());
       setBootnodeEnode(boot.trim());
+      try {
+        localStorage.setItem(RPC_CONNECTION_MODE_KEY, connectionMode);
+      } catch {
+        /* ignore */
+      }
       await loadConfiguredNodes();
       setDirty(false);
-      toast.success("Node settings saved", { description: "RPC and bootnode settings are now persisted on the server." });
+      toast.success("Node settings saved", { description: "RPC and bootnode settings are persisted; the selected connection mode is included in the .env snippet." });
     } catch (error) {
       toast.error("Could not save node settings", { description: error instanceof Error ? error.message : "Request failed" });
     } finally {
@@ -143,11 +173,17 @@ ${configuredNodes.map((node) => [
 
   const reset = () => {
     resetToDefaults();
-    const envRpc1 = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "https://boost.netlifegy.com";
+    const envRpc1 = import.meta.env.VITE_RPC_URL || "/api/rpc";
+    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "/api/rpc";
     setRpc1(envRpc1);
     setRpc2(envRpc2);
     setBoot("");
+    setConnectionMode("auto");
+    try {
+      localStorage.removeItem(RPC_CONNECTION_MODE_KEY);
+    } catch {
+      /* ignore */
+    }
     toast("Reset to defaults");
   };
 
@@ -196,19 +232,37 @@ ${configuredNodes.map((node) => [
           </Button>
         </div>
 
+        <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <label className="mb-1.5 block text-xs font-medium">Connection target</label>
+          <select
+            value={connectionMode}
+            onChange={(event) => setConnectionMode(event.target.value as RpcConnectionMode)}
+            className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="auto">Automatic — this server first, then remote fallbacks</option>
+            <option value="server">This server — use the local node only</option>
+            <option value="remote">Remote nodes — use the configured public RPCs</option>
+          </select>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            The selected mode is included in the .env snippet below. Local mode is intended for a node installed on the same server as the API.
+          </p>
+        </div>
+
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Primary RPC URL</label>
+            <label className="text-xs text-muted-foreground mb-1.5 block">
+              {connectionMode === "server" ? "Server-local RPC URL" : "Primary / remote RPC URL"}
+            </label>
             <Input
               value={rpc1}
               onChange={(e) => setRpc1(e.target.value)}
-              placeholder="https://rpc.netlifegy.com"
+              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"}
               className="font-mono text-xs"
             />
             {status1 && <div className="mt-1.5"><RpcStatusBadge s={status1} /></div>}
           </div>
           <div>
-           <label className="text-xs text-muted-foreground mb-1.5 block">Boost node RPC URL (fallback)</label>
+           <label className="text-xs text-muted-foreground mb-1.5 block">Remote fallback / boost RPC URL</label>
             <Input
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
@@ -302,6 +356,17 @@ sudo systemctl reload nginx`}</pre>
 }
 
 // ── Network Nodes Tab ─────────────────────────────────────────────────────────
+type NodeConnectionMode = "server" | "remote";
+
+function isServerLocalRpc(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function NodesTab() {
   const [nodes, setNodes] = useState<NetworkNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -310,6 +375,7 @@ function NodesTab() {
   const [form, setForm] = useState({
     name: "",
     type: "full" as NetworkNodeType,
+    connectionMode: "server" as NodeConnectionMode,
     rpcUrl: "",
     enode: "",
     status: "disconnected",
@@ -348,7 +414,7 @@ function NodesTab() {
       if (editingId) await updateNetworkNode(editingId, input);
       else await createNetworkNode(input);
       setEditingId(null);
-      setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" });
+      setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" });
        toast.success(editingId ? "Network node updated" : "Network node added", {
          description: !form.enode.trim()
            ? "The enode URL was automatically read from the node's admin RPC."
@@ -367,6 +433,7 @@ function NodesTab() {
     setForm({
       name: node.name,
       type: node.type,
+      connectionMode: isServerLocalRpc(node.rpcUrl) ? "server" : "remote",
       rpcUrl: node.rpcUrl,
       enode: node.enode || "",
       status: node.status === "connected" ? "connected" : "disconnected",
@@ -418,7 +485,27 @@ function NodesTab() {
             <option value="validator">Validator node</option>
             <option value="boot">Boot node</option>
           </select>
-          <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder="https://rpc.example.com" className="font-mono text-xs" />
+          <select
+            value={form.connectionMode}
+            onChange={(event) => {
+              const connectionMode = event.target.value as NodeConnectionMode;
+              setForm({
+                ...form,
+                connectionMode,
+                rpcUrl: form.rpcUrl || (connectionMode === "server" ? "http://127.0.0.1:8545" : ""),
+              });
+            }}
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="server">Connect to this server</option>
+            <option value="remote">Connect to a remote node</option>
+          </select>
+          <div>
+            <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder={form.connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"} className="font-mono text-xs" />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {form.connectionMode === "server" ? "Use localhost when geth is installed on this server." : "Use the remote node's reachable HTTP(S) RPC URL."}
+            </p>
+          </div>
            <div>
              <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="Leave blank to auto-detect enode" className="font-mono text-xs" />
              <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to read it from <code className="rounded bg-secondary px-1">admin_nodeInfo</code>; paste one manually if admin RPC is private.</p>
@@ -429,7 +516,7 @@ function NodesTab() {
           </select>
           <div className="flex gap-2">
             <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
-            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
+            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
           </div>
         </div>
       </form>

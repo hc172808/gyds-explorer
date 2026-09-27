@@ -8,8 +8,8 @@ interface NetworkConfig {
   rpcEndpoints: string[];
 }
 
-const ENV_RPC1 = import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-const ENV_RPC2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "https://boost.netlifegy.com";
+const ENV_RPC1 = import.meta.env.VITE_RPC_URL || "/api/rpc";
+const ENV_RPC2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "/api/rpc";
 
 const LS_KEY_RPC1     = "gyds_rpc_primary";
 const LS_KEY_RPC2     = "gyds_rpc_secondary";

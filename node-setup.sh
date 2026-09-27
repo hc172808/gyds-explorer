@@ -95,6 +95,10 @@ ADMIN_WALLET_LABEL="${ADMIN_WALLET_LABEL:-Founder}"
 ADMIN_WALLET_CREATED="no"
 ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
 EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
+GYDS_RPC_MODE="${GYDS_RPC_MODE:-local}"
+GYDS_LOCAL_RPC_URL="${GYDS_LOCAL_RPC_URL:-}"
+GYDS_REMOTE_RPC_URL="${GYDS_REMOTE_RPC_URL:-}"
+GYDS_REMOTE_RPC_URL_2="${GYDS_REMOTE_RPC_URL_2:-}"
 
 # Public RPC exposure. "no" keeps RPC/WS reachable only from localhost/VPN.
 # RPC nodes are public by definition unless the operator explicitly opts out.
@@ -116,6 +120,8 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
 #   NATIVE_DECIMALS     native GYDS precision (must remain 18)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
+#   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
+#   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for ENV_FILE in \
     "${SCRIPT_DIR}/.env" \
@@ -151,6 +157,10 @@ for ENV_FILE in \
         ADMIN_WALLET_LABEL) ADMIN_WALLET_LABEL="${val:-$ADMIN_WALLET_LABEL}" ;;
         ADMIN_SUPPLY)       ADMIN_SUPPLY="${val:-$ADMIN_SUPPLY}" ;;
         EXPLORER_API_URL)   EXPLORER_API_URL="${val:-$EXPLORER_API_URL}" ;;
+        GYDS_RPC_MODE)      GYDS_RPC_MODE="${val:-$GYDS_RPC_MODE}" ;;
+        GYDS_LOCAL_RPC_URL) GYDS_LOCAL_RPC_URL="${val:-$GYDS_LOCAL_RPC_URL}" ;;
+        GYDS_REMOTE_RPC_URL) GYDS_REMOTE_RPC_URL="${val:-$GYDS_REMOTE_RPC_URL}" ;;
+        GYDS_REMOTE_RPC_URL_2) GYDS_REMOTE_RPC_URL_2="${val:-$GYDS_REMOTE_RPC_URL_2}" ;;
         PUBLIC_RPC)         PUBLIC_RPC="${val:-$PUBLIC_RPC}" ;;
         BACKUP_DIR)         BACKUP_DIR="${val:-$BACKUP_DIR}" ;;
         BACKUP_KEEP)        BACKUP_KEEP="${val:-$BACKUP_KEEP}" ;;
@@ -229,6 +239,10 @@ fi
 case "${PUBLIC_RPC,,}" in
   yes|no) PUBLIC_RPC="${PUBLIC_RPC,,}" ;;
   *) err "PUBLIC_RPC must be yes or no; found '${PUBLIC_RPC}'." ;;
+esac
+case "${GYDS_RPC_MODE,,}" in
+  local|remote|auto) ;;
+  *) err "GYDS_RPC_MODE must be local, remote, or auto; found '${GYDS_RPC_MODE}'." ;;
 esac
 
 validate_port() {
@@ -578,6 +592,12 @@ RPC_PORT=${RPC_PORT}
 WS_PORT=${WS_PORT}
 P2P_PORT=${P2P_PORT}
 METRICS_PORT=${METRICS_PORT}
+
+# ---------- Explorer connection ----------
+GYDS_RPC_MODE=${GYDS_RPC_MODE}
+GYDS_LOCAL_RPC_URL=${GYDS_LOCAL_RPC_URL:-http://127.0.0.1:${RPC_PORT}}
+GYDS_REMOTE_RPC_URL=${GYDS_REMOTE_RPC_URL}
+GYDS_REMOTE_RPC_URL_2=${GYDS_REMOTE_RPC_URL_2}
 
 # ---------- Peer Configuration ----------
 MAIN_NODE_IP=${MAIN_NODE_IP}

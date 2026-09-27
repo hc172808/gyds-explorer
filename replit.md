@@ -20,8 +20,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
-- Required env: `VITE_RPC_URL` — primary RPC endpoint (default: https://rpc.netlifegy.com)
-- Required env: `VITE_RPC_URL_2` or `VITE_BOOSTNODE_RPC_URL` — boost node endpoint (default: https://boost.netlifegy.com)
+- Browser RPC env defaults to the same-origin `/api/rpc` proxy; server-side `GYDS_REMOTE_RPC_URL` and `GYDS_REMOTE_RPC_URL_2` select remote nodes.
 - Network chain ID: `198282` (hex: `0x3068a`)
 - Local node gateways try configured upstreams, reject incompatible chain IDs, and fall back to deterministic mock data when upstream access is unavailable. Check `/status` for the active source.
 - API service env: `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` — required JWT signing secret; the API workflow will not start without one
@@ -48,13 +47,13 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Architecture decisions
 
-- The explorer calls Solana/GYDS RPC endpoints directly from the browser; authenticated admin and feature-gate routes use the local API service
+- The explorer uses the same-origin `/api/rpc` proxy from the browser; the API service can route that proxy to local or remote GYDS nodes.
 - The API service must use `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` from Replit Secrets; do not invent or reuse another secret
 - Admin login uses a wallet signature. The wallet must be seeded as an active `admin_wallets` row; API/JWT secrets only sign the resulting session token.
 - Wallet extensions reject connection/signature requests from embedded Replit previews; open the explorer in a new browser tab before using Admin Login.
 - Tailwind v3 (not v4) with PostCSS — copy script removed @tailwindcss/vite and set up postcss.config.js
 - react-router-dom v7 `<BrowserRouter basename={import.meta.env.BASE_URL}>` for Replit path routing
-- RPC endpoints configurable through Replit shared environment values (or a local `.env` during development) via `VITE_RPC_URL` / `VITE_RPC_URL_2` (the fallback is `https://boost.netlifegy.com`)
+- RPC routing is configurable through `GYDS_RPC_MODE=local|remote|auto`, `GYDS_LOCAL_RPC_URL`, and `GYDS_REMOTE_RPC_URL` values in `.env`.
 - The API proxy prefers the local lite gateway at `http://127.0.0.1:8545`; the separate local RPC gateway listens on `8555`
 - The clone-safe Replit launcher overrides the frontend RPC values to `/api/rpc`; the API proxies that path to the local node at `REPLIT_RPC_PORT`
 - The first Replit start builds and caches Geth under `.replit-node/bin`; chain data and keys stay under `.replit-node/` and are disposable local test state
