@@ -446,11 +446,9 @@ are produced.
 - `scripts/replit-node.sh` is a separate disposable Geth/Clique development
   launcher. `chain-spec.json` only describes coin metadata/decimals; it is not
   the genesis file or the block-production implementation.
-- Direct runs of `scripts/replit-node.sh` currently default `CHAIN_ID` and
-  `NETWORK_ID` to `198282`; the normal API development wrapper exports chain ID
-  `198281` but does not set `REPLIT_NETWORK_ID`, so the optional Geth path may
-  still use network ID `198282`. Correct or require explicit development IDs
-  before using that path, and check its existing genesis/data directory first.
+- `scripts/replit-node.sh` and its API development wrapper now default both
+  chain ID and network ID to `198281` for development. Existing genesis/data
+  directories still need to be checked before reusing them with this default.
 - Both node setup scripts are pinned to Geth 1.13.15 for Clique support. Geth
   documents Clique as deprecated starting in v1.14; do not upgrade that client
   without choosing and testing a supported consensus migration.
@@ -479,10 +477,8 @@ are produced.
 - [ ] Audit development, staging, and production chain-ID defaults before using
       a real Geth data directory: Replit mock/development is `198281`,
       production is `198282`, and the planned staging testnet entry below is
-      `198283`. Specifically make the direct `scripts/replit-node.sh` defaults
-      safe for development. Never reuse a data directory across these genesis
-      configurations or reset existing chain data without the explicit reset
-      confirmation.
+      `198283`. Never reuse a data directory across these genesis configurations
+      or reset existing chain data without the explicit reset confirmation.
 
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
