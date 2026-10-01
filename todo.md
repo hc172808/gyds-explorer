@@ -414,6 +414,79 @@ verified before a production deployment.
   - Consensus mode, validator authority, block time, gas limit, and chain ID.
   - Native currency decimals fixed at `9` in the protocol configuration.
   - Genesis file, alloc accounts, premines, validator set, and bootnodes.
+
+### Block creation and validation — explanation and current code
+
+A signed transaction does **not** create a block by itself. The RPC node checks
+and relays it into a transaction pool. A block producer selects eligible
+transactions, executes them through the EVM, and proposes a block. The
+consensus engine then decides whether the producer is allowed to seal it.
+Other nodes check the parent, signer/consensus proof, transactions, and resulting
+state before accepting the block. A block can contain transactions, or it can
+be empty; the consensus timing and client policy determine whether empty blocks
+are produced.
+
+**What this repository currently configures:**
+
+- `node-setup.sh` creates a Geth Clique proof-of-authority chain with
+  `clique.period: 5`. The main node and authorized validator nodes run with
+  `--mine`; in this Clique configuration, “mining” means a permitted signer
+  seals a block, not proof-of-work hashing. Validators must be authorized with
+  Clique’s signer-voting mechanism. This setup does not use GYDS staking or
+  proof-of-stake.
+- The five-second Clique period is a block-timing target/minimum, not a promise
+  that a user transaction arrived. Verify the pinned Geth version’s idle/empty
+  block behavior on staging; a growing block height alone does not prove
+  transactions are being processed.
+- The normal Replit API workflow defaults to `REPLIT_USE_MOCK_NODES=1` and runs
+  `scripts/replit-test-node.mjs`. That test service advances a synthetic block
+  height with time and returns deterministic mock data; it does not maintain a
+  real transaction pool, execute transactions, or run consensus. Do not treat
+  its blocks, balances, or transaction hashes as real chain activity.
+- `scripts/replit-node.sh` is a separate disposable Geth/Clique development
+  launcher. `chain-spec.json` only describes coin metadata/decimals; it is not
+  the genesis file or the block-production implementation.
+- Direct runs of `scripts/replit-node.sh` currently default `CHAIN_ID` and
+  `NETWORK_ID` to `198282`; the normal API development wrapper exports chain ID
+  `198281` but does not set `REPLIT_NETWORK_ID`, so the optional Geth path may
+  still use network ID `198282`. Correct or require explicit development IDs
+  before using that path, and check its existing genesis/data directory first.
+- Both node setup scripts are pinned to Geth 1.13.15 for Clique support. Geth
+  documents Clique as deprecated starting in v1.14; do not upgrade that client
+  without choosing and testing a supported consensus migration.
+
+**Consensus and block-lifecycle work to complete later:**
+
+- [ ] Confirm whether production will remain Clique proof-of-authority or move
+      to another supported consensus design. If “stake” is required, specify
+      the actual proof-of-stake engine, stake/deposit rules, validator selection,
+      rewards/penalties, and finality; adding a staking balance alone does not
+      make a Clique chain proof-of-stake.
+- [ ] Decide and document the target block interval and idle policy:
+  - Should authorized signers create empty blocks when the transaction pool is
+    empty, or wait for pending transactions?
+  - What is the acceptable block-time drift and what should the explorer show
+    when no signer is available?
+- [ ] Run a multi-node staging test with no transactions, then with one signed
+      transaction. Record block timestamps/heights, transaction-pool contents,
+      receipt, balances/state before and after, signer identity, and whether all
+      nodes agree on the same canonical head.
+- [ ] Test transaction validation: wrong chain ID, invalid signature, reused
+      nonce, low fee, insufficient balance, gas-limit failure, and duplicate
+      submission. Confirm rejected transactions never change chain state.
+- [ ] Define signer onboarding/removal, required signer participation, key
+      custody/rotation, failover, and monitoring for a stalled chain.
+- [ ] Audit development, staging, and production chain-ID defaults before using
+      a real Geth data directory: Replit mock/development is `198281`,
+      production is `198282`, and the planned staging testnet entry below is
+      `198283`. Specifically make the direct `scripts/replit-node.sh` defaults
+      safe for development. Never reuse a data directory across these genesis
+      configurations or reset existing chain data without the explicit reset
+      confirmation.
+
+- Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
+  and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
+
 - [ ] Produce a reproducible genesis process:
   - Keep a reviewed genesis template without private keys.
   - Generate genesis artifacts from a clean, documented process.
