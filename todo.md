@@ -523,7 +523,12 @@ are produced.
       Never reuse a data directory across these genesis configurations or reset
       existing chain data without the explicit reset confirmation.
 
-### Explorer network switching and same-server ports
+### Plan 12: Switch safely between Mainnet, Testnet, and custom RPC
+
+Goal: Make the explorer switch between Mainnet (`198282`), Testnet (`198281`),
+and a user-supplied Custom RPC, while Mainnet and Testnet run simultaneously on
+one server with separate services, data directories, and ports. Keep staging
+(`198283`) independent.
 
 - [ ] Provide distinct production network targets in the explorer:
   - Mainnet: chain ID `198282`.
