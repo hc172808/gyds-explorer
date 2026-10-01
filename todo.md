@@ -412,7 +412,9 @@ verified before a production deployment.
 - [ ] Confirm the production consensus and execution stack:
   - Geth/EVM version and supported hardfork.
   - Consensus mode, validator authority, block time, gas limit, and chain ID.
-  - Native currency decimals fixed at `9` in the protocol configuration.
+  - Native GYDS uses a `9`-decimal base-unit/display convention. EVM does not
+    store native-currency decimal metadata, so every wallet, RPC integration,
+    and gas display must implement the convention consistently.
   - Genesis file, alloc accounts, premines, validator set, and bootnodes.
 
 ### Block creation and validation — explanation and current code
@@ -453,6 +455,46 @@ are produced.
   documents Clique as deprecated starting in v1.14; do not upgrade that client
   without choosing and testing a supported consensus migration.
 
+**Read-only production configuration audit:**
+
+- `node-setup.sh` pins Geth `1.13.15-c2ad2fa2`, enforces production chain and
+  network IDs `198282`, and generates a Clique genesis with a five-second
+  period, epoch `30000`, and a `30,000,000` gas limit. It activates hardfork
+  rules through London at block zero; later fork rules are not explicitly
+  configured in this genesis template and need a deliberate compatibility
+  decision.
+- The genesis template starts with the main account as its initial Clique
+  signer. Main and validator nodes unlock signer accounts for Geth sealing;
+  key custody and recovery must be designed before production use.
+- Production genesis is generated from the chosen main signer and allocation
+  inputs rather than one checked-in, reviewed artifact. Other nodes are told to
+  copy the main genesis, but the setup does not enforce one expected genesis
+  hash across the network. Archive the exact reviewed genesis and verify the
+  same hash on every node before joining it.
+- `NATIVE_DECIMALS=9` is enforced by the setup script, and genesis allocations
+  multiply whole GYDS by `10^9`. The project decimals checker passes for GYDS
+  `9` and GYD `6`; that verifies repository consistency, not compatibility with
+  generic wallets or external RPC clients.
+- RPC and boost roles default to public RPC. They bind HTTP/WS to all interfaces
+  and allow wildcard host/origin settings; the setup warns operators to put
+  Nginx in front but does not configure TLS, rate limits, or a method allowlist.
+  Do not expose these endpoints publicly without that separate protection.
+- Main and validator signing accounts are unlocked by Geth with
+  `--allow-insecure-unlock`; password files and keystores are stored on the
+  node. File permissions are restricted, but an external signer/HSM, key
+  rotation, and recovery procedure are not configured.
+- London fee-market rules and a 30-million gas limit are configured, but
+  minimum fees, priority-fee policy, block reward/issuance, and fee distribution
+  are not defined as a GYDSChain policy. The Replit mock's fixed fee values are
+  not evidence of real Geth fee behavior.
+- The setup includes log rotation, a local nightly backup, and basic peer/stall
+  health checks. It does not establish off-site encrypted backups, restore
+  drills, externally retained metrics, or the full alert coverage listed below.
+- The normal API workflow still uses the synthetic test node. No Geth binary is
+  installed or cached in this workspace, so real Clique idle-block production,
+  transaction execution, and multi-node validation have not been tested here.
+  Do not treat the mock RPC’s changing block height as staging evidence.
+
 **Consensus and block-lifecycle work to complete later:**
 
 - [ ] Confirm whether production will remain Clique proof-of-authority or move
@@ -474,11 +516,12 @@ are produced.
       submission. Confirm rejected transactions never change chain state.
 - [ ] Define signer onboarding/removal, required signer participation, key
       custody/rotation, failover, and monitoring for a stalled chain.
-- [ ] Audit development, staging, and production chain-ID defaults before using
-      a real Geth data directory: Replit mock/development is `198281`,
-      production is `198282`, and the planned staging testnet entry below is
-      `198283`. Never reuse a data directory across these genesis configurations
-      or reset existing chain data without the explicit reset confirmation.
+- [x] Align Replit development chain/network IDs to `198281` and confirm the
+      production setup enforces `198282`. The API RPC returned `0x30689` /
+      `198281` after restart; no standalone Geth data directory existed.
+- [ ] Confirm staging uses `198283` with its own genesis and data directory.
+      Never reuse a data directory across these genesis configurations or reset
+      existing chain data without the explicit reset confirmation.
 
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
