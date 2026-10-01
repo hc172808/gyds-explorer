@@ -1,5 +1,5 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
-import { formatUnitsRaw } from "./coins";
+import { formatUnitsRaw, GYDS_COIN } from "./coins";
 import { GYDS_CHAIN_ID } from "./useTokenDeploy";
 
 export const EXPECTED_CHAIN_ID = Number(GYDS_CHAIN_ID);
@@ -107,9 +107,9 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
 export const hexToDecimal = (hex: string): string => BigInt(hex).toString();
-/** Raw wei (18 decimals) -> GYDS, BigInt-safe with 6 fraction digits. */
-export const weiToEther = (wei: string): string =>
-  formatUnitsRaw(wei, 18, { maxFractionDigits: 6, minFractionDigits: 6 });
+/** Raw native-coin base units -> GYDS, BigInt-safe with 6 fraction digits. */
+export const nativeBaseUnitsToGyds = (rawBaseUnits: string): string =>
+  formatUnitsRaw(rawBaseUnits, GYDS_COIN.decimals, { maxFractionDigits: 6, minFractionDigits: 6 });
 /** Raw wei -> gwei (1e9 wei), used for gas prices only. */
 export const gweiFromWei = (wei: string): string =>
   formatUnitsRaw(wei, 9, { maxFractionDigits: 2, minFractionDigits: 2 });

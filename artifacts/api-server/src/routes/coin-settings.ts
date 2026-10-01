@@ -6,10 +6,16 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
 const SYMBOL_PATTERN = /^[A-Za-z0-9]{1,20}$/;
+const CORE_COIN_DECIMALS: Record<string, number> = { GYDS: 9, GYD: 6 };
 const DEFAULT_COIN_SETTINGS = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "Stablecoin of the GYDS network." },
 ];
+
+function withCoreCoinDecimals<T extends { symbol: string; decimals: number }>(setting: T): T {
+  const fixedDecimals = CORE_COIN_DECIMALS[setting.symbol.toUpperCase()];
+  return fixedDecimals === undefined ? setting : { ...setting, decimals: fixedDecimals };
+}
 
 function validUrl(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;
@@ -54,7 +60,7 @@ function settingValues(body: Record<string, unknown>) {
 router.get("/", async (req, res) => {
   try {
     const settings = await db.select().from(coinSettingsTable).orderBy(coinSettingsTable.symbol);
-    res.json(settings.length ? settings : DEFAULT_COIN_SETTINGS);
+    res.json(settings.length ? settings.map(withCoreCoinDecimals) : DEFAULT_COIN_SETTINGS);
   } catch (err) {
     req.log.error({ err }, "Fetch coin settings error");
     res.status(500).json({ error: "Internal server error" });
@@ -76,7 +82,7 @@ router.get("/:symbol", async (req, res) => {
       res.status(404).json({ error: "Coin settings not found" });
       return;
     }
-    res.json(settings || fallback);
+    res.json(withCoreCoinDecimals(settings || fallback!));
   } catch (err) {
     req.log.error({ err }, "Fetch coin settings error");
     res.status(500).json({ error: "Internal server error" });
@@ -92,7 +98,13 @@ router.put("/:symbol", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: "Invalid coin symbol" });
       return;
     }
-    const result = settingValues(req.body as Record<string, unknown>);
+    const body = req.body as Record<string, unknown>;
+    const fixedDecimals = CORE_COIN_DECIMALS[symbol];
+    if (fixedDecimals !== undefined && body.decimals !== fixedDecimals) {
+      res.status(400).json({ error: `${symbol} decimals are fixed at ${fixedDecimals}` });
+      return;
+    }
+    const result = settingValues(body);
     if ("error" in result) {
       res.status(400).json({ error: result.error });
       return;

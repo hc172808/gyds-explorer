@@ -70,7 +70,7 @@ CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
 CHAIN_ID=198282
 NETWORK_ID=198282
-NATIVE_DECIMALS=18
+NATIVE_DECIMALS=9
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 
@@ -118,7 +118,7 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
-#   NATIVE_DECIMALS     native GYDS precision (must remain 18)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 #   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
 #   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
@@ -179,12 +179,17 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
+[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
+[[ "$ADMIN_SUPPLY" =~ ^[0-9]+$ ]] || err "ADMIN_SUPPLY must be a whole number."
 [ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
 [ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
+NATIVE_SUPPLY_VALUE=$((10#${NATIVE_SUPPLY}))
+ADMIN_SUPPLY_VALUE=$((10#${ADMIN_SUPPLY}))
+[ "$NATIVE_SUPPLY_VALUE" -le 1000000000 ] || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
+[ "$ADMIN_SUPPLY_VALUE" -le "$NATIVE_SUPPLY_VALUE" ] || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
 ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
-NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY}${ZEROS}"   # wei-style base units (18 decimals)
+NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY_VALUE}${ZEROS}"   # raw EVM base units (9 decimals)
 info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""
@@ -482,16 +487,20 @@ if [ "$NODE_TYPE" = "main" ]; then
     log "Using operator-supplied admin wallet: ${ADMIN_WALLET}"
   fi
 
-  # Genesis allocation for the admin wallet (skipped when it's the authority account)
+  # Split the fixed genesis supply between the authority and admin accounts.
+  # The admin allocation is part of NATIVE_SUPPLY, never additional issuance.
+  MAIN_GENESIS_SUPPLY="${NATIVE_SUPPLY_VALUE}"
   ADMIN_ALLOC_ENTRY=""
-  if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY}" != "0" ]; then
-    ADMIN_SUPPLY_BASE_UNITS="${ADMIN_SUPPLY}${ZEROS}"
+  if [ "${ADMIN_WALLET,,}" != "${MAIN_ACCOUNT,,}" ] && [ "${ADMIN_SUPPLY_VALUE}" -gt 0 ]; then
+    MAIN_GENESIS_SUPPLY=$((NATIVE_SUPPLY_VALUE - ADMIN_SUPPLY_VALUE))
+    ADMIN_SUPPLY_BASE_UNITS="${ADMIN_SUPPLY_VALUE}${ZEROS}"
     ADMIN_ALLOC_ENTRY=",
     \"${ADMIN_WALLET}\": {
       \"balance\": \"${ADMIN_SUPPLY_BASE_UNITS}\"
     }"
-    info "Admin wallet genesis allocation: ${ADMIN_SUPPLY} GYDS"
+    info "Genesis allocation split: ${MAIN_GENESIS_SUPPLY} GYDS to the authority and ${ADMIN_SUPPLY_VALUE} GYDS to the admin wallet."
   fi
+  MAIN_SUPPLY_BASE_UNITS="${MAIN_GENESIS_SUPPLY}${ZEROS}"
 
   # Build extradata: 32 zero bytes + 20-byte signer address (no 0x) + 65 zero bytes
   SIGNER_HEX="${MAIN_ACCOUNT:2}"   # strip leading 0x
@@ -521,7 +530,7 @@ if [ "$NODE_TYPE" = "main" ]; then
   "extradata": "${EXTRA_DATA}",
   "alloc": {
     "${MAIN_ACCOUNT}": {
-      "balance": "${NATIVE_SUPPLY_BASE_UNITS}"
+      "balance": "${MAIN_SUPPLY_BASE_UNITS}"
     }${ADMIN_ALLOC_ENTRY}
   }
 }

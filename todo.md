@@ -1166,7 +1166,7 @@ protocol balances have been erased.
 
 - [ ] **Staging end-to-end smoke test** that hits `rpc.netlifegy.com` and
       `rpc2.netlifegy.com` from a staging environment and verifies chain id,
-      latest block, and a sample transfer render correctly with 18 decimals
+      latest block, and a sample transfer render correctly with 9 decimals
       (run in CI against staging, not the sandbox).
 - [ ] **UI decimals guard**: detect when fetched/assumed GYDS decimals differ
       from `chain-spec.json` and show a clear warning banner stating the
@@ -1220,10 +1220,10 @@ protocol balances have been erased.
       PUBLIC_RPC, RPC_ALLOWED_METHODS, RPC_RATE_LIMIT, MAIN_NODE_IP,
       MAIN_NODE_ENODE, FULL_NODE_IPS, VALIDATOR_ADDRESS, ADMIN_WALLET,
       ADMIN_WALLET_LABEL, ADMIN_SUPPLY, EXPLORER_API_URL) with safe defaults,
-      and set `NATIVE_DECIMALS=18` (currently still 9).
-- [ ] **GYDS = 18 decimals everywhere**: sweep node scripts, genesis
-      generation, env examples and docs so no 9-decimal assumption remains;
-      keep GYD at 6. Add the check to `scripts/check-decimals.mjs`.
+      and set `NATIVE_DECIMALS=9`.
+- [x] **GYDS = 9 decimals everywhere**: align explorer formatting, wallet
+      transactions, node scripts, genesis allocation metadata and the decimal
+      guard with `chain-spec.json`; keep GYD at 6.
 - [ ] **Refresh `check-services.sh`**: match current unit names
       (`gyds-node`, `nginx`, `postgresql`, PM2 `gyds-api` / `gyds-indexer` /
       `gyds-feature-gates`), respect `PUBLIC_RPC` when deciding whether an
@@ -1323,7 +1323,7 @@ protocol balances have been erased.
 
 - [x] **`pre-launch-check.sh`**: single go/no-go script run on a node before it is
       promoted to production. Verifies env sanity (required vars, node type,
-      GYDS `NATIVE_DECIMALS=18` cross-checked against `chain-spec.json`, GYD 6,
+      GYDS `NATIVE_DECIMALS=9` cross-checked against `chain-spec.json`, GYD 6,
       no secrets in `node.env`, keystore mode 700, free disk), service active +
       enabled at boot, NTP sync, required ports listening (RPC/WS localhost-only
       unless `PUBLIC_RPC=yes`, P2P open, metrics localhost-only), RPC/metrics

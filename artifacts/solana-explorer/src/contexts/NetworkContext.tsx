@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
 export type NetworkType = "mainnet" | "testnet" | "custom";
+const DEFAULT_NETWORK_TYPE: NetworkType = import.meta.env.DEV ? "testnet" : "mainnet";
 
 interface NetworkConfig {
   name: string;
@@ -53,7 +54,8 @@ const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [networkType, setNetworkTypeState] = useState<NetworkType>(
     () => {
-      const stored = lsGet(LS_KEY_NETWORK, "mainnet");
+      const stored = lsGet(LS_KEY_NETWORK, DEFAULT_NETWORK_TYPE);
+      if (import.meta.env.DEV) return "testnet";
       return stored === "testnet" || stored === "custom" ? stored : "mainnet";
     }
   );
@@ -77,7 +79,7 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
     setPrimaryRpcState(resolveRpcUrl(ENV_RPC1));
     setSecondaryRpcState(resolveRpcUrl(ENV_RPC2));
     setBootnodeEnodeState("");
-    setNetworkTypeState("mainnet");
+    setNetworkTypeState(DEFAULT_NETWORK_TYPE);
     try {
       localStorage.removeItem(LS_KEY_RPC1);
       localStorage.removeItem(LS_KEY_RPC2);
@@ -88,7 +90,11 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
 
   const NETWORKS: Record<NetworkType, NetworkConfig> = {
     mainnet: { name: "Mainnet", type: "mainnet", rpcEndpoints: [primaryRpc, secondaryRpc] },
-    testnet: { name: "Testnet", type: "testnet", rpcEndpoints: [primaryRpc, secondaryRpc] },
+    testnet: {
+      name: import.meta.env.DEV ? "Local Testnet" : "Testnet",
+      type: "testnet",
+      rpcEndpoints: [primaryRpc, secondaryRpc],
+    },
     custom:  { name: "Custom RPC", type: "custom", rpcEndpoints: [customRpcUrl || primaryRpc] },
   };
 

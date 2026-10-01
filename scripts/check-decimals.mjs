@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * CI guard: UI token decimals must match the chain spec (GYDS 18, GYD 6).
- * Fails the build if any source file drifts (e.g. reintroduces 9 decimals).
+ * CI guard: protocol metadata, node scripts, and UI token decimals must match
+ * chain-spec.json (GYDS 9, GYD 6).
  */
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -12,6 +12,8 @@ const GYDS = spec.coins.GYDS.decimals;
 const GYD = spec.coins.GYD.decimals;
 
 const errors = [];
+if (GYDS !== 9) errors.push(`chain-spec.json: GYDS decimals are ${GYDS}, expected 9`);
+if (GYD !== 6) errors.push(`chain-spec.json: GYD decimals are ${GYD}, expected 6`);
 const read = (rel) => {
   const p = path.join(root, rel);
   return existsSync(p) ? readFileSync(p, "utf8") : null;
@@ -39,7 +41,7 @@ check("artifacts/solana-explorer/src/lib/coins.ts", [
 ]);
 
 check("artifacts/solana-explorer/src/lib/wallet.ts", [
-  { label: "native coin decimals default", re: /VITE_NATIVE_COIN_DECIMALS\s*\|\|\s*(\d+)/, expected: GYDS },
+  { label: "wallet nativeCurrency decimals", re: /nativeCurrency:\s*\{[^}]*decimals:\s*(\d+)/, expected: GYDS },
   { label: "GYD decimals default", re: /VITE_GYD_DECIMALS\s*\|\|\s*(\d+)/, expected: GYD },
 ]);
 
@@ -56,11 +58,38 @@ check("artifacts/solana-explorer/src/pages/MyWallet.tsx", [
   { label: "GYD fallback decimals", re: /symbol:\s*"GYD"[^}]*decimals:\s*(\d+)/, expected: GYD },
 ]);
 
-// Guard against lamport-style 1e9 conversions on GYDS values.
-const coins = read("artifacts/solana-explorer/src/lib/coins.ts") ?? "";
-if (/1e9|10\s*\*\*\s*9|1_000_000_000/.test(coins)) {
-  errors.push("coins.ts contains a 9-decimal (1e9) conversion — GYDS uses 18 decimals");
-}
+check("artifacts/solana-explorer/src/pages/Dashboard.tsx", [
+  { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
+]);
+
+check("artifacts/solana-explorer/src/pages/TokenBalances.tsx", [
+  { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
+]);
+
+check("artifacts/api-server/src/routes/coin-settings.ts", [
+  { label: "GYDS default decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
+  { label: "fixed GYDS decimals", re: /CORE_COIN_DECIMALS:\s*Record<string,\s*number>\s*=\s*\{\s*GYDS:\s*(\d+)/, expected: GYDS },
+  { label: "fixed GYD decimals", re: /CORE_COIN_DECIMALS:[\s\S]*?GYD:\s*(\d+)/, expected: GYD },
+]);
+
+check("node-setup.sh", [
+  { label: "installer native decimals default", re: /^NATIVE_DECIMALS=(\d+)$/m, expected: GYDS },
+  { label: "installer native decimals invariant", re: /\[\[ "\$NATIVE_DECIMALS" = "(\d+)" \]\]/, expected: GYDS },
+]);
+
+check("node-verify.sh", [
+  { label: "verifier expected native decimals default", re: /EXPECTED_NATIVE_DECIMALS="\$\{EXPECTED_NATIVE_DECIMALS:-(\d+)\}"/, expected: GYDS },
+  { label: "verifier native decimals invariant", re: /\[ "\$EXPECTED_NATIVE_DECIMALS" = "(\d+)" \]/, expected: GYDS },
+]);
+
+check("pre-launch-check.sh", [
+  { label: "pre-launch native decimals invariant", re: /if \[ "\$NATIVE_DECIMALS" != "(\d+)" \]/, expected: GYDS },
+  { label: "chain spec GYDS decimal expectation", re: /\[ "\$SPEC_DEC" = "(\d+)" \]/, expected: GYDS },
+]);
+
+check("node.env.example", [
+  { label: "node environment native decimals", re: /^NATIVE_DECIMALS=(\d+)$/m, expected: GYDS },
+]);
 
 if (errors.length) {
   console.error("❌ Token decimals check failed:");

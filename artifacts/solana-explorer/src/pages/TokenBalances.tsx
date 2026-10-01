@@ -10,7 +10,7 @@ import { GYD_TOKEN } from "@/lib/wallet";
 import { JsonRpcProvider } from "ethers";
 
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
@@ -205,7 +205,7 @@ export default function TokenBalances() {
                 <span className="text-xs text-muted-foreground">{tokenBalances.length + 1} asset{tokenBalances.length === 0 ? "" : "s"}</span>
               </div>
               <div className="divide-y divide-border">
-                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals || 18)} GYDS</span></div>
+                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals || 9)} GYDS</span></div>
                 {tokenBalances.map((token) => (
                   <div key={`combined-${token.contractAddress}`} className="flex items-center justify-between px-5 py-3 text-sm"><span>{token.name} <span className="text-xs text-muted-foreground">({token.symbol})</span></span><span className="font-mono font-semibold">{fmt(token.balance, token.decimals)} {token.symbol}</span></div>
                 ))}

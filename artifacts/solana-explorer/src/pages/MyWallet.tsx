@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseEther, parseUnits } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
 import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Copy, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
@@ -175,7 +175,7 @@ export default function MyWallet() {
       const signer = await walletProvider.getSigner();
       let tx;
       if (sendAsset === "GYDS") {
-        tx = await signer.sendTransaction({ to: sendTo, value: parseEther(sendAmount) });
+        tx = await signer.sendTransaction({ to: sendTo, value: parseUnits(sendAmount, nativeCoin.decimals) });
       } else {
         const gydAddress = stableCoin.contractAddress || GYD_TOKEN.address;
         if (!gydAddress) throw new Error("The GYD contract address has not been configured.");
@@ -298,7 +298,7 @@ export default function MyWallet() {
                     </div>
                     {nodeError ? <p className="px-5 py-8 text-sm text-destructive">{nodeError}</p> : (
                       <div className="grid gap-3 p-4 md:grid-cols-2">
-                        <BalanceCard symbol={nativeCoin.symbol} name={nativeCoin.name} logoUrl={nativeCoin.logoUrl} value={native === null ? "—" : formatBalance(native, 18)} decimals={nativeCoin.decimals} />
+                        <BalanceCard symbol={nativeCoin.symbol} name={nativeCoin.name} logoUrl={nativeCoin.logoUrl} value={native === null ? "—" : formatBalance(native, nativeCoin.decimals)} decimals={nativeCoin.decimals} />
                         <BalanceCard symbol={stableCoin.symbol} name={stableCoin.name} logoUrl={stableCoin.logoUrl} value={gydToken ? formatBalance(gydToken.balance, gydToken.decimals) : "Not configured"} decimals={stableCoin.decimals} />
                         {tokens.filter((token) => token.contractAddress.toLowerCase() !== gydAddress.toLowerCase()).map((token) => (
                           <BalanceCard key={token.contractAddress} symbol={token.symbol} name={token.name} value={formatBalance(token.balance, token.decimals)} decimals={token.decimals} />

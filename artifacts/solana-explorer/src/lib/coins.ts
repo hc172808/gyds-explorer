@@ -1,11 +1,11 @@
 /**
  * Native coin configuration for the GYDS network.
  *
- * GYDS - Primary native coin (18 decimals)
+ * GYDS - Primary native coin (9 decimals)
  * GYD  - Stablecoin (6 decimals)
  *
  * All formatting here is BigInt-based: raw on-chain values are never converted
- * through JS `number`, so 18-decimal values keep full precision.
+ * through JS `number`, so large balances keep full precision.
  */
 
 export interface NativeCoin {
@@ -19,7 +19,7 @@ export interface NativeCoin {
 export const GYDS_COIN: NativeCoin = {
   symbol: "GYDS",
   name: "GYDS",
-  decimals: 18,
+  decimals: 9,
   isStablecoin: false,
   description: "Native coin of the GYDS network",
 };
@@ -122,7 +122,7 @@ export function parseCoinAmount(amount: string, coin: NativeCoin): bigint {
   return negative ? -raw : raw;
 }
 
-/** Format raw GYDS units (18 decimals, wei) to a GYDS amount. */
+/** Format raw GYDS base units (9 decimals) to a GYDS amount. */
 export function weiToGyds(wei: string | bigint, options?: FormatOptions): string {
   return formatCoinAmount(wei, GYDS_COIN, options);
 }
@@ -132,7 +132,7 @@ export function rawToGyd(raw: string | bigint, options?: FormatOptions): string 
   return formatCoinAmount(raw, GYD_COIN, options);
 }
 
-/** Parse a human GYDS amount into wei (18 decimals). */
+/** Parse a human GYDS amount into raw base units (9 decimals). */
 export function gydsToWei(amount: string): bigint {
   return parseCoinAmount(amount, GYDS_COIN);
 }

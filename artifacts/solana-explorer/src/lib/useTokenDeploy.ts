@@ -67,7 +67,7 @@ export function useTokenDeploy(rpcUrl: string) {
               chainId:         GYDS_CHAIN_HEX,
               chainName:       "GYDS Network",
               rpcUrls:         [rpcUrl],
-              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 18 },
+              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 9 },
             }]);
             // After adding, switch again
             await provider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);

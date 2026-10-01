@@ -12,8 +12,14 @@ import {
 } from "@/lib/session";
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
-  { label: "Mainnet", value: "mainnet", color: "bg-primary" },
-  { label: "Testnet", value: "testnet", color: "bg-amber" },
+  ...(!import.meta.env.DEV
+    ? [{ label: "Mainnet", value: "mainnet" as const, color: "bg-primary" }]
+    : []),
+  {
+    label: import.meta.env.DEV ? "Local Testnet" : "Testnet",
+    value: "testnet",
+    color: "bg-amber",
+  },
   { label: "Custom RPC", value: "custom", color: "bg-muted-foreground" },
 ];
 

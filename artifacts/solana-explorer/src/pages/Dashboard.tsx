@@ -9,7 +9,7 @@ import { clearSession, getStoredSession, type WalletSession } from "@/lib/sessio
 import { fetchCoinSettings, type CoinSetting } from "@/lib/networkApi";
 
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
@@ -41,7 +41,7 @@ export default function Dashboard() {
     try {
       const provider = new JsonRpcProvider(rpcUrl);
       const raw = await provider.getBalance(session.walletAddress);
-      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 18;
+      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 9;
       setBalance(formatUnits(raw, decimals));
     } catch {
       setBalance(null);
