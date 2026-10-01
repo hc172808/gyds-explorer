@@ -523,6 +523,31 @@ are produced.
       Never reuse a data directory across these genesis configurations or reset
       existing chain data without the explicit reset confirmation.
 
+### Explorer network switching and same-server ports
+
+- [ ] Provide distinct production network targets in the explorer:
+  - Mainnet: chain ID `198282`.
+  - Testnet: chain ID `198281`.
+  - Custom RPC: use the URL entered by the user.
+  Switching targets must change the RPC endpoint and expected chain identity,
+  not only the displayed label.
+- [ ] Support running Mainnet and Testnet simultaneously on the same server:
+  - Use separate node processes/service units, data directories, genesis
+    configurations, logs, and backups.
+  - Assign and document nonconflicting ports for HTTP RPC, WebSocket RPC, P2P,
+    and metrics/health endpoints. Set the exact port numbers in the deployment
+    configuration and matching firewall rules.
+- [ ] Configure separate Mainnet and Testnet RPC endpoints and expected chain
+  IDs in the explorer and API. Validate each endpoint's `eth_chainId` before
+  serving it for the selected network.
+- [ ] Ensure Custom RPC selection routes explorer requests to the entered URL
+  and clearly reports the chain ID returned by that endpoint.
+- [ ] Keep staging chain ID `198283` separate from Testnet `198281`; if staging
+  runs on the same server, give it its own data directory and nonconflicting
+  ports as well.
+- [ ] Verify both nodes run concurrently on one host, their ports do not
+  collide, and the explorer displays data from the selected chain.
+
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
 
