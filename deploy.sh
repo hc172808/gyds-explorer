@@ -229,7 +229,7 @@ generate_secret() {
 }
 
 DB_PASSWORD=$(generate_password)
-API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-$(generate_secret)}}"
+API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-${JWT_SECRET:-$(generate_secret)}}}"
 
 drop_existing_database() {
   [ "${RESET_EXISTING}" = true ] || return 0
@@ -568,6 +568,37 @@ fi
 # domain, and over both http and https. Absolute localhost URLs break the browser.
 API_URL="/api"
 
+# Create Supabase-compatible anon/service-role JWTs signed with the same secret
+# used by the explorer API. These are for compatible services; this app itself
+# uses API_SECRET_KEY/JWT_SECRET and PostgreSQL, not Supabase.
+generate_supabase_jwt() {
+  local role="$1"
+  JWT_SIGNING_SECRET="${API_SECRET}" JWT_ROLE="${role}" node <<'NODE'
+const { createHmac } = require("node:crypto");
+const secret = process.env.JWT_SIGNING_SECRET;
+const role = process.env.JWT_ROLE;
+if (!secret || !["anon", "service_role"].includes(role)) process.exit(1);
+const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const header = encode({ alg: "HS256", typ: "JWT" });
+const now = Math.floor(Date.now() / 1000);
+const payload = encode({
+  iss: "supabase",
+  role,
+  iat: now,
+  exp: now + 10 * 365 * 24 * 60 * 60,
+});
+const unsigned = `${header}.${payload}`;
+const signature = createHmac("sha256", secret).update(unsigned).digest("base64url");
+process.stdout.write(`${unsigned}.${signature}`);
+NODE
+}
+
+ANON_KEY="$(generate_supabase_jwt anon)"
+SERVICE_ROLE_KEY="$(generate_supabase_jwt service_role)"
+
+# Restrict access from the first byte written; chmod below keeps this invariant
+# if the file already existed with broader permissions.
+umask 077
 cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
 # GYDS Explorer Environment Configuration
@@ -603,6 +634,10 @@ DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NA
 API_PORT=${API_PORT}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
+JWT_SECRET=${API_SECRET}
+ANON_KEY=${ANON_KEY}
+# Privileged Supabase-compatible token; keep private.
+SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
 # ---------- Admin / Feature Gate API ----------
 # Same-origin relative path — works on an IP, a domain, HTTP or HTTPS.
@@ -612,7 +647,7 @@ VITE_FEATURE_GATE_URL=/api
 # ---------- Wallet (Add network / Add token) ----------
 VITE_NATIVE_COIN_NAME=GYDSChain
 VITE_NATIVE_COIN_SYMBOL=GYDS
-VITE_NATIVE_COIN_DECIMALS=18
+VITE_NATIVE_COIN_DECIMALS=9
 VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
 VITE_EXPLORER_URL=${BASE_URL}
 # Set this to the deployed GYD token contract before "Add GYD to wallet" can work.

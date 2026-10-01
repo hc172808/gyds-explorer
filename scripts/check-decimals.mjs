@@ -91,6 +91,24 @@ check("node.env.example", [
   { label: "node environment native decimals", re: /^NATIVE_DECIMALS=(\d+)$/m, expected: GYDS },
 ]);
 
+check("deploy.sh", [
+  { label: "deployment native GYDS decimals", re: /^VITE_NATIVE_COIN_DECIMALS=(\d+)$/m, expected: GYDS },
+]);
+
+const deployScript = read("deploy.sh") || "";
+for (const setting of [
+  "API_SECRET_KEY=${API_SECRET}",
+  "JWT_SECRET=${API_SECRET}",
+  "ANON_KEY=${ANON_KEY}",
+  "SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}",
+  "DB_PASSWORD=${DB_PASSWORD}",
+  "DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}",
+]) {
+  if (!deployScript.includes(setting)) {
+    errors.push(`deploy.sh: generated environment is missing ${setting.split("=")[0]}`);
+  }
+}
+
 if (errors.length) {
   console.error("❌ Token decimals check failed:");
   for (const e of errors) console.error("  - " + e);
