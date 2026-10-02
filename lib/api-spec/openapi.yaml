@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: rpc
+    description: Chain-specific JSON-RPC proxy
 paths:
   /healthz:
     get:
@@ -24,8 +26,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /rpc:
+    post:
+      operationId: proxyRpc
+      tags: [rpc]
+      summary: Proxy JSON-RPC to one configured GYDS network
+      parameters:
+        - name: network
+          in: query
+          required: false
+          description: Mainnet or Testnet. Defaults to mainnet in production and testnet in development.
+          schema:
+            $ref: "#/components/schemas/RpcNetwork"
+        - name: nodeId
+          in: query
+          required: false
+          description: Optional configured node ID; its chain ID must match the selected network.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonRpcRequest"
+      responses:
+        "200":
+          description: JSON-RPC response from a node on the selected network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+        "400":
+          description: Invalid JSON-RPC request or network selection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
+        "502":
+          description: No configured endpoint answered on the selected chain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonRpcResponse"
 components:
   schemas:
+    RpcNetwork:
+      type: string
+      enum: [mainnet, testnet]
+    JsonRpcRequest:
+      type: object
+      required: [jsonrpc, method, params, id]
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        method:
+          type: string
+          minLength: 1
+        params:
+          type: array
+          items: {}
+        id:
+          oneOf:
+            - type: integer
+            - type: string
+            - type: "null"
+    JsonRpcResponse:
+      type: object
+      additionalProperties: true
     HealthStatus:
       type: object
       properties:

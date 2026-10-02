@@ -65,14 +65,18 @@ fi
 
 # ---------- Configuration ----------
 GETH_VERSION="1.13.15-c2ad2fa2"
+NETWORK_ENV="${NETWORK_ENV:-}"
 DATA_DIR="/var/lib/gyds"
 CONFIG_DIR="/etc/gyds"
 LOG_DIR="/var/log/gyds"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
 CHAIN_ID=198282
 NETWORK_ID=198282
 NATIVE_DECIMALS=9
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
+SERVICE_NAME="gyds-node"
+TOOL_PREFIX="gyds"
 
 # Ports
 RPC_PORT=8545
@@ -104,7 +108,6 @@ GYDS_REMOTE_RPC_URL_2="${GYDS_REMOTE_RPC_URL_2:-}"
 # RPC nodes are public by definition unless the operator explicitly opts out.
 PUBLIC_RPC="${PUBLIC_RPC:-}"
 # Backups & health monitoring
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
 BACKUP_KEEP="${BACKUP_KEEP:-7}"
 HEALTH_MIN_PEERS="${HEALTH_MIN_PEERS:-1}"
 HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
@@ -139,6 +142,7 @@ for ENV_FILE in \
       val="${val#\"}" ; val="${val%\"}"     # strip surrounding quotes
       val="${val#\'}" ; val="${val%\'}"
       case "$key" in
+        NETWORK_ENV)       [ -n "$NETWORK_ENV" ] || NETWORK_ENV="$val" ;;
         NODE_TYPE)          [ -z "$NODE_TYPE"         ] && NODE_TYPE="$val" ;;
         MAIN_NODE_IP)       [ -z "$MAIN_NODE_IP"      ] && MAIN_NODE_IP="$val" ;;
         MAIN_NODE_ENODE)    [ -z "$MAIN_NODE_ENODE"   ] && MAIN_NODE_ENODE="$val" ;;
@@ -171,6 +175,29 @@ for ENV_FILE in \
     break
   fi
 done
+
+NETWORK_ENV="${NETWORK_ENV:-mainnet}"
+case "${NETWORK_ENV,,}" in
+  mainnet)
+    NETWORK_ENV="mainnet"
+    ;;
+  testnet)
+    NETWORK_ENV="testnet"
+    DATA_DIR="/var/lib/gyds-testnet"
+    CONFIG_DIR="/etc/gyds-testnet"
+    LOG_DIR="/var/log/gyds-testnet"
+    BACKUP_DIR="/var/backups/gyds-testnet"
+    CHAIN_ID=198281
+    NETWORK_ID=198281
+    RPC_PORT=9545
+    WS_PORT=9546
+    P2P_PORT=30304
+    METRICS_PORT=6061
+    SERVICE_NAME="gyds-node-testnet"
+    TOOL_PREFIX="gyds-testnet"
+    ;;
+  *) err "NETWORK_ENV must be mainnet or testnet; found '${NETWORK_ENV}'." ;;
+esac
 
 if [ -n "$NODE_TYPE" ]; then
   info "Pre-loaded NODE_TYPE=${NODE_TYPE} from .env"

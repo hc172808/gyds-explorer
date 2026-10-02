@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { fixedRpcEndpoint, NETWORK_CHAIN_IDS, setSelectedNetworkConfig, type NetworkType } from "@/lib/networkConfig";
 
-export type NetworkType = "mainnet" | "testnet" | "custom";
+export type { NetworkType } from "@/lib/networkConfig";
 const DEFAULT_NETWORK_TYPE: NetworkType = import.meta.env.DEV ? "testnet" : "mainnet";
 
 interface NetworkConfig {
@@ -16,6 +17,7 @@ const LS_KEY_RPC1     = "gyds_rpc_primary";
 const LS_KEY_RPC2     = "gyds_rpc_secondary";
 const LS_KEY_BOOTNODE = "gyds_bootnode_enode";
 const LS_KEY_NETWORK  = "gyds_network_type";
+const LS_KEY_CUSTOM_RPC = "gyds_custom_rpc_url";
 
 function resolveRpcUrl(value: string): string {
   const trimmed = value.trim();
@@ -59,12 +61,13 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       return stored === "testnet" || stored === "custom" ? stored : "mainnet";
     }
   );
-  const [customRpcUrl, setCustomRpcUrlState] = useState("");
+  const [customRpcUrl, setCustomRpcUrlState] = useState(() => lsGet(LS_KEY_CUSTOM_RPC, ""));
   const [primaryRpc, setPrimaryRpcState]     = useState(() => resolveRpcUrl(lsGet(LS_KEY_RPC1, ENV_RPC1)));
   const [secondaryRpc, setSecondaryRpcState] = useState(() => resolveRpcUrl(lsGet(LS_KEY_RPC2, ENV_RPC2)));
   const [bootnodeEnode, setBootnodeEnodeState] = useState(() => lsGet(LS_KEY_BOOTNODE, ""));
 
   useEffect(() => { lsSet(LS_KEY_NETWORK, networkType); }, [networkType]);
+  useEffect(() => { lsSet(LS_KEY_CUSTOM_RPC, customRpcUrl); }, [customRpcUrl]);
   useEffect(() => { lsSet(LS_KEY_RPC1, primaryRpc); }, [primaryRpc]);
   useEffect(() => { lsSet(LS_KEY_RPC2, secondaryRpc); }, [secondaryRpc]);
   useEffect(() => { lsSet(LS_KEY_BOOTNODE, bootnodeEnode); }, [bootnodeEnode]);
@@ -85,23 +88,26 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       localStorage.removeItem(LS_KEY_RPC2);
       localStorage.removeItem(LS_KEY_BOOTNODE);
       localStorage.removeItem(LS_KEY_NETWORK);
+      localStorage.removeItem(LS_KEY_CUSTOM_RPC);
     } catch { /* ignore */ }
   };
 
   const NETWORKS: Record<NetworkType, NetworkConfig> = {
-    mainnet: { name: "Mainnet", type: "mainnet", rpcEndpoints: [primaryRpc, secondaryRpc] },
+    mainnet: { name: "Mainnet", type: "mainnet", rpcEndpoints: [fixedRpcEndpoint("mainnet")] },
     testnet: {
-      name: import.meta.env.DEV ? "Local Testnet" : "Testnet",
+      name: "Testnet",
       type: "testnet",
-      rpcEndpoints: [primaryRpc, secondaryRpc],
+      rpcEndpoints: [fixedRpcEndpoint("testnet")],
     },
-    custom:  { name: "Custom RPC", type: "custom", rpcEndpoints: [customRpcUrl || primaryRpc] },
+    custom:  { name: "Custom RPC", type: "custom", rpcEndpoints: customRpcUrl.trim() ? [customRpcUrl.trim()] : [] },
   };
 
-  const network =
-    networkType === "custom" && customRpcUrl
-      ? { ...NETWORKS.custom, rpcEndpoints: [customRpcUrl] }
-      : NETWORKS[networkType];
+  const network = NETWORKS[networkType];
+  setSelectedNetworkConfig({
+    ...network,
+    chainId: networkType === "custom" ? null : NETWORK_CHAIN_IDS[networkType],
+    ...(networkType === "custom" ? { customRpcUrl: customRpcUrl.trim() } : {}),
+  });
 
   return (
     <NetworkContext.Provider value={{
