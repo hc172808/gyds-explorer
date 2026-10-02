@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Solana Explorer"
+title = "GYDS Network Explorer"
 version = "1.0.0"
 id = "artifacts/solana-explorer"
 router = "path"
@@ -11,14 +11,14 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = ["/"]
 localPort = 18680
 
 [services.development]
 run = "npm run dev --workspace=@workspace/solana-explorer"
 
 [services.production]
-build = [ "npm", "run", "build", "--workspace=@workspace/solana-explorer" ]
+build = ["npm", "run", "build", "--workspace=@workspace/solana-explorer"]
 publicDir = "artifacts/solana-explorer/dist/public"
 serve = "static"
 

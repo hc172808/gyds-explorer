@@ -4,14 +4,15 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 
 ## Run & Operate
 
-- `bash scripts/replit-dev.sh` — run the local Replit stack: explorer, API, and a disposable GYDS test node
-- `npm run dev --workspace=@workspace/solana-explorer` — run the frontend (workflow: `artifacts/solana-explorer: web`)
-- `npm run dev --workspace=@workspace/api-server` — run the optional API service when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
+- Replit setup: use Node.js 22+, run `npm ci`, then `npm run push --workspace=@workspace/db` against the development database.
+- Start both managed workflows: `artifacts/api-server: API Server` and `artifacts/solana-explorer: web`. The API workflow also starts the disposable local RPC and lite test nodes; the separate gateway and canvas workflows are not needed.
+- Required configuration: `DATABASE_URL` and one of `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET`. Replit provides these through the environment; a local `.env` file is optional.
+- The preview uses simulated local test data on chain `198281` (`0x30689`), not a synced public blockchain. Test node state lives under `.replit-node/test-network/`.
+- Verification: `npm run typecheck`, `npm test`, `npm run build`, and `npm run build --workspace=@workspace/api-server`. `/api/health` checks the database; `/api/rpc` accepts JSON-RPC requests.
+- Frontend build files are written to `artifacts/solana-explorer/dist/public`, matching the artifact's static serving configuration.
 - `npm run node:lite --workspace=@workspace/scripts` — run the Replit-testable lite RPC gateway on port `8545`
 - `npm run node:rpc --workspace=@workspace/scripts` — run the Replit-testable RPC gateway on port `8555`
-- `bash scripts/replit-dev.sh` — run the clone-safe local Replit stack with the explorer, API, and disposable GYDS test node
-- `artifacts/solana-explorer: web` workflow — runs the frontend preview
-- `artifacts/api-server: API Server` workflow — runs the API service on its managed port when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
+- `bash scripts/replit-dev.sh` — alternative combined launcher outside the managed workflows; do not run it alongside them
 - `npm run dev --workspace=@workspace/solana-explorer` — run the frontend by itself
 - `npm run dev --workspace=@workspace/api-server` — run the API service by itself when `API_SECRET_KEY`, `JWT_SECRET_KEY`, legacy `JWT_SECRET`, or `SESSION_SECRET` is configured
 - `npm run typecheck` — full typecheck across all packages
@@ -56,7 +57,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - RPC routing is configurable through `GYDS_RPC_MODE=local|remote|auto`, `GYDS_LOCAL_RPC_URL`, and `GYDS_REMOTE_RPC_URL` values in `.env`.
 - The API proxy prefers the local lite gateway at `http://127.0.0.1:8545`; the separate local RPC gateway listens on `8555`
 - The clone-safe Replit launcher overrides the frontend RPC values to `/api/rpc`; the API proxies that path to the local node at `REPLIT_RPC_PORT`
-- The first Replit start builds and caches Geth under `.replit-node/bin`; chain data and keys stay under `.replit-node/` and are disposable local test state
+- The default Replit API launcher uses simulated test nodes. `REPLIT_USE_MOCK_NODES=0` selects the optional Geth launcher, which requires permitted Go dependencies and is not verified by the default preview setup.
 
 ## Product
 

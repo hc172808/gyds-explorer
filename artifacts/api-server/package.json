@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "bash ../../scripts/replit-api-dev.sh",
     "build": "node ./build.mjs",
-    "start": "node --env-file=../../.env --enable-source-maps ./dist/index.mjs",
-    "seed:admin": "node --env-file=../../.env ./scripts/seed-admin.mjs",
+    "start": "node --env-file-if-exists=../../.env --enable-source-maps ./dist/index.mjs",
+    "seed:admin": "node --env-file-if-exists=../../.env ./scripts/seed-admin.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
