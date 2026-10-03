@@ -409,12 +409,16 @@ install_geth_from_binary() {
   tar xzf geth.tar.gz
   cp "geth-linux-${GETH_ARCH}-${GETH_VERSION}/geth" /usr/local/bin/geth
   chmod +x /usr/local/bin/geth
+  hash -r
   rm -rf geth.tar.gz "geth-linux-${GETH_ARCH}-${GETH_VERSION}"
   cd - >/dev/null
 }
 
 if command -v geth &>/dev/null; then
   warn "Geth already installed: $(geth version 2>/dev/null | head -1)"
+elif [ "$NODE_TYPE" = "main" ] || [ "$NODE_TYPE" = "validator" ]; then
+  info "Installing project-compatible Geth ${GETH_VERSION} for ${NODE_TYPE^^} block sealing..."
+  install_geth_from_binary || err "Could not download the project-compatible Geth ${GETH_VERSION} required by ${NODE_TYPE^^} nodes."
 else
   info "Installing geth..."
   install_geth_from_ppa || {
@@ -444,7 +448,7 @@ fi
 if [ "$NODE_TYPE" = "main" ] || [ "$NODE_TYPE" = "validator" ]; then
   if ! geth --help 2>&1 | grep -Eq '(^|[[:space:]])--mine([[:space:]]|$)'; then
     GETH_INSTALLED_VERSION="$(geth version 2>/dev/null | head -n 1 || true)"
-    err "Installed ${GETH_INSTALLED_VERSION:-Geth} does not support --mine, which is required for ${NODE_TYPE^^} nodes. Refusing to create a node service that cannot start. Install the project-compatible Geth ${GETH_VERSION} and rerun setup. For an already-configured node, use: sudo bash ${SCRIPT_DIR}/scripts/fix-gyds-enode.sh (it validates and backs up the binary before asking to replace it)."
+    err "Installed ${GETH_INSTALLED_VERSION:-Geth} does not support --mine, which is required for ${NODE_TYPE^^} nodes. Refusing to create a node service that cannot start. Use the guarded helper: sudo bash ${SCRIPT_DIR}/scripts/fix-gyds-enode.sh. It validates the project-compatible Geth ${GETH_VERSION} and asks before replacing the installed binary."
   fi
 fi
 
