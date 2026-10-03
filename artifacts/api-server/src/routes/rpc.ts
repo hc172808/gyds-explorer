@@ -30,20 +30,45 @@ const RPC_ENDPOINTS =
       ? REMOTE_RPC_ENDPOINTS
       : [...LOCAL_RPC_ENDPOINTS, ...REMOTE_RPC_ENDPOINTS]
         .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
+const NETWORK_CHAIN_IDS = {
+  mainnet: 198282,
+  testnet: 198281,
+} as const;
+const TESTNET_RPC_ENDPOINTS = [
+  process.env.GYDS_TESTNET_RPC_URL,
+  process.env.TESTNET_RPC_URL,
+  ...(RPC_CONNECTION_MODE === "remote" ? [] : LOCAL_RPC_ENDPOINTS),
+].filter((endpoint): endpoint is string => Boolean(endpoint))
+  .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const defaultChainId = process.env.NODE_ENV === "production" ? 198282 : 198281;
 const configuredChainId = Number(process.env.REPLIT_CHAIN_ID || process.env.CHAIN_ID || defaultChainId);
-const EXPECTED_CHAIN_ID = `0x${(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : defaultChainId).toString(16)}`;
+const configuredExpectedChainId = Number.isSafeInteger(configuredChainId) && configuredChainId > 0
+  ? configuredChainId
+  : defaultChainId;
 const RPC_TIMEOUT_MS = Number(process.env.RPC_TIMEOUT_MS || 5000);
 
 router.post("/", async (req, res) => {
   const { method, params = [], id = Date.now() } = req.body ?? {};
+  const requestedNetwork = req.query.network;
+  if (requestedNetwork !== undefined && requestedNetwork !== "mainnet" && requestedNetwork !== "testnet") {
+    res.status(400).json({ jsonrpc: "2.0", error: { code: -32602, message: "Unsupported RPC network" }, id });
+    return;
+  }
+  const expectedChainId = requestedNetwork
+    ? NETWORK_CHAIN_IDS[requestedNetwork]
+    : configuredExpectedChainId;
+  const expectedChainHex = `0x${expectedChainId.toString(16)}`;
 
   if (typeof method !== "string" || !Array.isArray(params)) {
     res.status(400).json({ jsonrpc: "2.0", error: { code: -32600, message: "Invalid JSON-RPC request" }, id });
     return;
   }
 
-  let endpoints = RPC_ENDPOINTS;
+  let endpoints = requestedNetwork === "mainnet"
+    ? REMOTE_RPC_ENDPOINTS
+    : requestedNetwork === "testnet"
+      ? TESTNET_RPC_ENDPOINTS
+      : RPC_ENDPOINTS;
   const nodeId = Number(req.query.nodeId);
   try {
     if (Number.isSafeInteger(nodeId) && nodeId > 0) {
@@ -82,8 +107,8 @@ router.post("/", async (req, res) => {
         lastError = new Error(chainPayload.error?.message || `RPC responded with ${chainResponse.status}`);
         continue;
       }
-      if (chainPayload.result !== EXPECTED_CHAIN_ID) {
-        lastError = new Error(`Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainPayload.result || "none"}`);
+      if (chainPayload.result !== expectedChainHex) {
+        lastError = new Error(`Wrong chain ID: expected ${expectedChainHex}, received ${chainPayload.result || "none"}`);
         continue;
       }
 

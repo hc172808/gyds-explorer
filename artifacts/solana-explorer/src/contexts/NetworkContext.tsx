@@ -57,7 +57,9 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [networkType, setNetworkTypeState] = useState<NetworkType>(
     () => {
       const stored = lsGet(LS_KEY_NETWORK, DEFAULT_NETWORK_TYPE);
-      if (import.meta.env.DEV) return "testnet";
+      if (import.meta.env.DEV) {
+        return stored === "mainnet" || stored === "custom" ? stored : "testnet";
+      }
       return stored === "testnet" || stored === "custom" ? stored : "mainnet";
     }
   );

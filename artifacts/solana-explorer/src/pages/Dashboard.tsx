@@ -33,7 +33,7 @@ export default function Dashboard() {
       .catch(() => undefined);
   }, [navigate]);
 
-  const rpcUrl = primaryRpc || network.rpcEndpoints[0];
+  const rpcUrl = network.rpcEndpoints[0] || primaryRpc;
 
   const loadBalance = useCallback(async () => {
     if (!session) return;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Copy, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Copy, ExternalLink, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type NetworkNode } from "@/lib/networkApi";
 import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
 import { GYD_TOKEN, getEthereumProvider, getWalletError } from "@/lib/wallet";
+import { dashboardPathFor, signInWithWallet } from "@/lib/session";
 import { toast } from "sonner";
 
 const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
@@ -47,7 +48,15 @@ function qrUrl(address: string) {
 }
 
 export default function MyWallet() {
+  const navigate = useNavigate();
   const { primaryRpc } = useNetwork();
+  const isEmbedded = (() => {
+    try {
+      return window.self !== window.top;
+    } catch {
+      return true;
+    }
+  })();
   const [address, setAddress] = useState("");
   const [nodes, setNodes] = useState<NetworkNode[]>([]);
   const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
@@ -98,18 +107,18 @@ export default function MyWallet() {
   }, [loadConfiguration]);
 
   const connect = async () => {
-    const ethereum = getEthereumProvider();
-    if (!ethereum) {
-      toast.error("No compatible wallet detected", { description: "Install a browser wallet such as MetaMask to connect." });
+    if (isEmbedded) {
+      toast.info("Open the explorer in a new tab", {
+        description: "Wallet extensions cannot sign in inside Replit's embedded preview.",
+      });
       return;
     }
     setConnecting(true);
     try {
-      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const nextAddress = Array.isArray(accounts) ? accounts[0] : "";
-      if (typeof nextAddress !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(nextAddress)) throw new Error("The wallet did not return a valid address.");
-      setAddress(nextAddress);
-      toast.success("Wallet connected", { description: shortAddress(nextAddress) });
+      const session = await signInWithWallet();
+      setAddress(session.walletAddress);
+      toast.success("Wallet signed in", { description: shortAddress(session.walletAddress) });
+      navigate(dashboardPathFor(session));
     } catch (walletError) {
       toast.error(getWalletError(walletError));
     } finally {
@@ -231,17 +240,25 @@ export default function MyWallet() {
               <div className="p-2 rounded-lg bg-primary/10"><Wallet className="w-6 h-6 text-primary" /></div>
               <div>
                 <h1 className="text-3xl font-bold">My Wallet</h1>
-                <p className="text-sm text-muted-foreground mt-1">View and send assets across your configured GYDS networks.</p>
+                <p className="text-sm text-muted-foreground mt-1">Sign in with your wallet to open your dashboard, then use its wallet actions to view and send assets.</p>
               </div>
             </div>
           </div>
           <div className="flex gap-2">
             {address && <Button variant="outline" size="sm" onClick={() => setShowReceive(true)} className="gap-1.5"><ArrowDownToLine className="w-4 h-4" /> Receive</Button>}
             {address && <Button size="sm" onClick={() => setShowSend(true)} className="gap-1.5"><ArrowUpFromLine className="w-4 h-4" /> Send</Button>}
-            <Button onClick={connect} disabled={connecting} className="gap-1.5">
-              {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
-              {address ? shortAddress(address) : "Connect wallet"}
-            </Button>
+            {isEmbedded ? (
+              <Button asChild className="gap-1.5">
+                <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-4 h-4" /> Open to sign in
+                </a>
+              </Button>
+            ) : (
+              <Button onClick={connect} disabled={connecting} className="gap-1.5">
+                {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+                {connecting ? "Signing in…" : "Sign in & open dashboard"}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -256,8 +273,17 @@ export default function MyWallet() {
           <div className="rounded-2xl border border-border bg-card py-20 text-center">
             <Wallet className="mx-auto h-12 w-12 text-primary/50" />
             <h2 className="mt-4 text-xl font-semibold">Connect your wallet</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Connect a compatible browser wallet to see GYDS, GYD, and registered ERC-20 balances across active network nodes.</p>
-            <Button onClick={connect} disabled={connecting} className="mt-6 gap-2">{connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Connect wallet</Button>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Sign in with a compatible browser wallet to open your personal dashboard. Wallet extensions require a full browser tab.</p>
+            {isEmbedded ? (
+              <Button asChild className="mt-6 gap-2">
+                <a href={window.location.href} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /> Open to sign in</a>
+              </Button>
+            ) : (
+              <Button onClick={connect} disabled={connecting} className="mt-6 gap-2">
+                {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                {connecting ? "Signing in…" : "Sign in & open dashboard"}
+              </Button>
+            )}
           </div>
         ) : (
           <>
