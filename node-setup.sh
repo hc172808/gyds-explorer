@@ -437,6 +437,17 @@ else
   err "Geth could not be installed. Please install it manually from https://geth.ethereum.org/downloads and re-run this script."
 fi
 
+# MAIN and validator nodes use Clique block sealing via Geth's --mine flag.
+# Recent upstream Geth builds removed this option, so reject incompatible
+# pre-installed or PPA-provided binaries before creating a systemd unit that
+# would immediately crash-loop.
+if [ "$NODE_TYPE" = "main" ] || [ "$NODE_TYPE" = "validator" ]; then
+  if ! geth --help 2>&1 | grep -Eq '(^|[[:space:]])--mine([[:space:]]|$)'; then
+    GETH_INSTALLED_VERSION="$(geth version 2>/dev/null | head -n 1 || true)"
+    err "Installed ${GETH_INSTALLED_VERSION:-Geth} does not support --mine, which is required for ${NODE_TYPE^^} nodes. Refusing to create a node service that cannot start. Install the project-compatible Geth ${GETH_VERSION} and rerun setup. For an already-configured node, use: sudo bash ${SCRIPT_DIR}/scripts/fix-gyds-enode.sh (it validates and backs up the binary before asking to replace it)."
+  fi
+fi
+
 # ============================================================
 # STEP 3: Create Directories & System User
 # ============================================================
