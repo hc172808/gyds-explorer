@@ -64,7 +64,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # ---------- Configuration ----------
-GETH_VERSION="1.13.15-c2ad2fa2"
+GETH_VERSION="1.13.15-c5ba367e"
 NETWORK_ENV="${NETWORK_ENV:-}"
 DATA_DIR="/var/lib/gyds"
 CONFIG_DIR="/etc/gyds"

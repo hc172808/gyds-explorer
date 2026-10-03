@@ -8,7 +8,7 @@ set -Eeuo pipefail
 SERVICE="gyds-node"
 CONFIG_FILE="/etc/gyds/node.env"
 BACKUP_DIR="/var/backups/gyds"
-GETH_VERSION="1.13.15-c2ad2fa2"
+GETH_VERSION="1.13.15-c5ba367e"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=""
 STAGED_GETH=""
