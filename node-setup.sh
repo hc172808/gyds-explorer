@@ -1168,12 +1168,9 @@ source /etc/gyds/node.env
 geth attach "${DATA_DIR}/geth.ipc"
 MGMT
 
-cat > /usr/local/bin/gyds-enode <<'MGMT'
-#!/bin/bash
-source /etc/gyds/node.env
-geth attach --exec "admin.nodeInfo.enode" "${DATA_DIR}/geth.ipc" 2>/dev/null \
-  || echo "Node not running or RPC not available."
-MGMT
+install -o root -g root -m 0755 \
+  "${SCRIPT_DIR}/scripts/gyds-enode" \
+  /usr/local/bin/gyds-enode
 
 cat > /usr/local/bin/gyds-peers <<'MGMT'
 #!/bin/bash
