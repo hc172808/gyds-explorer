@@ -415,7 +415,7 @@ install_geth_from_binary() {
 }
 
 if command -v geth &>/dev/null; then
-  warn "Geth already installed: $(geth version 2>/dev/null | head -1)"
+  warn "Geth already installed: $(geth version 2>/dev/null | sed -n '1,2p' | tr '\n' ' ')"
 elif [ "$NODE_TYPE" = "main" ] || [ "$NODE_TYPE" = "validator" ]; then
   info "Installing project-compatible Geth ${GETH_VERSION} for ${NODE_TYPE^^} block sealing..."
   install_geth_from_binary || err "Could not download the project-compatible Geth ${GETH_VERSION} required by ${NODE_TYPE^^} nodes."
@@ -436,7 +436,7 @@ if [ "$NODE_TYPE" = "validator" ]; then
 fi
 
 if command -v geth &>/dev/null; then
-  log "Geth installed: $(geth version 2>/dev/null | head -1)"
+  log "Geth installed: $(geth version 2>/dev/null | sed -n '1,2p' | tr '\n' ' ')"
 else
   err "Geth could not be installed. Please install it manually from https://geth.ethereum.org/downloads and re-run this script."
 fi
@@ -446,9 +446,11 @@ fi
 # pre-installed or PPA-provided binaries before creating a systemd unit that
 # would immediately crash-loop.
 if [ "$NODE_TYPE" = "main" ] || [ "$NODE_TYPE" = "validator" ]; then
-  if ! geth --help 2>&1 | grep -Eq '(^|[[:space:]])--mine([[:space:]]|$)'; then
-    GETH_INSTALLED_VERSION="$(geth version 2>/dev/null | head -n 1 || true)"
-    err "Installed ${GETH_INSTALLED_VERSION:-Geth} does not support --mine, which is required for ${NODE_TYPE^^} nodes. Refusing to create a node service that cannot start. Use the guarded helper: sudo bash ${SCRIPT_DIR}/scripts/fix-gyds-enode.sh. It validates the project-compatible Geth ${GETH_VERSION} and asks before replacing the installed binary."
+  GETH_BIN="$(command -v geth)"
+  GETH_HELP_OUTPUT="$("${GETH_BIN}" --help 2>&1 || true)"
+  if ! [[ "${GETH_HELP_OUTPUT}" =~ (^|[[:space:]])--mine([[:space:]]|$) ]]; then
+    GETH_INSTALLED_VERSION="$("${GETH_BIN}" version 2>/dev/null | sed -n '1,2p' | tr '\n' ' ' || true)"
+    err "Geth at ${GETH_BIN} (${GETH_INSTALLED_VERSION:-version unavailable}) does not support --mine, which is required for ${NODE_TYPE^^} nodes. Refusing to create a node service that cannot start. Use the guarded helper: sudo bash ${SCRIPT_DIR}/scripts/fix-gyds-enode.sh. It validates the project-compatible Geth ${GETH_VERSION} and asks before replacing the installed binary."
   fi
 fi
 

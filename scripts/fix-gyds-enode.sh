@@ -31,7 +31,7 @@ fail() {
 has_mine_flag() {
   local help_output
   help_output="$("$1" --help 2>&1 || true)"
-  [[ "${help_output}" == *"--mine"* ]]
+  [[ "${help_output}" =~ (^|[[:space:]])--mine([[:space:]]|$) ]]
 }
 
 if [ "${EUID}" -ne 0 ]; then
@@ -71,7 +71,8 @@ fi
 
 echo "Node data directory: ${DATA_DIR}"
 echo "Geth executable:     ${GETH_BIN}"
-echo "Installed version:   $("${GETH_BIN}" version 2>/dev/null | head -n 1 || echo unknown)"
+INSTALLED_VERSION="$("${GETH_BIN}" version 2>/dev/null | sed -n '1,2p' | tr '\n' ' ' || true)"
+echo "Installed version:   ${INSTALLED_VERSION:-unknown}"
 
 if [ "${SERVICE_CONFIGURED}" = "no" ] && has_mine_flag "${GETH_BIN}"; then
   echo "This Geth build supports --mine, but no ${SERVICE} systemd unit exists yet."
