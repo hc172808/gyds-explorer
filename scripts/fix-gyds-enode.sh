@@ -29,7 +29,9 @@ fail() {
 }
 
 has_mine_flag() {
-  "$1" --help 2>&1 | grep -Eq '(^|[[:space:]])--mine([[:space:]]|$)'
+  local help_output
+  help_output="$("$1" --help 2>&1 || true)"
+  [[ "${help_output}" == *"--mine"* ]]
 }
 
 if [ "${EUID}" -ne 0 ]; then
@@ -104,8 +106,13 @@ if ! has_mine_flag "${GETH_BIN}"; then
   tar -xzf "${TMP_DIR}/${ARCHIVE_NAME}" -C "${TMP_DIR}"
   DOWNLOADED_GETH="${TMP_DIR}/geth-linux-${GETH_ARCH}-${GETH_VERSION}/geth"
   [ -x "${DOWNLOADED_GETH}" ] || fail "The downloaded archive did not contain an executable Geth binary."
-  has_mine_flag "${DOWNLOADED_GETH}" ||
+  if ! has_mine_flag "${DOWNLOADED_GETH}"; then
+    DOWNLOADED_VERSION="$("${DOWNLOADED_GETH}" version 2>&1 | head -n 2 || true)"
+    echo "Downloaded binary version: ${DOWNLOADED_VERSION:-unavailable}" >&2
+    echo "Geth help output mentioning mining:" >&2
+    "${DOWNLOADED_GETH}" --help 2>&1 | grep -i -C 2 'mine' >&2 || true
     fail "The downloaded Geth build does not support --mine; refusing to replace the installed binary."
+  fi
 
   BACKUP_PATH="${BACKUP_DIR}/geth-before-enode-fix-$(date -u +%Y%m%dT%H%M%SZ)"
   STAGED_GETH="${GETH_BIN}.gyds-new.$$"

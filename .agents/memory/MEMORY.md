@@ -9,3 +9,4 @@
 - [GYDS deployment reset](gyds-deployment-reset.md) — destructive reruns require explicit YES and reset node state plus the explorer database before recreation.
 - [Wallet auth schema](wallet-auth-schema.md) — wallet nonce/session routes require the Drizzle schema to be pushed before the API can authenticate.
 - [Wallet connect routing](wallet-connect-routing.md) — connect actions that redirect must complete signed login and use role-specific destinations.
+- [Geth flag checks under pipefail](gyds-geth-flag-checks.md) — capture help output before checking options; `grep -q` can cause false negatives in strict pipelines.
