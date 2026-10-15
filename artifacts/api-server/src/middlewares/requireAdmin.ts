@@ -26,6 +26,10 @@ export function requireAdmin(req: AdminRequest, res: Response, next: NextFunctio
   try {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET) as unknown as AdminPayload;
+    if (decoded.role !== "admin" && decoded.role !== "founder") {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
     req.admin = decoded;
     next();
   } catch {

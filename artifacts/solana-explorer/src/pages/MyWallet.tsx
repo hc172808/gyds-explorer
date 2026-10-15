@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNetwork } from "@/contexts/NetworkContext";
-import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type NetworkNode } from "@/lib/networkApi";
+import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type PublicNetworkNode } from "@/lib/networkApi";
 import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
 import { GYD_TOKEN, getEthereumProvider, getWalletError } from "@/lib/wallet";
 import { dashboardPathFor, signInWithWallet } from "@/lib/session";
@@ -19,7 +19,7 @@ const DEFAULT_COINS: CoinSetting[] = [
 ];
 
 interface NetworkBalance {
-  node: NetworkNode;
+  node: PublicNetworkNode;
   native: bigint | null;
   tokens: TokenBalance[];
   error?: string;
@@ -49,7 +49,7 @@ function qrUrl(address: string) {
 
 export default function MyWallet() {
   const navigate = useNavigate();
-  const { primaryRpc } = useNetwork();
+  const { networkType, customRpcUrl } = useNetwork();
   const isEmbedded = (() => {
     try {
       return window.self !== window.top;
@@ -58,7 +58,7 @@ export default function MyWallet() {
     }
   })();
   const [address, setAddress] = useState("");
-  const [nodes, setNodes] = useState<NetworkNode[]>([]);
+  const [nodes, setNodes] = useState<PublicNetworkNode[]>([]);
   const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
   const [balances, setBalances] = useState<NetworkBalance[]>([]);
   const [registeredTokens, setRegisteredTokens] = useState<RegisteredToken[]>([]);
@@ -72,20 +72,17 @@ export default function MyWallet() {
   const [sendAmount, setSendAmount] = useState("");
   const [sending, setSending] = useState(false);
 
-  const rpcFallback = primaryRpc || import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
-  const fallbackNode = useMemo<NetworkNode>(() => ({
+  const fallbackNode = useMemo<PublicNetworkNode>(() => ({
     id: 0,
-    name: "Current RPC",
+    name: "GYDS Network",
     type: "full",
-    rpcUrl: rpcFallback,
-    enode: null,
     status: "configured",
     isActive: true,
-  }), [rpcFallback]);
+  }), []);
 
   const loadConfiguration = useCallback(async () => {
     const [nodeResult, coinResult] = await Promise.allSettled([fetchNetworkNodes(), fetchCoinSettings()]);
-    const configuredNodes = nodeResult.status === "fulfilled" ? nodeResult.value.filter((node) => node.isActive && node.rpcUrl) : [];
+    const configuredNodes = nodeResult.status === "fulfilled" ? nodeResult.value.filter((node) => node.isActive) : [];
     setNodes(configuredNodes.length ? configuredNodes : [fallbackNode]);
     if (coinResult.status === "fulfilled" && coinResult.value.length) setCoins(coinResult.value);
     try {
@@ -138,7 +135,9 @@ export default function MyWallet() {
     ].filter((token, index, all) => all.indexOf(token) === index);
     const nextBalances = await Promise.all(activeNodes.map(async (node): Promise<NetworkBalance> => {
       try {
-        const nodeRpc = proxyRpcUrl(node.id);
+        const nodeRpc = networkType === "custom"
+          ? customRpcUrl.trim() || proxyRpcUrl(node.id)
+          : proxyRpcUrl(node.id, networkType);
         const provider = new JsonRpcProvider(nodeRpc);
         const [native, tokens] = await Promise.all([
           provider.getBalance(address),
@@ -146,13 +145,13 @@ export default function MyWallet() {
         ]);
         return { node, native, tokens };
       } catch (balanceError) {
-        return { node, native: null, tokens: [], error: balanceError instanceof Error ? balanceError.message.slice(0, 120) : "Unable to reach RPC" };
+        return { node, native: null, tokens: [], error: "This network is temporarily unavailable." };
       }
     }));
     setBalances(nextBalances);
     if (nextBalances.every((result) => result.error)) setError("None of the configured RPC nodes could be reached.");
     setLoading(false);
-  }, [address, coins, fallbackNode, nodes, registeredTokens]);
+  }, [address, coins, customRpcUrl, fallbackNode, networkType, nodes, registeredTokens]);
 
   useEffect(() => {
     if (address) loadBalances();
@@ -317,9 +316,9 @@ export default function MyWallet() {
                 const gydAddress = stableCoin.contractAddress || GYD_TOKEN.address;
                 const gydToken = tokens.find((token) => token.contractAddress.toLowerCase() === gydAddress.toLowerCase());
                 return (
-                  <section key={node.id || node.rpcUrl} className="rounded-2xl border border-border bg-card overflow-hidden">
+                  <section key={node.id || node.name} className="rounded-2xl border border-border bg-card overflow-hidden">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/30 px-5 py-3">
-                      <div><h3 className="text-sm font-semibold">{node.name}</h3><p className="text-xs text-muted-foreground font-mono">{node.rpcUrl}</p></div>
+                      <div><h3 className="text-sm font-semibold">{node.name}</h3><p className="text-xs text-muted-foreground">Managed network connection</p></div>
                       <span className={`rounded-full px-2 py-1 text-[11px] ${nodeError ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>{nodeError ? "Offline" : node.type}</span>
                     </div>
                     {nodeError ? <p className="px-5 py-8 text-sm text-destructive">{nodeError}</p> : (
@@ -335,7 +334,7 @@ export default function MyWallet() {
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">Balance reads use each active node’s public RPC. Transactions are always submitted through the wallet you approve.</p>
+            <p className="text-xs text-muted-foreground">Balance reads use the secure GYDS network service. Transactions are submitted only through the wallet you approve.</p>
           </>
         )}
       </motion.div>

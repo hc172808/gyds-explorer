@@ -18,6 +18,21 @@ export interface NetworkNode {
   updatedAt?: string;
 }
 
+export interface PublicNetworkNode {
+  id: number;
+  name: string;
+  type: NetworkNodeType;
+  status: string;
+  isActive: boolean;
+}
+
+export interface RuntimeNodeSettings {
+  primaryRpc: string;
+  boostnodeRpc: string;
+  bootnodeEnode: string;
+  connectionMode: "auto" | "server" | "remote";
+}
+
 export interface CoinSetting {
   symbol: string;
   name: string;
@@ -43,7 +58,7 @@ async function parseError(response: Response, fallback: string) {
   }
 }
 
-export async function fetchNetworkNodes(): Promise<NetworkNode[]> {
+export async function fetchNetworkNodes(): Promise<PublicNetworkNode[]> {
   const response = await fetch(`${API_BASE}/nodes`);
   if (!response.ok) throw new Error(await parseError(response, "Failed to load network nodes"));
   return response.json();
@@ -52,6 +67,12 @@ export async function fetchNetworkNodes(): Promise<NetworkNode[]> {
 export async function fetchAdminNetworkNodes(): Promise<NetworkNode[]> {
   const response = await fetch(`${API_BASE}/nodes/admin`, { headers: authHeaders() });
   if (!response.ok) throw new Error(await parseError(response, "Failed to load network nodes"));
+  return response.json();
+}
+
+export async function fetchRuntimeNodeSettings(): Promise<RuntimeNodeSettings> {
+  const response = await fetch(`${API_BASE}/nodes/runtime-settings`, { headers: authHeaders() });
+  if (!response.ok) throw new Error(await parseError(response, "Failed to load runtime node settings"));
   return response.json();
 }
 
@@ -85,8 +106,12 @@ export async function saveRuntimeNodeSettings(input: {
   return response.json() as Promise<{ success: boolean }>;
 }
 
-export function proxyRpcUrl(nodeId?: number): string {
-  return nodeId ? `${API_BASE}/rpc?nodeId=${nodeId}` : `${API_BASE}/rpc`;
+export function proxyRpcUrl(nodeId?: number, network?: "mainnet" | "testnet"): string {
+  const query = new URLSearchParams();
+  if (nodeId) query.set("nodeId", String(nodeId));
+  if (network) query.set("network", network);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return new URL(`${API_BASE}/rpc${suffix}`, window.location.origin).toString();
 }
 
 export async function createNetworkNode(input: Omit<NetworkNode, "id" | "createdAt" | "updatedAt">) {

@@ -9,16 +9,18 @@ import SearchBar from "@/components/SearchBar";
 import RpcStatusPanel from "@/components/RpcStatusPanel";
 import { getNetworkStats, getLatestBlocks, gweiFromWei, hexToNumber } from "@/lib/rpc";
 import { Transaction } from "@/lib/types";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const Index = () => {
+  const { network, networkType } = useNetwork();
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["networkStats"],
+    queryKey: ["networkStats", networkType],
     queryFn: getNetworkStats,
     refetchInterval: 3000,
   });
 
   const { data: blocks, isLoading: blocksLoading } = useQuery({
-    queryKey: ["latestBlocks"],
+    queryKey: ["latestBlocks", networkType],
     queryFn: () => getLatestBlocks(10),
     refetchInterval: 3000,
   });
@@ -66,7 +68,7 @@ const Index = () => {
             />
             <StatCard
               label="Chain ID"
-              value={statsLoading ? "..." : (stats?.chainId ?? "—")}
+              value={network.chainId ?? (statsLoading ? "..." : (stats?.chainId ?? "—"))}
               icon={Link2}
             />
             <StatCard

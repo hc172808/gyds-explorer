@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { clearSession, getStoredSession, type WalletSession } from "@/lib/session";
-import { fetchCoinSettings, type CoinSetting } from "@/lib/networkApi";
+import { fetchCoinSettings, proxyRpcUrl, type CoinSetting } from "@/lib/networkApi";
 
 const DEFAULT_COINS: CoinSetting[] = [
   { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
@@ -15,7 +15,7 @@ const DEFAULT_COINS: CoinSetting[] = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { primaryRpc, network } = useNetwork();
+  const { network } = useNetwork();
   const [session, setSession] = useState<WalletSession | null>(null);
   const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
   const [balance, setBalance] = useState<string | null>(null);
@@ -33,7 +33,9 @@ export default function Dashboard() {
       .catch(() => undefined);
   }, [navigate]);
 
-  const rpcUrl = network.rpcEndpoints[0] || primaryRpc;
+  const rpcUrl = network.type === "custom"
+    ? network.rpcEndpoints[0]
+    : proxyRpcUrl(undefined, network.type);
 
   const loadBalance = useCallback(async () => {
     if (!session) return;
@@ -45,7 +47,7 @@ export default function Dashboard() {
       setBalance(formatUnits(raw, decimals));
     } catch {
       setBalance(null);
-      toast.error("Could not read your balance", { description: `No answer from ${rpcUrl}` });
+      toast.error("Could not read your balance", { description: "The configured GYDS network is currently unavailable." });
     } finally {
       setLoading(false);
     }

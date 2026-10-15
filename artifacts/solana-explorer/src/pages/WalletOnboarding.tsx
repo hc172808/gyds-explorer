@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2, Copy, ExternalLink, KeyRound, Smartphone, Wa
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useNetwork } from "@/contexts/NetworkContext";
+import { proxyRpcUrl } from "@/lib/networkApi";
 import {
   GYD_TOKEN,
   GYDS_NETWORK,
@@ -15,16 +15,15 @@ import {
 } from "@/lib/wallet";
 
 const WalletOnboarding = () => {
-  const { primaryRpc, secondaryRpc } = useNetwork();
   const [busy, setBusy] = useState<"network" | "token" | null>(null);
   const [networkAdded, setNetworkAdded] = useState(false);
   const [tokenAdded, setTokenAdded] = useState(false);
 
-  const rpcUrls = useMemo(() => getRpcUrls(primaryRpc, secondaryRpc), [primaryRpc, secondaryRpc]);
+  const rpcUrls = useMemo(() => getRpcUrls(proxyRpcUrl()), []);
   const manualDetails = [
     ["Network name", GYDS_NETWORK.chainName],
     ["Chain ID", `${GYDS_NETWORK.chainId} (${Number.parseInt(GYDS_NETWORK.chainId, 16)})`],
-    ["RPC URL", rpcUrls[0] || "Configure a production RPC in Admin → Node"],
+    ["RPC configuration", "Use Add GYDSChain above. Upstream endpoint details are restricted to administrators."],
     ["Currency", `${GYDS_NETWORK.nativeCurrency.name} (${GYDS_NETWORK.nativeCurrency.symbol})`],
     ["Decimals", String(GYDS_NETWORK.nativeCurrency.decimals)],
     ["Block explorer", GYDS_NETWORK.blockExplorerUrl],
@@ -93,8 +92,8 @@ const WalletOnboarding = () => {
           </Button>
           <p className="mt-3 text-xs text-muted-foreground flex gap-2">
             <Smartphone className="h-4 w-4 shrink-0" />
-            Works with compatible browser wallets. Mobile wallets may need their
-            in-app browser or the manual details below.
+          Works with compatible browser wallets. Mobile wallets may need their
+          in-app browser; upstream endpoint details are available only to administrators.
           </p>
         </section>
 
@@ -129,7 +128,7 @@ const WalletOnboarding = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-semibold">Manual setup</h2>
-            <p className="text-sm text-muted-foreground">Use these details when one-click setup is unavailable.</p>
+            <p className="text-sm text-muted-foreground">Use these details when one-click setup is unavailable. The network connection is managed securely by GYDSChain.</p>
           </div>
           <Button variant="ghost" size="sm" onClick={() => copy(manualDetails.map(([key, value]) => `${key}: ${value}`).join("\n"), "network details")} className="gap-2">
             <Copy className="h-4 w-4" /> Copy details

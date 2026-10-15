@@ -8,6 +8,7 @@ import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
 import { fetchCoinSettings, proxyRpcUrl, type CoinSetting } from "@/lib/networkApi";
 import { GYD_TOKEN } from "@/lib/wallet";
 import { JsonRpcProvider } from "ethers";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const DEFAULT_COINS: CoinSetting[] = [
   { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
@@ -31,7 +32,10 @@ function shortAddr(addr: string) {
 export default function TokenBalances() {
   const { address: paramAddress } = useParams<{ address?: string }>();
   const navigate = useNavigate();
-  const rpcUrl = proxyRpcUrl();
+  const { network, networkType } = useNetwork();
+  const rpcUrl = networkType === "custom"
+    ? network.rpcEndpoints[0] || proxyRpcUrl()
+    : proxyRpcUrl(undefined, networkType);
 
   const [inputAddress, setInputAddress] = useState(paramAddress ?? "");
   const [activeAddress, setActiveAddress] = useState(paramAddress ?? "");
@@ -86,8 +90,8 @@ export default function TokenBalances() {
       setTokenBalances(tokens);
       setLastFetched(new Date());
       navigate(`/tokens/${addr}`, { replace: true });
-    } catch (e: any) {
-      setError(e.message?.slice(0, 120) ?? "Failed to fetch balances.");
+    } catch {
+      setError("Could not load balances. The GYDS network service may be temporarily unavailable.");
     } finally {
       setLoading(false);
     }
@@ -191,7 +195,9 @@ export default function TokenBalances() {
               <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">G</div>
               <div className="flex-1">
                  <p className="text-sm font-medium">{coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.name || "GYDS"} (Native Coin)</p>
-                <p className="text-xs text-muted-foreground font-mono">Native chain currency · Chain ID 198282</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  Native chain currency · Chain ID {network.chainId ?? "Custom"}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold font-mono">{fmt(nativeBalance, 18)} <span className="text-sm text-muted-foreground">GYDS</span></p>

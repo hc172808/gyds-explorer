@@ -1,19 +1,24 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
 import { formatUnitsRaw, GYDS_COIN } from "./coins";
-import { GYDS_CHAIN_ID } from "./useTokenDeploy";
+import { getSelectedNetworkConfig } from "./networkConfig";
 
-export const EXPECTED_CHAIN_ID = Number(GYDS_CHAIN_ID);
 const RPC_TIMEOUT_MS = 5000;
 
 /** Use the same-origin proxy so public RPC servers do not need browser CORS headers. */
 export function getRpcEndpoints(): string[] {
-  return ["/api/rpc"];
+  return [...getSelectedNetworkConfig().rpcEndpoints];
+}
+
+/** The active network's chain ID; custom networks are validated by their owner. */
+export function getExpectedChainId(): number | null {
+  return getSelectedNetworkConfig().chainId;
 }
 
 async function callEndpoint(
   endpoint: string,
   method: string,
   params: unknown[],
+  expectedChainId: number | null,
 ): Promise<unknown> {
   const res = await fetch(endpoint, {
     method: "POST",
@@ -27,8 +32,8 @@ async function callEndpoint(
   }
   if (method === "eth_chainId") {
     const chainId = hexToNumber(data.result as string);
-    if (chainId !== EXPECTED_CHAIN_ID) {
-      throw new Error(`Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${chainId}`);
+    if (expectedChainId !== null && chainId !== expectedChainId) {
+      throw new Error(`Wrong chain ID: expected ${expectedChainId}, received ${chainId}`);
     }
   }
   return data.result;
@@ -36,11 +41,12 @@ async function callEndpoint(
 
 /** Calls each configured RPC endpoint in order until one succeeds. */
 export async function rpcCall(method: string, params: unknown[] = []): Promise<unknown> {
-  const endpoints = getRpcEndpoints();
+  const config = getSelectedNetworkConfig();
+  const endpoints = config.rpcEndpoints;
   let lastError: unknown;
   for (const endpoint of endpoints) {
     try {
-      return await callEndpoint(endpoint, method, params);
+      return await callEndpoint(endpoint, method, params, config.chainId);
     } catch (err) {
       lastError = err;
     }
@@ -61,14 +67,15 @@ export interface RpcEndpointHealth {
 
 export async function checkRpcEndpoint(url: string): Promise<RpcEndpointHealth> {
   const started = performance.now();
+  const expectedChainId = getExpectedChainId();
   try {
     const [blockNumber, chainId] = await Promise.all([
-      callEndpoint(url, "eth_blockNumber", []),
-      callEndpoint(url, "eth_chainId", []),
+      callEndpoint(url, "eth_blockNumber", [], expectedChainId),
+      callEndpoint(url, "eth_chainId", [], expectedChainId),
     ]);
-    if (chainId !== `0x${EXPECTED_CHAIN_ID.toString(16)}`) {
+    if (expectedChainId !== null && hexToNumber(chainId as string) !== expectedChainId) {
       throw new Error(
-        `Wrong chain ID: expected ${EXPECTED_CHAIN_ID}, received ${hexToNumber(chainId as string)}`,
+        `Wrong chain ID: expected ${expectedChainId}, received ${hexToNumber(chainId as string)}`,
       );
     }
     return {

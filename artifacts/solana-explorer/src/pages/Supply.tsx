@@ -4,10 +4,12 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getNetworkStats } from "@/lib/rpc";
 import { GYDS_COIN, GYD_COIN } from "@/lib/coins";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const Supply = () => {
+  const { network, networkType } = useNetwork();
   const { data: stats, isLoading } = useQuery({
-    queryKey: ["networkStats"],
+    queryKey: ["networkStats", networkType],
     queryFn: getNetworkStats,
     refetchInterval: 10000,
   });
@@ -38,7 +40,7 @@ const Supply = () => {
             { label: "Type", value: "Native Coin" },
             { label: "Total Supply", value: "Unlimited (PoA Network)" },
             { label: "Current Block Height", value: isLoading ? "..." : stats?.blockNumber.toLocaleString() ?? "—" },
-            { label: "Chain ID", value: isLoading ? "..." : String(stats?.chainId ?? "—") },
+            { label: "Chain ID", value: String(network.chainId ?? (isLoading ? "..." : (stats?.chainId ?? "—"))) },
             { label: "Network Peers", value: isLoading ? "..." : String(stats?.peerCount ?? 0) },
           ].map((f) => (
             <div key={f.label} className="flex flex-col sm:flex-row border-b border-border last:border-0">

@@ -41,7 +41,11 @@ const Header = () => {
   const { networkType, setNetworkType, customRpcUrl, setCustomRpcUrl } = useNetwork();
 
   const currentNetwork = NETWORK_OPTIONS.find((n) => n.value === networkType)!;
-  const showFeatureGates = session !== null && isPrivilegedSession(session);
+  const showPrivilegedControls = session !== null && isPrivilegedSession(session);
+  const visibleNetworkOptions = showPrivilegedControls
+    ? NETWORK_OPTIONS
+    : NETWORK_OPTIONS.filter((option) => option.value !== "custom");
+  const showFeatureGates = showPrivilegedControls;
 
   useEffect(() => {
     const syncSession = () => setSession(getStoredSession());
@@ -49,6 +53,12 @@ const Header = () => {
     window.addEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
     return () => window.removeEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
   }, []);
+
+  useEffect(() => {
+    if (showPrivilegedControls || networkType !== "custom") return;
+    setCustomRpcUrl("");
+    setNetworkType(import.meta.env.DEV ? "testnet" : "mainnet");
+  }, [networkType, setCustomRpcUrl, setNetworkType, showPrivilegedControls]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +115,7 @@ const Header = () => {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setNetworkOpen(false)} />
                 <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
-                  {NETWORK_OPTIONS.map((opt) => (
+                  {visibleNetworkOptions.map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => {
@@ -120,7 +130,7 @@ const Header = () => {
                       {opt.label}
                     </button>
                   ))}
-                  {networkType === "custom" && (
+                  {showPrivilegedControls && networkType === "custom" && (
                     <div className="px-4 py-3 border-t border-border">
                       <input
                         value={customRpcUrl}

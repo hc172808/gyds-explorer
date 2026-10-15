@@ -21,7 +21,9 @@ import {
   fetchAdminNetworkNodes,
   fetchCoinSettings,
   fetchNetworkNodes,
+  fetchRuntimeNodeSettings,
   pingNetworkNode,
+  proxyRpcUrl,
   saveRuntimeNodeSettings,
   toggleNetworkNode,
   updateNetworkNode,
@@ -40,12 +42,12 @@ type RpcConnectionMode = "auto" | "server" | "remote";
 
 const RPC_CONNECTION_MODE_KEY = "gyds_rpc_connection_mode";
 
-function storedRpcConnectionMode(): RpcConnectionMode {
+function storedRpcConnectionMode(fallback: RpcConnectionMode = "auto"): RpcConnectionMode {
   try {
     const value = localStorage.getItem(RPC_CONNECTION_MODE_KEY);
-    return value === "server" || value === "remote" ? value : "auto";
+    return value === "server" || value === "remote" || value === "auto" ? value : fallback;
   } catch {
-    return "auto";
+    return fallback;
   }
 }
 
@@ -77,12 +79,18 @@ async function pingRpc(url: string): Promise<RpcStatus> {
 
 // ── Node Settings Tab ─────────────────────────────────────────────────────────
 function NodeSettingsTab() {
-  const { primaryRpc, secondaryRpc, bootnodeEnode, setPrimaryRpc, setSecondaryRpc, setBootnodeEnode, resetToDefaults } = useNetwork();
+  const { primaryRpc, secondaryRpc, bootnodeEnode, setBootnodeEnode, resetToDefaults } = useNetwork();
 
   const [rpc1,  setRpc1]  = useState(primaryRpc);
   const [rpc2,  setRpc2]  = useState(secondaryRpc);
   const [boot,  setBoot]  = useState(bootnodeEnode);
   const [connectionMode, setConnectionMode] = useState<RpcConnectionMode>(storedRpcConnectionMode);
+  const [savedSettings, setSavedSettings] = useState({
+    primaryRpc,
+    boostnodeRpc: secondaryRpc,
+    bootnodeEnode,
+    connectionMode: storedRpcConnectionMode(),
+  });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -93,16 +101,27 @@ function NodeSettingsTab() {
 
   const loadConfiguredNodes = useCallback(async () => {
     try {
-      const loaded = await fetchAdminNetworkNodes();
+      const [runtimeSettings, loaded] = await Promise.all([
+        fetchRuntimeNodeSettings(),
+        fetchAdminNetworkNodes(),
+      ]);
       setConfiguredNodes(loaded);
       const primary = loaded.find((node) => node.name === "Explorer Primary RPC");
       const secondary = loaded.find((node) => node.name === "Explorer Boost Node" || node.name === "Explorer Secondary RPC");
       const bootnode = loaded.find((node) => node.name === "Explorer Bootnode");
-      if (primary) setRpc1(primary.rpcUrl);
-      if (secondary) setRpc2(secondary.rpcUrl);
-      if (bootnode?.enode) setBoot(bootnode.enode);
+      const next = {
+        primaryRpc: primary?.rpcUrl || runtimeSettings.primaryRpc,
+        boostnodeRpc: secondary?.rpcUrl || runtimeSettings.boostnodeRpc,
+        bootnodeEnode: bootnode?.enode || runtimeSettings.bootnodeEnode,
+        connectionMode: storedRpcConnectionMode(runtimeSettings.connectionMode),
+      };
+      setRpc1(next.primaryRpc);
+      setRpc2(next.boostnodeRpc);
+      setBoot(next.bootnodeEnode);
+      setConnectionMode(next.connectionMode);
+      setSavedSettings(next);
     } catch {
-      // The form remains usable with the build-time .env defaults.
+      // Keep proxy-only defaults if authenticated settings are unavailable.
     }
   }, []);
 
@@ -111,12 +130,13 @@ function NodeSettingsTab() {
   const envConnectionMode = connectionMode === "server" ? "local" : connectionMode;
   const localRpcForEnv = connectionMode === "server" ? rpc1 : "http://127.0.0.1:8545";
   const remoteRpcForEnv = connectionMode === "server" ? rpc2 : rpc1;
+  const remoteFallbackForEnv = connectionMode === "server" ? "" : rpc2;
   const ENV_SNIPPET = `# ── GYDS Node / RPC Configuration ──────────────────
 GYDS_RPC_MODE=${envConnectionMode}
 GYDS_LOCAL_RPC_URL=${localRpcForEnv}
 GYDS_REMOTE_RPC_URL=${remoteRpcForEnv}
-GYDS_REMOTE_RPC_URL_2=${rpc2}
-VITE_RPC_URL=${rpc1}
+GYDS_REMOTE_RPC_URL_2=${remoteFallbackForEnv}
+VITE_RPC_URL=/api/rpc
 VITE_RPC_URL_2=/api/rpc
 VITE_BOOSTNODE_RPC_URL=/api/rpc${boot ? `
 
@@ -142,19 +162,17 @@ ${configuredNodes.map((node) => [
 
   useEffect(() => {
     setDirty(
-      rpc1 !== primaryRpc
-      || rpc2 !== secondaryRpc
-      || boot !== bootnodeEnode
-      || connectionMode !== storedRpcConnectionMode(),
+      rpc1 !== savedSettings.primaryRpc
+      || rpc2 !== savedSettings.boostnodeRpc
+      || boot !== savedSettings.bootnodeEnode
+      || connectionMode !== savedSettings.connectionMode,
     );
-  }, [rpc1, rpc2, boot, primaryRpc, secondaryRpc, bootnodeEnode, connectionMode]);
+  }, [rpc1, rpc2, boot, connectionMode, savedSettings]);
 
   const save = async () => {
     setSaving(true);
     try {
       await saveRuntimeNodeSettings({ primaryRpc: rpc1.trim(), boostnodeRpc: rpc2.trim(), bootnodeEnode: boot.trim() });
-      setPrimaryRpc(rpc1.trim());
-      setSecondaryRpc(rpc2.trim());
       setBootnodeEnode(boot.trim());
       try {
         localStorage.setItem(RPC_CONNECTION_MODE_KEY, connectionMode);
@@ -171,20 +189,23 @@ ${configuredNodes.map((node) => [
     }
   };
 
-  const reset = () => {
+  const reset = async () => {
     resetToDefaults();
-    const envRpc1 = import.meta.env.VITE_RPC_URL || "/api/rpc";
-    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "/api/rpc";
-    setRpc1(envRpc1);
-    setRpc2(envRpc2);
-    setBoot("");
-    setConnectionMode("auto");
     try {
       localStorage.removeItem(RPC_CONNECTION_MODE_KEY);
     } catch {
       /* ignore */
     }
-    toast("Reset to defaults");
+    try {
+      const defaults = await fetchRuntimeNodeSettings();
+      setRpc1(defaults.primaryRpc);
+      setRpc2(defaults.boostnodeRpc);
+      setBoot(defaults.bootnodeEnode);
+      setConnectionMode(defaults.connectionMode);
+      toast("Loaded server environment defaults");
+    } catch {
+      toast.error("Could not load server defaults");
+    }
   };
 
   const testConnections = useCallback(async () => {
@@ -838,8 +859,7 @@ interface DeployedToken {
 }
 
 function TokensTab() {
-  const { primaryRpc } = useNetwork();
-  const rpcUrl = primaryRpc || import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+  const rpcUrl = proxyRpcUrl();
 
   // Form state
   const [tokenName,     setTokenName]     = useState("My GYDS Token");

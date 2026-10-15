@@ -11,7 +11,6 @@ const PUBLIC_NODE_FIELDS = {
   id: networkNodesTable.id,
   name: networkNodesTable.name,
   type: networkNodesTable.type,
-  rpcUrl: networkNodesTable.rpcUrl,
   status: networkNodesTable.status,
   isActive: networkNodesTable.isActive,
 } as const;
@@ -35,6 +34,10 @@ function validUrl(value: unknown): value is string {
 function validHttpUrl(value: unknown): value is string {
   if (!validUrl(value)) return false;
   return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function firstHttpUrl(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && /^https?:\/\//i.test(value));
 }
 
 function validEnode(value: unknown): value is string {
@@ -194,6 +197,44 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
 
 // Persist the two explorer RPC endpoints and bootnode setting in the same
 // server-side node catalog used by the public RPC proxy.
+router.get("/runtime-settings", requireAdmin, (_req, res) => {
+  const configuredMode = (
+    process.env.GYDS_RPC_MODE ||
+    process.env.NODE_CONNECTION_MODE ||
+    "auto"
+  ).trim().toLowerCase();
+  const connectionMode = configuredMode === "local"
+    ? "server"
+    : configuredMode === "remote"
+      ? "remote"
+      : "auto";
+  const localRpc = firstHttpUrl(
+    process.env.GYDS_LOCAL_RPC_URL,
+    process.env.REPLIT_RPC_URL,
+    process.env.LOCAL_RPC_URL,
+    process.env.RPC_LOCAL_URL,
+  ) || "http://127.0.0.1:8545";
+  const remotePrimary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL,
+    process.env.RPC_URL,
+    process.env.VITE_RPC_URL,
+  ) || "https://rpc.netlifegy.com";
+  const remoteSecondary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL_2,
+    process.env.RPC_URL_2,
+    process.env.BOOSTNODE_RPC_URL,
+    process.env.VITE_BOOSTNODE_RPC_URL,
+    process.env.VITE_RPC_URL_2,
+  ) || "https://boost.netlifegy.com";
+
+  res.json({
+    primaryRpc: connectionMode === "server" ? localRpc : remotePrimary,
+    boostnodeRpc: remoteSecondary,
+    bootnodeEnode: process.env.GYDS_BOOTNODE_ENODE || process.env.BOOTNODE_ENODE || "",
+    connectionMode,
+  });
+});
+
 router.put("/runtime-settings", requireAdmin, async (req: AdminRequest, res) => {
   const { primaryRpc, bootnodeEnode } = req.body ?? {};
   const boostnodeRpc = req.body?.boostnodeRpc ?? req.body?.secondaryRpc;

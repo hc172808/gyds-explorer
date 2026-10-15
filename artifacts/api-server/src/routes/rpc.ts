@@ -5,23 +5,30 @@ import { and, eq, inArray } from "drizzle-orm";
 
 const router = Router();
 const RPC_CONNECTION_MODE = (process.env.GYDS_RPC_MODE || process.env.NODE_CONNECTION_MODE || "auto").trim().toLowerCase();
+const isHttpEndpoint = (endpoint: string) => /^https?:\/\//i.test(endpoint);
+const firstHttpEndpoint = (...values: Array<string | undefined>) =>
+  values.find((endpoint): endpoint is string => Boolean(endpoint && isHttpEndpoint(endpoint)));
 const LOCAL_RPC_ENDPOINTS = [
-  process.env.REPLIT_RPC_URL,
-  process.env.GYDS_LOCAL_RPC_URL,
+  firstHttpEndpoint(process.env.REPLIT_RPC_URL),
+  firstHttpEndpoint(process.env.GYDS_LOCAL_RPC_URL),
   process.env.LOCAL_RPC_URL,
   process.env.RPC_LOCAL_URL,
   "http://127.0.0.1:8545",
   process.env.REPLIT_LITE_RPC_URL,
 ].filter((endpoint): endpoint is string => Boolean(endpoint))
+  .filter(isHttpEndpoint)
   .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const REMOTE_RPC_ENDPOINTS = [
-  process.env.GYDS_REMOTE_RPC_URL,
-  process.env.RPC_URL,
-  process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
+  firstHttpEndpoint(process.env.GYDS_REMOTE_RPC_URL, process.env.RPC_URL, process.env.VITE_RPC_URL) || "https://rpc.netlifegy.com",
   process.env.GYDS_REMOTE_RPC_URL_2,
   process.env.RPC_URL_2,
-  process.env.BOOSTNODE_RPC_URL || process.env.VITE_BOOSTNODE_RPC_URL || process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
+  firstHttpEndpoint(
+    process.env.BOOSTNODE_RPC_URL,
+    process.env.VITE_BOOSTNODE_RPC_URL,
+    process.env.VITE_RPC_URL_2,
+  ) || "https://boost.netlifegy.com",
 ].filter((endpoint): endpoint is string => Boolean(endpoint))
+  .filter(isHttpEndpoint)
   .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const RPC_ENDPOINTS =
   RPC_CONNECTION_MODE === "local"
@@ -35,10 +42,10 @@ const NETWORK_CHAIN_IDS = {
   testnet: 198281,
 } as const;
 const TESTNET_RPC_ENDPOINTS = [
-  process.env.GYDS_TESTNET_RPC_URL,
-  process.env.TESTNET_RPC_URL,
+  firstHttpEndpoint(process.env.GYDS_TESTNET_RPC_URL, process.env.TESTNET_RPC_URL),
   ...(RPC_CONNECTION_MODE === "remote" ? [] : LOCAL_RPC_ENDPOINTS),
 ].filter((endpoint): endpoint is string => Boolean(endpoint))
+  .filter(isHttpEndpoint)
   .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const defaultChainId = process.env.NODE_ENV === "production" ? 198282 : 198281;
 const configuredChainId = Number(process.env.REPLIT_CHAIN_ID || process.env.CHAIN_ID || defaultChainId);
@@ -87,14 +94,16 @@ router.post("/", async (req, res) => {
         .where(and(eq(networkNodesTable.isActive, true), inArray(networkNodesTable.type, ["main", "full", "lite", "rpc", "boost"])));
       // Prefer the local Replit test nodes so an unavailable production
       // endpoint cannot delay or mask the development network.
-      endpoints = [...new Set([...RPC_ENDPOINTS, ...nodes.map((node) => node.rpcUrl)])];
+      // Admin-configured node records take precedence over environment
+      // fallbacks so dashboard changes are effective immediately.
+      endpoints = [...new Set([...nodes.map((node) => node.rpcUrl), ...endpoints])];
     }
   } catch {
     // The environment fallbacks remain usable if the optional node catalog is unavailable.
   }
 
   let lastError: unknown;
-  for (const endpoint of endpoints) {
+  for (const endpoint of endpoints.filter(isHttpEndpoint)) {
     try {
       const chainResponse = await fetch(endpoint, {
         method: "POST",
@@ -125,7 +134,6 @@ router.post("/", async (req, res) => {
       });
       const payload = await response.json();
       if (response.ok) {
-        res.setHeader("X-GYDS-RPC-Endpoint", endpoint);
         res.status(200).json(payload);
         return;
       }
@@ -139,7 +147,6 @@ router.post("/", async (req, res) => {
     jsonrpc: "2.0",
     error: { code: -32000, message: "Configured RPC endpoints are unavailable" },
     id,
-    detail: lastError instanceof Error ? lastError.message : undefined,
   });
 });
 
