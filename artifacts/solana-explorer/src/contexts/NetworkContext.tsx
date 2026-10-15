@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { fixedRpcEndpoint, NETWORK_CHAIN_IDS, setSelectedNetworkConfig, type NetworkType } from "@/lib/networkConfig";
 
 export type { NetworkType } from "@/lib/networkConfig";
-const DEFAULT_NETWORK_TYPE: NetworkType = import.meta.env.DEV ? "testnet" : "mainnet";
+const DEFAULT_NETWORK_TYPE: NetworkType = "mainnet";
 
 interface NetworkConfig {
   name: string;
@@ -59,10 +59,7 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const [networkType, setNetworkTypeState] = useState<NetworkType>(
     () => {
       const stored = lsGet(LS_KEY_NETWORK, DEFAULT_NETWORK_TYPE);
-      if (import.meta.env.DEV) {
-        return stored === "mainnet" || stored === "custom" ? stored : "testnet";
-      }
-      return stored === "testnet" || stored === "custom" ? stored : "mainnet";
+      return stored === "custom" ? "custom" : "mainnet";
     }
   );
   const [customRpcUrl, setCustomRpcUrlState] = useState("");
@@ -109,12 +106,6 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       rpcEndpoints: [fixedRpcEndpoint("mainnet")],
       chainId: NETWORK_CHAIN_IDS.mainnet,
     },
-    testnet: {
-      name: "Testnet",
-      type: "testnet",
-      rpcEndpoints: [fixedRpcEndpoint("testnet")],
-      chainId: NETWORK_CHAIN_IDS.testnet,
-    },
     custom: {
       name: "Custom RPC",
       type: "custom",
@@ -126,7 +117,6 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   const network = NETWORKS[networkType];
   setSelectedNetworkConfig({
     ...network,
-    chainId: networkType === "custom" ? null : NETWORK_CHAIN_IDS[networkType],
     ...(networkType === "custom" ? { customRpcUrl: customRpcUrl.trim() } : {}),
   });
 

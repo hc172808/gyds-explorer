@@ -106,7 +106,7 @@ export async function saveRuntimeNodeSettings(input: {
   return response.json() as Promise<{ success: boolean }>;
 }
 
-export function proxyRpcUrl(nodeId?: number, network?: "mainnet" | "testnet"): string {
+export function proxyRpcUrl(nodeId?: number, network?: "mainnet"): string {
   const query = new URLSearchParams();
   if (nodeId) query.set("nodeId", String(nodeId));
   if (network) query.set("network", network);

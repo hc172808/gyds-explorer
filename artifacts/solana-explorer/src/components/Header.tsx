@@ -13,12 +13,7 @@ import {
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
   { label: "Mainnet", value: "mainnet", color: "bg-primary" },
-  {
-    label: import.meta.env.DEV ? "Local Testnet" : "Testnet",
-    value: "testnet",
-    color: "bg-amber",
-  },
-  { label: "Custom RPC", value: "custom", color: "bg-muted-foreground" },
+  { label: "Custom Mainnet RPC", value: "custom", color: "bg-muted-foreground" },
 ];
 
 const NAV_LINKS = [
@@ -57,7 +52,7 @@ const Header = () => {
   useEffect(() => {
     if (showPrivilegedControls || networkType !== "custom") return;
     setCustomRpcUrl("");
-    setNetworkType(import.meta.env.DEV ? "testnet" : "mainnet");
+    setNetworkType("mainnet");
   }, [networkType, setCustomRpcUrl, setNetworkType, showPrivilegedControls]);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -102,16 +97,23 @@ const Header = () => {
         <div className="flex items-center gap-2">
           {/* Network selector */}
           <div className="relative">
-            <button
-              onClick={() => setNetworkOpen(!networkOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs hover:bg-secondary/80 transition-colors"
-            >
-              <span className={`w-2 h-2 rounded-full ${currentNetwork.color} animate-pulse-neon`} />
-              <span className="text-foreground hidden sm:inline">{currentNetwork.label}</span>
-              <ChevronDown className="w-3 h-3 text-muted-foreground" />
-            </button>
+            {showPrivilegedControls ? (
+              <button
+                onClick={() => setNetworkOpen(!networkOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs hover:bg-secondary/80 transition-colors"
+              >
+                <span className={`w-2 h-2 rounded-full ${currentNetwork.color} animate-pulse-neon`} />
+                <span className="text-foreground hidden sm:inline">{currentNetwork.label}</span>
+                <ChevronDown className="w-3 h-3 text-muted-foreground" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs">
+                <span className="w-2 h-2 rounded-full bg-primary" />
+                <span className="text-foreground hidden sm:inline">Mainnet</span>
+              </div>
+            )}
 
-            {networkOpen && (
+            {networkOpen && showPrivilegedControls && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setNetworkOpen(false)} />
                 <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">

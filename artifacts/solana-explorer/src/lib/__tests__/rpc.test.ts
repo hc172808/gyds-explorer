@@ -26,15 +26,16 @@ describe("active network RPC configuration", () => {
     expect(getExpectedChainId()).toBe(198282);
   });
 
-  it("updates the proxy route and chain ID when switching to testnet", () => {
+  it("accepts the reported chain ID for an admin-configured mainnet RPC", () => {
     setSelectedNetworkConfig({
-      type: "testnet",
-      name: "Testnet",
-      rpcEndpoints: [fixedRpcEndpoint("testnet")],
-      chainId: NETWORK_CHAIN_IDS.testnet,
+      type: "custom",
+      name: "Custom Mainnet RPC",
+      rpcEndpoints: ["https://rpc.example.invalid"],
+      chainId: null,
+      customRpcUrl: "https://rpc.example.invalid",
     });
 
-    expect(getRpcEndpoints()).toEqual(["/api/rpc?network=testnet"]);
-    expect(getExpectedChainId()).toBe(198281);
+    expect(getRpcEndpoints()).toEqual(["https://rpc.example.invalid"]);
+    expect(getExpectedChainId()).toBeNull();
   });
 });

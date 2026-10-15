@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Activity, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { checkRpcEndpoint, getRpcEndpoints, getSyncStatus } from "@/lib/rpc";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const RpcStatusPanel = () => {
+  const { networkType } = useNetwork();
   const endpoints = getRpcEndpoints();
 
   const { data: health, isFetching, refetch } = useQuery({
@@ -11,11 +13,20 @@ const RpcStatusPanel = () => {
     refetchInterval: 15000,
   });
 
-  const { data: sync } = useQuery({
+  const { data: sync, isError: syncUnavailable } = useQuery({
     queryKey: ["syncStatus", endpoints],
     queryFn: getSyncStatus,
     refetchInterval: 15000,
   });
+  const syncLabel = health === undefined
+    ? "checking"
+    : !health.some((endpoint) => endpoint.online) || syncUnavailable
+      ? "unavailable"
+      : !sync
+        ? "checking"
+        : sync.syncing
+          ? `syncing ${sync.currentBlock?.toLocaleString()} / ${sync.highestBlock?.toLocaleString()}`
+          : "fully synced";
 
   return (
     <section className="rounded-xl border border-border bg-card p-4">
@@ -38,11 +49,7 @@ const RpcStatusPanel = () => {
             className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-secondary/40 px-3 py-2"
           >
               <span className="font-mono text-xs break-all">
-                {h.url.includes("network=testnet")
-                  ? "Testnet RPC service"
-                  : h.url.includes("network=mainnet")
-                    ? "Mainnet RPC service"
-                    : "GYDS RPC service"}
+                {networkType === "custom" ? "Custom Mainnet RPC" : "Mainnet RPC service"}
               </span>
             <span className="flex items-center gap-3 text-xs text-muted-foreground">
               {"blockNumber" in h && h.blockNumber !== undefined && (
@@ -65,10 +72,7 @@ const RpcStatusPanel = () => {
       </ul>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Sync status:{" "}
-        {sync?.syncing
-          ? `syncing ${sync.currentBlock?.toLocaleString()} / ${sync.highestBlock?.toLocaleString()}`
-          : "fully synced"}
+        Sync status: {syncLabel}
       </p>
     </section>
   );

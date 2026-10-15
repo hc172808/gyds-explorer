@@ -1,8 +1,7 @@
-export type NetworkType = "mainnet" | "testnet" | "custom";
+export type NetworkType = "mainnet" | "custom";
 
-export const NETWORK_CHAIN_IDS: Record<Exclude<NetworkType, "custom">, number> = {
+export const NETWORK_CHAIN_IDS = {
   mainnet: 198282,
-  testnet: 198281,
 };
 
 export interface SelectedNetworkConfig {
@@ -13,7 +12,7 @@ export interface SelectedNetworkConfig {
   customRpcUrl?: string;
 }
 
-export function fixedRpcEndpoint(network: Exclude<NetworkType, "custom">): string {
+export function fixedRpcEndpoint(network: "mainnet"): string {
   return `/api/rpc?network=${network}`;
 }
 
@@ -27,10 +26,10 @@ export function isValidHttpRpcUrl(value: string): boolean {
 }
 
 let selectedNetwork: SelectedNetworkConfig = {
-  type: import.meta.env.DEV ? "testnet" : "mainnet",
-  name: import.meta.env.DEV ? "Testnet" : "Mainnet",
-  rpcEndpoints: [fixedRpcEndpoint(import.meta.env.DEV ? "testnet" : "mainnet")],
-  chainId: import.meta.env.DEV ? NETWORK_CHAIN_IDS.testnet : NETWORK_CHAIN_IDS.mainnet,
+  type: "mainnet",
+  name: "Mainnet",
+  rpcEndpoints: [fixedRpcEndpoint("mainnet")],
+  chainId: NETWORK_CHAIN_IDS.mainnet,
 };
 
 export function setSelectedNetworkConfig(config: SelectedNetworkConfig) {
