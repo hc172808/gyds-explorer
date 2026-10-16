@@ -293,7 +293,7 @@ router.post("/", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: result.error });
       return;
     }
-    if (!result.values.enode) {
+    if (result.values.type === "boot" && !result.values.enode) {
       const discoveryError = await autoDiscoverEnode(result.values);
       if (discoveryError) {
         res.status(422).json({
@@ -326,6 +326,7 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
     const [existingNode] = await db.select({
       rpcUrl: networkNodesTable.rpcUrl,
       enode: networkNodesTable.enode,
+      type: networkNodesTable.type,
     }).from(networkNodesTable).where(eq(networkNodesTable.id, id));
     if (!existingNode) {
       res.status(404).json({ error: "Node not found" });
@@ -340,7 +341,14 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: "At least one node field must be provided" });
       return;
     }
-    if ("enode" in result.values && !result.values.enode) {
+    const effectiveType = typeof result.values.type === "string"
+      ? result.values.type
+      : existingNode.type;
+    if (
+      effectiveType === "boot" &&
+      !result.values.enode &&
+      ("enode" in result.values || !existingNode.enode)
+    ) {
       const rpcUrl = result.values.rpcUrl ?? existingNode.rpcUrl;
       result.values.rpcUrl = rpcUrl;
       const discoveryError = await autoDiscoverEnode(result.values);

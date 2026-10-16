@@ -3,12 +3,10 @@
  * Handles communication with the Feature Gate Service
  */
 
-// Base URL for the API server. Defaults to the same-origin "/api" proxy so it
-// works on an IP, a domain, HTTP or HTTPS without rebuilding.
-const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
-const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
+import { API_BASE_URL } from "./apiBase";
+export { API_BASE_URL } from "./apiBase";
 
-export const API_BASE_URL = API_BASE;
+const API_BASE = API_BASE_URL;
 
 const TOKEN_KEY = "gyds-admin-token";
 

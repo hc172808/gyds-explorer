@@ -1,7 +1,7 @@
 import { getStoredToken } from "./featureGateApi";
+import { API_BASE_URL } from "./apiBase";
 
-const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
-export const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
+export const API_BASE = API_BASE_URL;
 
 export type NetworkNodeType = "main" | "full" | "lite" | "rpc" | "boost" | "validator" | "boot";
 

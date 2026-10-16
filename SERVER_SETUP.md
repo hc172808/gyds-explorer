@@ -300,6 +300,26 @@ VITE_BOOSTNODE_RPC_URL=https://boost.example.com
 BOOSTNODE_RPC_URL=https://boost.example.com
 ```
 
+### Hosting the explorer UI and nodes separately
+
+The web UI sends requests to the API server; the API server connects to the
+configured node RPC endpoints. These can be on different machines:
+
+1. Build the web UI with `VITE_API_BASE_URL` set to the API server origin, for
+   example `https://api.example.com` or `https://api.example.com/api`. The
+   default `/api` is for UI and API served on the same origin. The legacy
+   `VITE_FEATURE_GATE_URL` setting is still accepted.
+2. On the API server, optionally set
+   `CORS_ALLOWED_ORIGINS=https://explorer.example.com` to allow that UI origin.
+   Use HTTPS for public deployments.
+3. In Admin → Nodes, choose whether each node is on the API server or on a
+   remote server. A local URL such as `http://127.0.0.1:8545` is resolved from
+   the API server, not the user's browser. For a remote node, enter an
+   HTTP(S) RPC URL that the API server can reach.
+
+Do not expose a node's raw RPC or admin interface publicly without a protected
+HTTPS proxy, access controls, and rate limiting.
+
 The same setup can be started through the deployment script:
 
 ```bash

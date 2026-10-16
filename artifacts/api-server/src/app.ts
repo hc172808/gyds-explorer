@@ -25,7 +25,20 @@ app.use(
     },
   }),
 );
-app.use(cors());
+const allowedCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(
+  allowedCorsOrigins.length
+    ? cors({
+        origin(origin, callback) {
+          if (!origin || allowedCorsOrigins.includes(origin)) callback(null, true);
+          else callback(new Error("Origin is not allowed by CORS"));
+        },
+      })
+    : cors(),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

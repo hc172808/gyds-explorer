@@ -11,7 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { getStoredToken } from "@/lib/featureGateApi";
+import { API_BASE_URL, getStoredToken } from "@/lib/featureGateApi";
 import { getStoredSession, isPrivilegedSession } from "@/lib/session";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
@@ -34,8 +34,7 @@ import {
 } from "@/lib/networkApi";
 import { Textarea } from "@/components/ui/textarea";
 
-const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
-const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
+const API_BASE = API_BASE_URL;
 
 type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens";
 type RpcConnectionMode = "auto" | "server" | "remote";
@@ -267,6 +266,9 @@ ${configuredNodes.map((node) => [
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             The selected mode is included in the .env snippet below. Local mode is intended for a node installed on the same server as the API.
           </p>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            For a separately hosted web UI, build with <code>VITE_API_BASE_URL</code> set to this API server and allow the UI origin with <code>CORS_ALLOWED_ORIGINS</code> on the API server.
+          </p>
         </div>
 
         <div className="space-y-4">
@@ -396,7 +398,7 @@ function NodesTab() {
   const [form, setForm] = useState({
     name: "",
     type: "full" as NetworkNodeType,
-    connectionMode: "server" as NodeConnectionMode,
+    connectionMode: "" as NodeConnectionMode | "",
     rpcUrl: "",
     enode: "",
     status: "disconnected",
@@ -418,6 +420,10 @@ function NodesTab() {
 
   const saveNode = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!form.connectionMode) {
+      toast.error("Choose whether this node runs on the API server or a remote server");
+      return;
+    }
     if (!form.name.trim() || !form.rpcUrl.trim()) {
       toast.error("Name and RPC URL are required");
       return;
@@ -435,12 +441,14 @@ function NodesTab() {
       if (editingId) await updateNetworkNode(editingId, input);
       else await createNetworkNode(input);
       setEditingId(null);
-      setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" });
-       toast.success(editingId ? "Network node updated" : "Network node added", {
-         description: !form.enode.trim()
-           ? "The enode URL was automatically read from the node's admin RPC."
-           : "The supplied enode URL was saved.",
-       });
+      setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "", status: "disconnected" });
+      toast.success(editingId ? "Network node updated" : "Network node added", {
+        description: form.enode.trim()
+          ? "The supplied enode URL was saved."
+          : form.type === "boot"
+            ? "The boot node enode URL was discovered."
+            : "The RPC endpoint was saved; enode access is not needed for RPC queries.",
+      });
       loadNodes();
     } catch (error) {
       toast.error("Could not add node", { description: error instanceof Error ? error.message : "Request failed" });
@@ -506,38 +514,55 @@ function NodesTab() {
             <option value="validator">Validator node</option>
             <option value="boot">Boot node</option>
           </select>
-          <select
-            value={form.connectionMode}
-            onChange={(event) => {
-              const connectionMode = event.target.value as NodeConnectionMode;
-              setForm({
-                ...form,
-                connectionMode,
-                rpcUrl: form.rpcUrl || (connectionMode === "server" ? "http://127.0.0.1:8545" : ""),
-              });
-            }}
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            <option value="server">Connect to this server</option>
-            <option value="remote">Connect to a remote node</option>
-          </select>
           <div>
-            <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder={form.connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"} className="font-mono text-xs" />
+            <label className="mb-1 block text-xs text-muted-foreground">Where is this node running?</label>
+            <select
+              required
+              value={form.connectionMode}
+              onChange={(event) => {
+                const connectionMode = event.target.value as NodeConnectionMode;
+                const currentUrlIsLocal = isServerLocalRpc(form.rpcUrl);
+                const rpcUrl = connectionMode === "server"
+                  ? currentUrlIsLocal ? form.rpcUrl : "http://127.0.0.1:8545"
+                  : currentUrlIsLocal ? "" : form.rpcUrl;
+                setForm({ ...form, connectionMode, rpcUrl });
+              }}
+              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              <option value="" disabled>Choose where the API server reaches this node</option>
+              <option value="server">Same server as the API (localhost)</option>
+              <option value="remote">Different server (remote RPC URL)</option>
+            </select>
+          </div>
+          <div>
+            <Input
+              value={form.rpcUrl}
+              onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })}
+              placeholder={!form.connectionMode ? "Choose node location first" : form.connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"}
+              disabled={!form.connectionMode}
+              className="font-mono text-xs"
+            />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {form.connectionMode === "server" ? "Use localhost when geth is installed on this server." : "Use the remote node's reachable HTTP(S) RPC URL."}
+              {form.connectionMode === "server"
+                ? "Use localhost only when the node runs on the same machine as the API server."
+                : form.connectionMode === "remote"
+                  ? "Enter an HTTP(S) RPC URL reachable by the API server; the browser does not contact the node directly."
+                  : "Choose where the API server should connect to this node."}
             </p>
           </div>
            <div>
-             <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="Leave blank to auto-detect enode" className="font-mono text-xs" />
-             <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to read it from <code className="rounded bg-secondary px-1">admin_nodeInfo</code>; paste one manually if admin RPC is private.</p>
+             <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder={form.type === "boot" ? "Leave blank to auto-detect enode" : "Optional enode URL"} className="font-mono text-xs" />
+             <p className="mt-1 text-[11px] text-muted-foreground">
+               Enode is optional for RPC access. Boot nodes require one; other nodes can be added when <code className="rounded bg-secondary px-1">admin_nodeInfo</code> is disabled.
+             </p>
            </div>
           <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
             <option value="connected">Connected</option>
             <option value="disconnected">Disconnected</option>
           </select>
           <div className="flex gap-2">
-            <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
-            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
+            <Button type="submit" disabled={saving || !form.connectionMode} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
+            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
           </div>
         </div>
       </form>
