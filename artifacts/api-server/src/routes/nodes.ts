@@ -218,7 +218,7 @@ router.get("/runtime-settings", requireAdmin, (_req, res) => {
     process.env.GYDS_REMOTE_RPC_URL,
     process.env.RPC_URL,
     process.env.VITE_RPC_URL,
-  ) || "https://rpc.netlifegy.com";
+  ) || "https://app.netlifegy.com/api/rpc";
   const remoteSecondary = firstHttpUrl(
     process.env.GYDS_REMOTE_RPC_URL_2,
     process.env.RPC_URL_2,

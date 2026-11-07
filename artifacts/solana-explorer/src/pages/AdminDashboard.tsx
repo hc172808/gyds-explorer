@@ -277,9 +277,10 @@ ${configuredNodes.map((node) => [
               {connectionMode === "server" ? "Server-local RPC URL" : "Primary / remote RPC URL"}
             </label>
             <Input
+              aria-label="Primary RPC URL"
               value={rpc1}
               onChange={(e) => setRpc1(e.target.value)}
-              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"}
+              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://app.netlifegy.com/api/rpc"}
               className="font-mono text-xs"
             />
             {status1 && <div className="mt-1.5"><RpcStatusBadge s={status1} /></div>}
@@ -287,6 +288,7 @@ ${configuredNodes.map((node) => [
           <div>
            <label className="text-xs text-muted-foreground mb-1.5 block">Remote fallback / boost RPC URL</label>
             <Input
+              aria-label="Fallback RPC URL"
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
               placeholder="https://boost.netlifegy.com"

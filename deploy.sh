@@ -608,7 +608,7 @@ cat > "${APP_DIR}/.env" <<EOF
 # ---------- RPC Configuration ----------
 GYDS_RPC_MODE=auto
 GYDS_LOCAL_RPC_URL=http://127.0.0.1:${RPC_PORT}
-GYDS_REMOTE_RPC_URL=https://rpc.netlifegy.com
+GYDS_REMOTE_RPC_URL=https://app.netlifegy.com/api/rpc
 GYDS_REMOTE_RPC_URL_2=https://boost.netlifegy.com
 VITE_RPC_URL=/api/rpc
 VITE_RPC_URL_2=/api/rpc
@@ -742,8 +742,8 @@ app.use("/api/", limiter);
 
 // ---------- JSON-RPC Proxy ----------
 const rpcEndpoints = [
-  process.env.VITE_RPC_URL || "https://rpc.netlifegy.com",
-  process.env.VITE_RPC_URL_2 || "https://boost.netlifegy.com",
+  process.env.GYDS_REMOTE_RPC_URL || process.env.RPC_URL || "https://app.netlifegy.com/api/rpc",
+  process.env.GYDS_REMOTE_RPC_URL_2 || process.env.RPC_URL_2 || "https://boost.netlifegy.com",
 ];
 
 app.post("/api/rpc", async (req, res) => {

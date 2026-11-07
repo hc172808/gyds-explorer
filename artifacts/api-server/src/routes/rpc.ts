@@ -19,7 +19,7 @@ const LOCAL_RPC_ENDPOINTS = [
   .filter(isHttpEndpoint)
   .filter((endpoint, index, endpoints) => endpoints.indexOf(endpoint) === index);
 const REMOTE_RPC_ENDPOINTS = [
-  firstHttpEndpoint(process.env.GYDS_REMOTE_RPC_URL, process.env.RPC_URL, process.env.VITE_RPC_URL) || "https://rpc.netlifegy.com",
+  firstHttpEndpoint(process.env.GYDS_REMOTE_RPC_URL, process.env.RPC_URL, process.env.VITE_RPC_URL) || "https://app.netlifegy.com/api/rpc",
   process.env.GYDS_REMOTE_RPC_URL_2,
   process.env.RPC_URL_2,
   firstHttpEndpoint(

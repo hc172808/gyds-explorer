@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { fixedRpcEndpoint, NETWORK_CHAIN_IDS, setSelectedNetworkConfig, type NetworkType } from "@/lib/networkConfig";
+import { DEFAULT_PRIMARY_RPC, fixedRpcEndpoint, NETWORK_CHAIN_IDS, setSelectedNetworkConfig, type NetworkType } from "@/lib/networkConfig";
 
 export type { NetworkType } from "@/lib/networkConfig";
 const DEFAULT_NETWORK_TYPE: NetworkType = "mainnet";
@@ -13,8 +13,8 @@ interface NetworkConfig {
 
 // Browser RPC consumers always use the API proxy. Upstream node URLs remain
 // server-side and are exposed only through authenticated admin settings.
-const ENV_RPC1 = "/api/rpc";
-const ENV_RPC2 = "/api/rpc";
+const ENV_RPC1 = DEFAULT_PRIMARY_RPC;
+const ENV_RPC2 = "https://boost.netlifegy.com";
 
 const LS_KEY_RPC1     = "gyds_rpc_primary";
 const LS_KEY_RPC2     = "gyds_rpc_secondary";
