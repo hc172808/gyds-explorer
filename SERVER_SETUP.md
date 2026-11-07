@@ -77,11 +77,36 @@ for normal browsing.
 
 ## 2a. What `update.sh` does
 
-`update.sh` does not install PostgreSQL, Supabase, pgAdmin, Apache, Nginx, or
-any other system service. It pulls the selected Git branch, runs the workspace
-`npm install` steps unless `--skip-deps` is supplied, builds the frontend unless
+`update.sh` pulls the selected Git branch with a fast-forward-only update,
+installs workspace dependencies unless `--skip-deps` is supplied, applies the
+additive automatic-update settings table, builds the frontend and API unless
 `--skip-build` is supplied, restarts existing PM2 services and reloads Nginx
-unless `--no-restart` is supplied, then runs the health check.
+unless `--no-restart` is supplied, then runs the health check. It refuses to
+stash or overwrite a dirty Git checkout.
+
+Run a manual update from the application directory:
+
+```bash
+cd /var/www/gyds-explorer
+sudo ./update.sh
+```
+
+The deployment and update scripts install a monthly systemd timer. It is
+**disabled by default** and does nothing until an admin enables it in
+**Admin → Auto Updates**. When enabled, the timer pulls, rebuilds, and restarts
+the app on the 15th of each month at 03:00 America/Guyana time. A missed run is
+made up after the server starts again. The timer itself can be inspected with:
+
+```bash
+sudo systemctl list-timers gyds-explorer-auto-update.timer
+sudo journalctl -u gyds-explorer-auto-update.service --no-pager
+sudo tail -n 100 /var/log/gyds-explorer-update.log
+```
+
+The API service root (`/` or `/api`) returns a JSON status response. The
+explorer website root (`/`) should be served by Nginx from the built `dist`
+directory; if a browser shows an API response instead, check that the domain
+points at Nginx rather than the API port.
 
 If pgAdmin was already installed on a server, `update.sh` leaves it installed
 but does not configure, upgrade, or remove it. A normal `deploy.sh` rerun

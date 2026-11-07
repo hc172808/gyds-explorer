@@ -23,6 +23,14 @@ export const featureGatesTable = pgTable("feature_gates", {
   updatedBy:   varchar("updated_by", { length: 42 }),
 });
 
+export const systemSettingsTable = pgTable("system_settings", {
+  key:       varchar("key", { length: 100 }).primaryKey(),
+  value:     text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: varchar("updated_by", { length: 42 }),
+});
+
 export type AdminWallet  = typeof adminWalletsTable.$inferSelect;
 export type AuthNonce    = typeof authNoncesTable.$inferSelect;
 export type FeatureGate  = typeof featureGatesTable.$inferSelect;
+export type SystemSetting = typeof systemSettingsTable.$inferSelect;

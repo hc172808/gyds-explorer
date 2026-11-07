@@ -498,6 +498,14 @@ CREATE TABLE IF NOT EXISTS feature_gates (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Server-side settings used by the monthly update timer
+CREATE TABLE IF NOT EXISTS system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by VARCHAR(42)
+);
+
 -- Seed the founder admin wallet (lowercase)
 INSERT INTO admin_wallets (wallet_address, label, is_active)
 VALUES ('0x6422d12bfaddee5142bfad21b3006a74d09017b1', 'Founder', TRUE)
@@ -1050,6 +1058,9 @@ app.get("/api/auth/me", requireAdmin, (req, res) => {
   res.json({ walletAddress: req.admin.walletAddress, label: req.admin.label, role: req.admin.role });
 });
 
+// Adds the API root status route and protected monthly auto-update settings.
+require(path.resolve(__dirname, "../scripts/legacy-auto-update-routes.cjs"))({ app, pool, requireAdmin });
+
 // ---------- Admin Wallet Management ----------
 app.get("/api/admin/wallets", requireAdmin, async (req, res) => {
   try {
@@ -1502,6 +1513,14 @@ if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
 else
   log "Step 11/11 — Skipping SSL (no domain provided)."
   warn "To add SSL later: sudo certbot --nginx -d yourdomain.com"
+fi
+
+# ============================================================
+# Install the monthly updater timer (disabled by default in the database)
+# ============================================================
+if [ -f "${APP_DIR}/scripts/install-auto-update.sh" ]; then
+  APP_DIR="${APP_DIR}" bash "${APP_DIR}/scripts/install-auto-update.sh" \
+    || warn "Could not install the monthly update timer. Run scripts/install-auto-update.sh manually."
 fi
 
 # ============================================================

@@ -5,6 +5,7 @@ import {
   CheckCircle, XCircle, RefreshCw, Settings, Network,
   Server, Wifi, WifiOff, Copy, RotateCcw, Save, Activity,
   Coins, Plus, ExternalLink, ChevronDown, ChevronUp, Zap, AlertCircle,
+  CalendarClock, Clock3,
 } from "lucide-react";
 import { useTokenDeploy, fetchTokenBalances, type DeployResult } from "@/lib/useTokenDeploy";
 import { Link, useNavigate } from "react-router-dom";
@@ -33,10 +34,13 @@ import {
   type NetworkNodeType,
 } from "@/lib/networkApi";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { fetchAutoUpdateSettings, saveAutoUpdateSettings, type AutoUpdateSettings } from "@/lib/systemSettingsApi";
+import RpcStatusPanel from "@/components/RpcStatusPanel";
 
 const API_BASE = API_BASE_URL;
 
-type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens";
+type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens" | "updates";
 type RpcConnectionMode = "auto" | "server" | "remote";
 
 const RPC_CONNECTION_MODE_KEY = "gyds_rpc_connection_mode";
@@ -239,6 +243,7 @@ ${configuredNodes.map((node) => [
 
   return (
     <div className="space-y-5">
+      <RpcStatusPanel />
 
       {/* RPC Endpoints */}
       <div className="bg-card border border-border rounded-xl p-5">
@@ -1330,6 +1335,106 @@ node deploy-token.js \\
   );
 }
 
+function AutoUpdateSettingsTab() {
+  const [settings, setSettings] = useState<AutoUpdateSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setSettings(await fetchAutoUpdateSettings());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load update settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const toggle = async (enabled: boolean) => {
+    setSaving(true);
+    try {
+      const next = await saveAutoUpdateSettings(enabled);
+      setSettings(next);
+      toast.success(enabled ? "Automatic updates enabled" : "Automatic updates disabled");
+    } catch (saveError) {
+      toast.error("Could not save automatic update setting", {
+        description: saveError instanceof Error ? saveError.message : "Request failed",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <CalendarClock className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold">Automatic Git updates</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Pull the latest code, install dependencies, rebuild the explorer and API, then restart services on a monthly schedule.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-medium ${settings?.enabled ? "text-primary" : "text-muted-foreground"}`}>
+            {loading ? "Loading" : settings?.enabled ? "On" : "Off"}
+          </span>
+          <Switch
+            checked={settings?.enabled ?? false}
+            onCheckedChange={toggle}
+            disabled={loading || saving || !settings?.schedulerInstalled}
+            aria-label="Enable monthly automatic Git updates"
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-background/50 p-3">
+          <Clock3 className="h-4 w-4 text-primary" />
+          <div>
+            <p className="text-xs text-muted-foreground">Scheduled time</p>
+            <p className="text-sm font-medium">15th of each month at 3:00 AM</p>
+            <p className="text-xs text-muted-foreground">America/Guyana time</p>
+          </div>
+        </div>
+        <div className="rounded-lg border border-border bg-background/50 p-3">
+          <p className="text-xs text-muted-foreground">Scheduler status</p>
+          <p className="mt-1 text-sm font-medium">
+            {loading ? "Checking…" : settings?.schedulerInstalled ? "Installed on this server" : "Not installed"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {settings?.schedulerInstalled
+              ? settings.updatedAt
+                ? `Last setting change: ${new Date(settings.updatedAt).toLocaleString()}`
+                : "Updates are off until you enable them."
+              : "Run sudo ./update.sh on the Ubuntu server to install the timer."}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      {!settings?.schedulerInstalled && !loading && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          The schedule runs server-side; the switch stays unavailable until the Ubuntu timer has been installed.
+        </p>
+      )}
+    </section>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const AdminDashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1370,9 +1475,10 @@ const AdminDashboard = () => {
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "node",    label: "Node Settings",  icon: <Settings className="w-3.5 h-3.5" /> },
-    { id: "nodes",   label: "Nodes",          icon: <Network  className="w-3.5 h-3.5" /> },
+    { id: "nodes",   label: "Network Nodes",  icon: <Network  className="w-3.5 h-3.5" /> },
     { id: "coins",   label: "Coins",          icon: <Coins    className="w-3.5 h-3.5" /> },
     { id: "tokens",  label: "Tokens",         icon: <Coins    className="w-3.5 h-3.5" /> },
+    { id: "updates", label: "Auto Updates",   icon: <CalendarClock className="w-3.5 h-3.5" /> },
     { id: "wallets", label: "Admin Wallets",  icon: <Shield   className="w-3.5 h-3.5" /> },
   ];
 
@@ -1415,6 +1521,7 @@ const AdminDashboard = () => {
         {activeTab === "nodes"   && <NodesTab />}
         {activeTab === "coins"   && <CoinSettingsTab />}
         {activeTab === "tokens"  && <TokensTab />}
+        {activeTab === "updates" && <AutoUpdateSettingsTab />}
         {activeTab === "wallets" && <AdminWalletsTab />}
       </motion.div>
     </div>

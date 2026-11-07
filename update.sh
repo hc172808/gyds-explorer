@@ -14,12 +14,13 @@
 #   --skip-build   Skip frontend build (use when only API changed)
 #   --branch NAME  Pull a specific branch (default: current branch)
 #   --no-restart   Pull and build only, do not restart services
+#   --scheduled    Internal mode: exit without updating unless enabled in Admin settings
 # ============================================================
 
 set -e
 
 # ---------- Configuration ----------
-APP_DIR="/var/www/gyds-explorer"
+APP_DIR="${APP_DIR:-/var/www/gyds-explorer}"
 API_DIR="${APP_DIR}/api"
 # The current Vite config writes the production build directly to the
 # workspace-level dist directory.
@@ -39,14 +40,27 @@ SKIP_DEPS=false
 SKIP_BUILD=false
 NO_RESTART=false
 BRANCH=""
+SCHEDULED=false
 
-for arg in "$@"; do
-  case "$arg" in
-    --skip-deps)   SKIP_DEPS=true ;;
-    --skip-build)  SKIP_BUILD=true ;;
-    --no-restart)  NO_RESTART=true ;;
-    --branch)      shift; BRANCH="$1" ;;
-    --branch=*)    BRANCH="${arg#--branch=}" ;;
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-deps)   SKIP_DEPS=true; shift ;;
+    --skip-build)  SKIP_BUILD=true; shift ;;
+    --no-restart)  NO_RESTART=true; shift ;;
+    --scheduled)   SCHEDULED=true; shift ;;
+    --branch)
+      [ "$#" -ge 2 ] || { printf '%s\n' "--branch requires a branch name" >&2; exit 2; }
+      BRANCH="$2"
+      shift 2
+      ;;
+    --branch=*)
+      BRANCH="${1#--branch=}"
+      shift
+      ;;
+    *)
+      printf 'Unknown option: %s\n' "$1" >&2
+      exit 2
+      ;;
   esac
 done
 
@@ -90,6 +104,42 @@ check_node_version() {
     err "Node.js ${MIN_NODE_VERSION} or newer is required; found v${current_node}."
   command -v npm >/dev/null 2>&1 || err "npm is required."
 }
+
+read_env_value() {
+  local key="$1"
+  [ -f "${APP_DIR}/.env" ] || return 0
+  awk -F= -v key="${key}" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "${APP_DIR}/.env"
+}
+
+database_psql() {
+  local db_host db_port db_name db_user db_password
+  db_host="${DB_HOST:-$(read_env_value DB_HOST)}"
+  db_port="${DB_PORT:-$(read_env_value DB_PORT)}"
+  db_name="${DB_NAME:-$(read_env_value DB_NAME)}"
+  db_user="${DB_USER:-$(read_env_value DB_USER)}"
+  db_password="${DB_PASSWORD:-$(read_env_value DB_PASSWORD)}"
+  db_host="${db_host:-localhost}"
+  db_port="${db_port:-5432}"
+  db_name="${db_name:-gyds_explorer}"
+  db_user="${db_user:-gyds_admin}"
+  [ -n "${db_password}" ] || err "Database password is missing; cannot manage automatic updates."
+  command -v psql >/dev/null 2>&1 || err "psql is required to manage update settings on this Ubuntu server."
+  PGPASSWORD="${db_password}" psql -X -v ON_ERROR_STOP=1 \
+    -h "${db_host}" -p "${db_port}" -U "${db_user}" -d "${db_name}" "$@"
+}
+
+database_query() {
+  database_psql -Atq -c "$1"
+}
+
+if [ "${SCHEDULED}" = true ]; then
+  AUTO_UPDATE_ENABLED="$(database_query "SELECT COALESCE((SELECT lower(value) IN ('true','1','yes','on') FROM system_settings WHERE key = 'auto_update_enabled'), false);")" \
+    || err "Could not read the automatic update setting. Skipping this scheduled run."
+  if [ "${AUTO_UPDATE_ENABLED}" != "t" ]; then
+    info "Automatic updates are disabled; scheduled run skipped."
+    exit 0
+  fi
+fi
 
 if ! [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] || [ "${WEB_PORT}" -lt 1 ] || [ "${WEB_PORT}" -gt 65535 ]; then
   err "WEB_PORT must be a TCP port between 1 and 65535; found '${WEB_PORT}'."
@@ -167,13 +217,9 @@ if [ "${CURRENT_BRANCH}" != "${TARGET_BRANCH}" ]; then
   fi
 fi
 
-# Check if there are local uncommitted changes
-if ! git diff --quiet HEAD; then
-  warn "You have local uncommitted changes. Stashing them before pulling..."
-  git stash push -m "auto-stash before update $(date '+%Y%m%d-%H%M%S')"
-  STASHED=true
-else
-  STASHED=false
+# Never stash deployment changes during an unattended or manual update.
+if ! git diff --quiet HEAD || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  err "The Git checkout has local changes. Commit or move them before updating; this script will not stash or overwrite them."
 fi
 
 PULL_OUTPUT=$(git pull --ff-only origin "${TARGET_BRANCH}" 2>&1)
@@ -192,14 +238,6 @@ fi
 if [ "${CURRENT_COMMIT}" != "${NEW_COMMIT}" ]; then
   info "Changes in this update:"
   git log --oneline "${CURRENT_COMMIT}..${NEW_COMMIT}" 2>/dev/null || true
-fi
-
-# Restore stash if we stashed
-if [ "${STASHED}" = "true" ]; then
-  warn "Restoring your local changes from stash..."
-  if ! git stash pop; then
-    err "Stash restore caused conflicts. Resolve them, then rerun the update."
-  fi
 fi
 
 # ============================================================
@@ -234,7 +272,22 @@ else
 fi
 
 # ============================================================
-# STEP 4: Build frontend
+# STEP 3b: Apply additive update-scheduler database schema
+# ============================================================
+log "Ensuring automatic update settings table exists..."
+DATABASE_MIGRATION="${APP_DIR}/scripts/sql/auto-update-settings.sql"
+[ -f "${DATABASE_MIGRATION}" ] || err "Missing database migration: ${DATABASE_MIGRATION}"
+database_psql -f "${DATABASE_MIGRATION}" \
+  || err "Could not create the automatic update settings table."
+
+# Existing deployments generated server.js before this route existed. Hook the
+# protected endpoints into that server without overwriting its other routes.
+if [ -f "${API_DIR}/server.js" ]; then
+  node "${APP_DIR}/scripts/install-legacy-auto-update-hook.mjs" "${API_DIR}/server.js"
+fi
+
+# ============================================================
+# STEP 4: Build frontend and API
 # ============================================================
 if [ "${SKIP_BUILD}" = "false" ]; then
   log "Building frontend..."
@@ -252,6 +305,9 @@ if [ "${SKIP_BUILD}" = "false" ]; then
   find "${APP_DIR}/dist" -type d -exec chmod 755 {} \;
   find "${APP_DIR}/dist" -type f -exec chmod 644 {} \;
   log "Frontend built successfully → ${APP_DIR}/dist"
+
+  log "Building API server..."
+  npm run build --workspace=@workspace/api-server
 else
   info "Skipping frontend build (--skip-build)."
 fi
@@ -304,6 +360,13 @@ if [ "${NO_RESTART}" = "false" ]; then
   fi
 else
   info "Skipping service restart (--no-restart)."
+fi
+
+# Install or refresh the timer on a manual update. Scheduled runs leave the
+# existing timer alone; the database flag decides whether it performs work.
+if [ "${SCHEDULED}" = false ] && [ -f "${APP_DIR}/scripts/install-auto-update.sh" ]; then
+  APP_DIR="${APP_DIR}" bash "${APP_DIR}/scripts/install-auto-update.sh" \
+    || warn "Could not install the monthly systemd timer. Run scripts/install-auto-update.sh manually."
 fi
 
 # ============================================================

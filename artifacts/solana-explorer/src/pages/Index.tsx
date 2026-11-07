@@ -1,18 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Blocks, Fuel, Link2, Users, ArrowRight } from "lucide-react";
+import { Blocks, Fuel, Users, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
 import SearchBar from "@/components/SearchBar";
-import RpcStatusPanel from "@/components/RpcStatusPanel";
 import { getNetworkStats, getLatestBlocks, gweiFromWei, hexToNumber } from "@/lib/rpc";
 import { Transaction } from "@/lib/types";
 import { useNetwork } from "@/contexts/NetworkContext";
 
 const Index = () => {
-  const { network, networkType } = useNetwork();
+  const { networkType } = useNetwork();
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["networkStats", networkType],
     queryFn: getNetworkStats,
@@ -55,7 +54,7 @@ const Index = () => {
           </motion.div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               label="Block Height"
               value={statsLoading ? "..." : (stats?.blockNumber.toLocaleString() ?? "—")}
@@ -67,19 +66,10 @@ const Index = () => {
               icon={Fuel}
             />
             <StatCard
-              label="Chain ID"
-              value={network.chainId ?? (statsLoading ? "..." : (stats?.chainId ?? "—"))}
-              icon={Link2}
-            />
-            <StatCard
               label="Peers"
               value={statsLoading ? "..." : (stats?.peerCount ?? 0)}
               icon={Users}
             />
-          </div>
-
-          <div className="mt-4">
-            <RpcStatusPanel />
           </div>
         </div>
       </section>

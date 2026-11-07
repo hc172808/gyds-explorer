@@ -6,6 +6,7 @@ import adminWalletsRouter from "./admin-wallets";
 import rpcRouter from "./rpc";
 import nodesRouter from "./nodes";
 import coinSettingsRouter from "./coin-settings";
+import systemSettingsRouter from "./system-settings";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use("/admin/wallets", adminWalletsRouter);
 router.use("/rpc", rpcRouter);
 router.use("/nodes", nodesRouter);
 router.use("/coin-settings", coinSettingsRouter);
+router.use("/system", systemSettingsRouter);
 
 export default router;

@@ -19,7 +19,8 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `REPLIT_NODE_TYPE=lite bash scripts/replit-dev.sh` — start the lightweight local node profile
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
-- `sudo bash /var/www/gyds-explorer/update.sh` — pull the latest Git commit, rebuild, restart, and check health
+- `cd /var/www/gyds-explorer && sudo ./update.sh` — safely pull, install, build the frontend and API, restart services, and check health
+- Admin → Auto Updates — enable or disable the Ubuntu monthly Git update timer (15th at 03:00 America/Guyana time)
 - Browser RPC env defaults to the same-origin `/api/rpc` proxy; server-side `GYDS_REMOTE_RPC_URL` and `GYDS_REMOTE_RPC_URL_2` select remote nodes.
 - Network chain ID: `198282` (hex: `0x3068a`)
 - Local node gateways try configured upstreams, reject incompatible chain IDs, and fall back to deterministic mock data when upstream access is unavailable. Check `/status` for the active source.
@@ -57,6 +58,8 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - The API proxy prefers the local lite gateway at `http://127.0.0.1:8545`; the separate local RPC gateway listens on `8555`
 - The clone-safe Replit launcher overrides the frontend RPC values to `/api/rpc`; the API proxies that path to the local node at `REPLIT_RPC_PORT`
 - The first Replit start builds and caches Geth under `.replit-node/bin`; chain data and keys stay under `.replit-node/` and are disposable local test state
+- The API answers `GET /` and `GET /api` with a service status response; the explorer website root is served by Nginx from `dist`
+- Automatic monthly updates use a systemd timer installed by `deploy.sh` or `update.sh`; the database setting defaults to off, and scheduled updates run only when enabled by an admin
 
 ## Product
 

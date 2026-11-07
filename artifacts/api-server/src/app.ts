@@ -42,6 +42,16 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const apiRoot = (_req: express.Request, res: express.Response) => {
+  res.json({
+    service: "GYDS Explorer API",
+    status: "ok",
+    health: "/api/health",
+  });
+};
+app.get("/", apiRoot);
+app.get("/api", apiRoot);
+
 app.use("/api", router);
 
 export default app;
