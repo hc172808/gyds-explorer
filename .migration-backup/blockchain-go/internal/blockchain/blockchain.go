@@ -14,16 +14,16 @@ import (
 
 // Header represents a block header
 type Header struct {
-	Number     uint64 `json:"number"`
-	Hash       string `json:"hash"`
-	ParentHash string `json:"parentHash"`
-	Timestamp  int64  `json:"timestamp"`
-	StateRoot  string `json:"stateRoot"`
-	TxRoot     string `json:"txRoot"`
-	Miner      string `json:"miner"`
-	GasLimit   uint64 `json:"gasLimit"`
-	GasUsed    uint64 `json:"gasUsed"`
-	Nonce      uint64 `json:"nonce"`
+	Number     uint64   `json:"number"`
+	Hash       string   `json:"hash"`
+	ParentHash string   `json:"parentHash"`
+	Timestamp  int64    `json:"timestamp"`
+	StateRoot  string   `json:"stateRoot"`
+	TxRoot     string   `json:"txRoot"`
+	Miner      string   `json:"miner"`
+	GasLimit   uint64   `json:"gasLimit"`
+	GasUsed    uint64   `json:"gasUsed"`
+	Nonce      uint64   `json:"nonce"`
 	Difficulty *big.Int `json:"difficulty"`
 }
 
@@ -95,8 +95,8 @@ func (bc *Blockchain) createGenesis() *Block {
 	header.Hash = computeBlockHash(header)
 
 	// Pre-fund genesis allocations
-	bc.state.SetGYDSBalance("0x0000000000000000000000000000000000000001", new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000000000)))
-	bc.state.SetGYDBalance("0x0000000000000000000000000000000000000001", new(big.Int).Mul(big.NewInt(1e6), big.NewInt(1000000000)))
+	bc.state.SetGYDSBalance("0x0000000000000000000000000000000000000001", new(big.Int).Mul(GYDSBaseUnits(), big.NewInt(1000000000)))
+	bc.state.SetGYDBalance("0x0000000000000000000000000000000000000001", new(big.Int).Mul(GYDBaseUnits(), big.NewInt(1000000000)))
 
 	return &Block{Header: header, Transactions: []*Transaction{}}
 }

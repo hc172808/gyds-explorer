@@ -22,10 +22,10 @@ type Transaction struct {
 	Hash      string   `json:"hash"`
 	From      string   `json:"from"`
 	To        string   `json:"to"`
-	Value     string   `json:"value"`    // Amount as string (big number)
+	Value     string   `json:"value"`    // Integer base units: GYDS/STAKE 10^18, GYD 10^6
 	CoinType  CoinType `json:"coinType"` // GYDS, GYD, or STAKE
 	Nonce     uint64   `json:"nonce"`
-	GasPrice  uint64   `json:"gasPrice"`
+	GasPrice  uint64   `json:"gasPrice"` // GYDS base units per gas, regardless of CoinType
 	GasLimit  uint64   `json:"gasLimit"`
 	Data      []byte   `json:"data,omitempty"` // Contract data (future use)
 	Signature string   `json:"signature"`

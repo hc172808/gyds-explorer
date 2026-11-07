@@ -1,4 +1,5 @@
 # Project conventions
+- The Go blockchain uses centralized integer denomination constants for genesis, rewards, and API metadata; do not rescale existing stored balances when changing display metadata.
 - Keep explorer RPC upstreams in the existing PostgreSQL node catalog, managed through authenticated runtime node settings; browser requests use the API proxy so saved changes apply without rebuilding.
 - Run the root production build directly through Vite and emit workspace-root dist; recursive workspace scripts can break Bun builds.
 - Resolve the Tailwind configuration explicitly in Vite and resolve content globs relative to that configuration; builds launched from the workspace root must retain explorer theme tokens and utilities.
