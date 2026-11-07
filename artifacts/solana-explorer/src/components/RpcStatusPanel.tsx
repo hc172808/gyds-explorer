@@ -10,13 +10,13 @@ const RpcStatusPanel = () => {
   const { data: health, isFetching, refetch } = useQuery({
     queryKey: ["rpcHealth", endpoints],
     queryFn: () => Promise.all(endpoints.map(checkRpcEndpoint)),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 
   const { data: sync, isError: syncUnavailable } = useQuery({
     queryKey: ["syncStatus", endpoints],
     queryFn: getSyncStatus,
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
   const syncLabel = health === undefined
     ? "checking"

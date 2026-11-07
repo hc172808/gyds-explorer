@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Shield, UserPlus, Trash2, Wallet, Loader2,
@@ -408,22 +408,31 @@ function NodesTab() {
     connectionMode: "" as NodeConnectionMode | "",
     rpcUrl: "",
     enode: "",
-    status: "disconnected",
   });
   const [pingStates, setPingStates] = useState<Record<number, RpcStatus>>({});
+  const nodesRequestInFlight = useRef(false);
 
-  const loadNodes = useCallback(async () => {
-    setLoading(true);
+  const loadNodes = useCallback(async (silent = false) => {
+    if (nodesRequestInFlight.current) return;
+    nodesRequestInFlight.current = true;
+    if (!silent) setLoading(true);
     try {
       setNodes(await fetchAdminNetworkNodes());
     } catch (error) {
-      toast.error("Could not load network nodes", { description: error instanceof Error ? error.message : "API unavailable" });
+      if (!silent) {
+        toast.error("Could not load network nodes", { description: error instanceof Error ? error.message : "API unavailable" });
+      }
     } finally {
-      setLoading(false);
+      nodesRequestInFlight.current = false;
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadNodes(); }, [loadNodes]);
+  useEffect(() => {
+    void loadNodes();
+    const interval = window.setInterval(() => { void loadNodes(true); }, 5000);
+    return () => window.clearInterval(interval);
+  }, [loadNodes]);
 
   const saveNode = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -442,13 +451,12 @@ function NodesTab() {
         type: form.type,
         rpcUrl: form.rpcUrl.trim(),
         enode: form.enode.trim() || null,
-        status: form.status as "connected" | "disconnected",
         isActive: editingId ? nodes.find((node) => node.id === editingId)?.isActive ?? true : true,
       };
       if (editingId) await updateNetworkNode(editingId, input);
-      else await createNetworkNode(input);
+      else await createNetworkNode({ ...input, status: "disconnected" });
       setEditingId(null);
-      setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "", status: "disconnected" });
+      setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "" });
       toast.success(editingId ? "Network node updated" : "Network node added", {
         description: form.enode.trim()
           ? "The supplied enode URL was saved."
@@ -472,7 +480,6 @@ function NodesTab() {
       connectionMode: isServerLocalRpc(node.rpcUrl) ? "server" : "remote",
       rpcUrl: node.rpcUrl,
       enode: node.enode || "",
-      status: node.status === "connected" ? "connected" : "disconnected",
     });
   };
 
