@@ -11,7 +11,7 @@ import { JsonRpcProvider } from "ethers";
 import { useNetwork } from "@/contexts/NetworkContext";
 
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 

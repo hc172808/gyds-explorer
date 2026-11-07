@@ -95,9 +95,15 @@ const WalletAuthButton = () => {
   return (
     isEmbedded ? (
       <Button asChild variant="outline" size="sm" className="gap-1.5">
-        <a href={window.location.href} target="_blank" rel="noopener noreferrer">
+        <a
+          href={window.location.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open the explorer in a browser tab to sign in with a wallet"
+          title="Wallet extensions need the explorer open outside the embedded preview"
+        >
           <ExternalLink className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Open to connect</span>
+          <span className="hidden sm:inline">Open in browser to sign in</span>
         </a>
       </Button>
     ) : (

@@ -1,11 +1,12 @@
 import { API_BASE_URL } from "./apiBase";
 
-export type NetworkType = "mainnet" | "custom";
+export type NetworkType = "mainnet" | "testnet" | "custom";
 
 export const DEFAULT_PRIMARY_RPC = "https://app.netlifegy.com/api/rpc";
 
 export const NETWORK_CHAIN_IDS = {
   mainnet: 198282,
+  testnet: 198281,
 };
 
 export interface SelectedNetworkConfig {
@@ -16,7 +17,7 @@ export interface SelectedNetworkConfig {
   customRpcUrl?: string;
 }
 
-export function fixedRpcEndpoint(network: "mainnet"): string {
+export function fixedRpcEndpoint(network: "mainnet" | "testnet"): string {
   return `${API_BASE_URL}/rpc?network=${network}`;
 }
 

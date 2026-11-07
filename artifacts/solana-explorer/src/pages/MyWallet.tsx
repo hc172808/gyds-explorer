@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 const ERC20_TRANSFER_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
@@ -49,7 +49,7 @@ function qrUrl(address: string) {
 
 export default function MyWallet() {
   const navigate = useNavigate();
-  const { networkType, customRpcUrl } = useNetwork();
+  const { network, networkType, customRpcUrl } = useNetwork();
   const isEmbedded = (() => {
     try {
       return window.self !== window.top;
@@ -127,7 +127,7 @@ export default function MyWallet() {
     if (!address) return;
     setLoading(true);
     setError("");
-    const activeNodes = nodes.length ? nodes : [fallbackNode];
+    const activeNodes = networkType === "mainnet" && nodes.length ? nodes : [fallbackNode];
     const tokenAddresses = [
       ...(GYD_TOKEN.address ? [GYD_TOKEN.address] : []),
       ...coins.map((coin) => coin.contractAddress).filter((address): address is string => Boolean(address)),
@@ -136,8 +136,10 @@ export default function MyWallet() {
     const nextBalances = await Promise.all(activeNodes.map(async (node): Promise<NetworkBalance> => {
       try {
         const nodeRpc = networkType === "custom"
-          ? customRpcUrl.trim() || proxyRpcUrl(node.id)
-          : proxyRpcUrl(node.id, networkType);
+          ? customRpcUrl.trim()
+          : networkType === "testnet"
+            ? proxyRpcUrl(undefined, "testnet")
+            : proxyRpcUrl(node.id, "mainnet");
         const provider = new JsonRpcProvider(nodeRpc);
         const [native, tokens] = await Promise.all([
           provider.getBalance(address),
@@ -180,6 +182,19 @@ export default function MyWallet() {
     setSending(true);
     try {
       const walletProvider = new BrowserProvider(ethereum);
+      const selectedRpc = networkType === "custom"
+        ? customRpcUrl.trim()
+        : proxyRpcUrl(undefined, networkType);
+      if (!selectedRpc) throw new Error("Set a custom RPC URL before sending.");
+      const rpcNetwork = await new JsonRpcProvider(selectedRpc).getNetwork();
+      const expectedChainId = network.chainId === null ? rpcNetwork.chainId : BigInt(network.chainId);
+      if (rpcNetwork.chainId !== expectedChainId) {
+        throw new Error(`Selected RPC is on chain ${rpcNetwork.chainId}; expected ${expectedChainId}.`);
+      }
+      const walletNetwork = await walletProvider.getNetwork();
+      if (walletNetwork.chainId !== expectedChainId) {
+        throw new Error(`Your wallet is on chain ${walletNetwork.chainId}. Switch it to ${network.name} (chain ${expectedChainId}) before sending.`);
+      }
       const signer = await walletProvider.getSigner();
       let tx;
       if (sendAsset === "GYDS") {

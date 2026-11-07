@@ -27,7 +27,11 @@ export interface DeployParams {
   mintable: boolean;
 }
 
-export function useTokenDeploy(rpcUrl: string) {
+export function useTokenDeploy(
+  rpcUrl: string,
+  selectedChainId: number | null = Number(GYDS_CHAIN_ID),
+  selectedNetworkName = "GYDS Network",
+) {
   const [status,          setStatus]          = useState<DeployStatus>("idle");
   const [txHash,          setTxHash]          = useState<string | null>(null);
   const [contractAddress, setContractAddress] = useState<string | null>(null);
@@ -54,23 +58,35 @@ export function useTokenDeploy(rpcUrl: string) {
       const signer = await provider.getSigner();
       setDeployer(signer.address);
 
-      // Ensure we're on GYDS network
+      // Confirm the selected RPC and wallet target the same chain. Custom RPC
+      // chain IDs are discovered from the endpoint instead of guessed.
+      const rpcProvider = new JsonRpcProvider(rpcUrl);
+      const rpcNetwork = await rpcProvider.getNetwork();
+      const targetChainId = selectedChainId === null
+        ? rpcNetwork.chainId
+        : BigInt(selectedChainId);
+      if (rpcNetwork.chainId !== targetChainId) {
+        throw new Error(`Selected RPC is on chain ${rpcNetwork.chainId}; expected ${targetChainId}.`);
+      }
+      const targetChainHex = `0x${targetChainId.toString(16)}`;
+
+      // Ensure we're on the selected GYDS network
       const network = await provider.getNetwork();
-      if (network.chainId !== GYDS_CHAIN_ID) {
+      if (network.chainId !== targetChainId) {
         setStatus("switching");
         try {
-          await provider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+          await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
         } catch (switchErr: any) {
           if (switchErr.code === 4902 || switchErr.code === -32603) {
             // Network not in MetaMask — add it
             await provider.send("wallet_addEthereumChain", [{
-              chainId:         GYDS_CHAIN_HEX,
-              chainName:       "GYDS Network",
+              chainId:         targetChainHex,
+              chainName:       selectedNetworkName,
               rpcUrls:         [rpcUrl],
-              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 9 },
+              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 18 },
             }]);
             // After adding, switch again
-            await provider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+            await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
           } else {
             throw switchErr;
           }

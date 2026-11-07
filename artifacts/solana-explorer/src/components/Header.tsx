@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useEffect } from "react";
 import { useNetwork, NetworkType } from "@/contexts/NetworkContext";
 import WalletAuthButton from "@/components/WalletAuthButton";
+import { NETWORK_CHAIN_IDS } from "@/lib/networkConfig";
 import {
   getStoredSession,
   isPrivilegedSession,
@@ -13,7 +14,8 @@ import {
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
   { label: "Mainnet", value: "mainnet", color: "bg-primary" },
-  { label: "Custom Mainnet RPC", value: "custom", color: "bg-muted-foreground" },
+  { label: "Testnet", value: "testnet", color: "bg-amber" },
+  { label: "Custom RPC", value: "custom", color: "bg-muted-foreground" },
 ];
 
 const NAV_LINKS = [
@@ -97,26 +99,20 @@ const Header = () => {
         <div className="flex items-center gap-2">
           {/* Network selector */}
           <div className="relative">
-            {showPrivilegedControls ? (
-              <button
-                onClick={() => setNetworkOpen(!networkOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs hover:bg-secondary/80 transition-colors"
-              >
-                <span className={`w-2 h-2 rounded-full ${currentNetwork.color} animate-pulse-neon`} />
-                <span className="text-foreground hidden sm:inline">{currentNetwork.label}</span>
-                <ChevronDown className="w-3 h-3 text-muted-foreground" />
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                <span className="text-foreground hidden sm:inline">Mainnet</span>
-              </div>
-            )}
+            <button
+              onClick={() => setNetworkOpen(!networkOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs hover:bg-secondary/80 transition-colors"
+              aria-label={`Current network: ${currentNetwork.label}`}
+            >
+              <span className={`w-2 h-2 rounded-full ${currentNetwork.color} animate-pulse-neon`} />
+              <span className="text-foreground hidden sm:inline">{currentNetwork.label}</span>
+              <ChevronDown className="w-3 h-3 text-muted-foreground" />
+            </button>
 
-            {networkOpen && showPrivilegedControls && (
+            {networkOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setNetworkOpen(false)} />
-                <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
                   {visibleNetworkOptions.map((opt) => (
                     <button
                       key={opt.value}
@@ -129,17 +125,26 @@ const Header = () => {
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full ${opt.color}`} />
-                      {opt.label}
+                        <span className="flex-1 text-left">{opt.label}</span>
+                        {opt.value !== "custom" && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {NETWORK_CHAIN_IDS[opt.value]}
+                          </span>
+                        )}
                     </button>
                   ))}
-                  {showPrivilegedControls && networkType === "custom" && (
+                  {networkType === "custom" && showPrivilegedControls && (
                     <div className="px-4 py-3 border-t border-border">
                       <input
                         value={customRpcUrl}
                         onChange={(e) => setCustomRpcUrl(e.target.value)}
+                        type="url"
                         placeholder="https://your-rpc-url.com"
                         className="w-full px-3 py-1.5 rounded-md bg-secondary border border-border text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       />
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Chain ID is read from your RPC endpoint.
+                      </p>
                     </div>
                   )}
                 </div>

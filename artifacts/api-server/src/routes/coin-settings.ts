@@ -6,9 +6,9 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
 const SYMBOL_PATTERN = /^[A-Za-z0-9]{1,20}$/;
-const CORE_COIN_DECIMALS: Record<string, number> = { GYDS: 9, GYD: 6 };
+const CORE_COIN_DECIMALS: Record<string, number> = { GYDS: 18, GYD: 6 };
 const DEFAULT_COIN_SETTINGS = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "Native coin of the GYDS network." },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "Stablecoin of the GYDS network." },
 ];
 

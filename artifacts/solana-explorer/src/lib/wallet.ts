@@ -1,16 +1,28 @@
 import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "./useTokenDeploy";
 
-export const GYDS_NETWORK = {
+export interface WalletNetworkConfig {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  blockExplorerUrl: string;
+  iconUrl: string;
+}
+
+export const GYDS_NETWORK: WalletNetworkConfig = {
   chainId: GYDS_CHAIN_HEX,
   chainName: import.meta.env.VITE_NATIVE_COIN_NAME || "GYDSChain",
   nativeCurrency: {
     name: import.meta.env.VITE_NATIVE_COIN_NAME || "GYDSChain",
     symbol: import.meta.env.VITE_NATIVE_COIN_SYMBOL || "GYDS",
-    decimals: 9,
+    decimals: 18,
   },
   blockExplorerUrl: import.meta.env.VITE_EXPLORER_URL || window.location.origin,
   iconUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",
-} as const;
+};
 
 export const GYD_TOKEN = {
   address: import.meta.env.VITE_GYD_TOKEN_ADDRESS || "",
@@ -61,7 +73,11 @@ function isWalletSafeRpc(url: string) {
   }
 }
 
-export async function addGydsNetwork(rpcUrls: string[], provider = getEthereumProvider()) {
+export async function addGydsNetwork(
+  rpcUrls: string[],
+  network: WalletNetworkConfig = GYDS_NETWORK,
+  provider = getEthereumProvider(),
+) {
   if (!provider) throw new Error("No compatible wallet was detected. Use the manual setup details below.");
   if (!rpcUrls.length || !rpcUrls.every(isWalletSafeRpc)) {
     throw new Error("A reachable RPC endpoint is required (HTTPS, or HTTP on localhost/an IP address).");
@@ -71,12 +87,12 @@ export async function addGydsNetwork(rpcUrls: string[], provider = getEthereumPr
   await provider.request({
     method: "wallet_addEthereumChain",
     params: [{
-      chainId: GYDS_NETWORK.chainId,
-      chainName: GYDS_NETWORK.chainName,
+      chainId: network.chainId,
+      chainName: network.chainName,
       rpcUrls,
-      nativeCurrency: GYDS_NETWORK.nativeCurrency,
-      blockExplorerUrls: [GYDS_NETWORK.blockExplorerUrl],
-      iconUrls: [new URL(GYDS_NETWORK.iconUrl, window.location.origin).toString()],
+      nativeCurrency: network.nativeCurrency,
+      blockExplorerUrls: [network.blockExplorerUrl],
+      iconUrls: [new URL(network.iconUrl, window.location.origin).toString()],
     }],
   });
 }

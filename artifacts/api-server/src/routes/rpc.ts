@@ -43,6 +43,7 @@ const NETWORK_CHAIN_IDS = {
 } as const;
 const TESTNET_RPC_ENDPOINTS = [
   firstHttpEndpoint(process.env.GYDS_TESTNET_RPC_URL, process.env.TESTNET_RPC_URL),
+  firstHttpEndpoint(process.env.GYDS_TESTNET_RPC_URL_2, process.env.TESTNET_RPC_URL_2),
   ...(RPC_CONNECTION_MODE === "remote" ? [] : LOCAL_RPC_ENDPOINTS),
 ].filter((endpoint): endpoint is string => Boolean(endpoint))
   .filter(isHttpEndpoint)
@@ -88,7 +89,7 @@ router.post("/", async (req, res) => {
         return;
       }
       endpoints = [node.rpcUrl];
-    } else {
+    } else if (requestedNetwork !== "testnet") {
       const nodes = await db.select({ rpcUrl: networkNodesTable.rpcUrl })
         .from(networkNodesTable)
         .where(and(eq(networkNodesTable.isActive, true), inArray(networkNodesTable.type, ["main", "full", "lite", "rpc", "boost"])));

@@ -22,6 +22,7 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
+GYDS_REMOTE_RPC_URL = "https://app.netlifegy.com/api/rpc"
 
 [nix]
 channel = "stable-25_05"

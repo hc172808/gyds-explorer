@@ -57,6 +57,18 @@ describe("active network RPC configuration", () => {
     expect(getExpectedChainId()).toBe(198282);
   });
 
+  it("uses the testnet proxy and chain ID when testnet is selected", () => {
+    setSelectedNetworkConfig({
+      type: "testnet",
+      name: "Testnet",
+      rpcEndpoints: [fixedRpcEndpoint("testnet")],
+      chainId: NETWORK_CHAIN_IDS.testnet,
+    });
+
+    expect(getRpcEndpoints()).toEqual(["/api/rpc?network=testnet"]);
+    expect(getExpectedChainId()).toBe(198281);
+  });
+
   it("accepts the reported chain ID for an admin-configured mainnet RPC", () => {
     setSelectedNetworkConfig({
       type: "custom",

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_PRIMARY_RPC, fixedRpcEndpoint, NETWORK_CHAIN_IDS, setSelectedNetworkConfig, type NetworkType } from "@/lib/networkConfig";
 
 export type { NetworkType } from "@/lib/networkConfig";
@@ -56,10 +57,11 @@ interface NetworkContextType {
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 export const NetworkProvider = ({ children }: { children: ReactNode }) => {
+  const queryClient = useQueryClient();
   const [networkType, setNetworkTypeState] = useState<NetworkType>(
     () => {
       const stored = lsGet(LS_KEY_NETWORK, DEFAULT_NETWORK_TYPE);
-      return stored === "custom" ? "custom" : "mainnet";
+      return stored === "testnet" || stored === "custom" ? stored : "mainnet";
     }
   );
   const [customRpcUrl, setCustomRpcUrlState] = useState("");
@@ -106,6 +108,12 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       rpcEndpoints: [fixedRpcEndpoint("mainnet")],
       chainId: NETWORK_CHAIN_IDS.mainnet,
     },
+    testnet: {
+      name: "Testnet",
+      type: "testnet",
+      rpcEndpoints: [fixedRpcEndpoint("testnet")],
+      chainId: NETWORK_CHAIN_IDS.testnet,
+    },
     custom: {
       name: "Custom RPC",
       type: "custom",
@@ -115,10 +123,15 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const network = NETWORKS[networkType];
+  const activeRpcKey = network.rpcEndpoints.join("|");
   setSelectedNetworkConfig({
     ...network,
     ...(networkType === "custom" ? { customRpcUrl: customRpcUrl.trim() } : {}),
   });
+
+  useEffect(() => {
+    void queryClient.invalidateQueries();
+  }, [activeRpcKey, networkType, queryClient]);
 
   return (
     <NetworkContext.Provider value={{

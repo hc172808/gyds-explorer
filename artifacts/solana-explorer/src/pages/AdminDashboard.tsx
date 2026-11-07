@@ -886,7 +886,10 @@ interface DeployedToken {
 }
 
 function TokensTab() {
-  const rpcUrl = proxyRpcUrl();
+  const { network, networkType } = useNetwork();
+  const rpcUrl = networkType === "custom"
+    ? network.rpcEndpoints[0] || ""
+    : proxyRpcUrl(undefined, networkType);
 
   // Form state
   const [tokenName,     setTokenName]     = useState("My GYDS Token");
@@ -898,7 +901,11 @@ function TokensTab() {
   const [showManual,    setShowManual]    = useState(false);
 
   // Deploy hook
-  const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(rpcUrl);
+  const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(
+    rpcUrl,
+    network.chainId,
+    network.name,
+  );
 
   // Deployed tokens registry (localStorage)
   const [deployedTokens, setDeployedTokens] = useState<DeployedToken[]>(() => {

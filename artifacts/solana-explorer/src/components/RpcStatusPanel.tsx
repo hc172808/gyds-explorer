@@ -4,7 +4,7 @@ import { checkRpcEndpoint, getRpcEndpoints, getSyncStatus } from "@/lib/rpc";
 import { useNetwork } from "@/contexts/NetworkContext";
 
 const RpcStatusPanel = () => {
-  const { networkType } = useNetwork();
+  const { network, networkType } = useNetwork();
   const endpoints = getRpcEndpoints();
 
   const { data: health, isFetching, refetch } = useQuery({
@@ -49,7 +49,7 @@ const RpcStatusPanel = () => {
             className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-secondary/40 px-3 py-2"
           >
               <span className="font-mono text-xs break-all">
-                {networkType === "custom" ? "Custom Mainnet RPC" : "Mainnet RPC service"}
+              {networkType === "custom" ? "Custom RPC" : `${network.name} RPC service`}
               </span>
             <span className="flex items-center gap-3 text-xs text-muted-foreground">
               {"blockNumber" in h && h.blockNumber !== undefined && (
