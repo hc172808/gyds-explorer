@@ -49,7 +49,9 @@ export default defineConfig({
     postcss: {
       plugins: [
         (await import("autoprefixer")).default(),
-        (await import("tailwindcss")).default(),
+        (await import("tailwindcss")).default({
+          config: path.resolve(import.meta.dirname, "tailwind.config.ts"),
+        }),
       ],
     },
   },
