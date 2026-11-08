@@ -128,6 +128,28 @@ contract GYDSToken {
         emit Transfer(address(0), to, raw);
     }
 
+    /**
+     * Capability marker used by the admin UI to distinguish precise minting
+     * from older deployments whose mint() argument is a whole-token amount.
+     */
+    function supportsRawMint() external pure returns (bool) {
+        return true;
+    }
+
+    /**
+     * Mint an exact amount in the token's smallest units.
+     * For six-decimal GYD, 1.25 tokens is passed as 1_250_000.
+     */
+    function mintRaw(address to, uint256 rawAmount) external onlyOwner {
+        require(mintable, "GYDSToken: token is not mintable");
+        require(to != address(0), "GYDSToken: mint to zero address");
+        require(rawAmount > 0, "GYDSToken: amount must be greater than zero");
+        totalSupply   += rawAmount;
+        balanceOf[to] += rawAmount;
+        emit Mint(to, rawAmount);
+        emit Transfer(address(0), to, rawAmount);
+    }
+
     // ── Burning ──────────────────────────────────────────────
     /**
      * Burn tokens from the caller's balance.

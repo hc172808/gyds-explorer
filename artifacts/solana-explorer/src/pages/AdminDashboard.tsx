@@ -37,6 +37,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { fetchAutoUpdateSettings, saveAutoUpdateSettings, type AutoUpdateSettings } from "@/lib/systemSettingsApi";
 import RpcStatusPanel from "@/components/RpcStatusPanel";
+import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, isAddress, parseUnits } from "ethers";
+import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "@/lib/useTokenDeploy";
 
 const API_BASE = API_BASE_URL;
 
@@ -826,6 +828,7 @@ contract ${name.replace(/\s+/g, "")}Token {
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Mint(address indexed to, uint256 amount);
 
     modifier onlyOwner() { require(msg.sender == owner, "Not owner"); _; }
 
@@ -859,10 +862,24 @@ contract ${name.replace(/\s+/g, "")}Token {
         return true;
     }${mintable ? `
     function mint(address to, uint256 amount) public onlyOwner {
+        require(mintable, "Token is not mintable");
         uint256 raw = amount * (10 ** uint256(decimals));
         totalSupply   += raw;
         balanceOf[to] += raw;
+        emit Mint(to, raw);
         emit Transfer(address(0), to, raw);
+    }
+    function mintRaw(address to, uint256 rawAmount) public onlyOwner {
+        require(mintable, "Token is not mintable");
+        require(to != address(0), "Mint to zero address");
+        require(rawAmount > 0, "Amount must be greater than zero");
+        totalSupply   += rawAmount;
+        balanceOf[to] += rawAmount;
+        emit Mint(to, rawAmount);
+        emit Transfer(address(0), to, rawAmount);
+    }
+    function supportsRawMint() public pure returns (bool) {
+        return true;
     }` : ""}
     function burn(uint256 amount) public {
         require(balanceOf[msg.sender] >= amount, "Insufficient balance");
@@ -881,6 +898,281 @@ interface DeployedToken {
   deployedAt: string;
 }
 
+const GYD_ADMIN_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
+  "function owner() view returns (address)",
+  "function mintable() view returns (bool)",
+  "function supportsRawMint() view returns (bool)",
+  "function mintRaw(address to, uint256 rawAmount)",
+  "function mint(address to, uint256 amount)",
+];
+
+interface GydContractInfo {
+  symbol: string;
+  decimals: number;
+  totalSupply: bigint;
+  owner: string;
+  mintable: boolean;
+  supportsRawMint: boolean;
+}
+
+function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: number }) {
+  const [contractAddress, setContractAddress] = useState("");
+  const [contractInfo, setContractInfo] = useState<GydContractInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const [minting, setMinting] = useState(false);
+  const [txHash, setTxHash] = useState("");
+  const session = getStoredSession();
+  const isAuthorizedSession = Boolean(session && isPrivilegedSession(session));
+  const isOwnerSession = Boolean(
+    isAuthorizedSession &&
+    contractInfo &&
+    session?.walletAddress.toLowerCase() === contractInfo.owner.toLowerCase(),
+  );
+
+  const loadContract = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const settings = await fetchCoinSettings();
+      const setting = settings.find((coin) => coin.symbol.toUpperCase() === "GYD");
+      const address = setting?.contractAddress?.trim() || "";
+      setContractAddress(address);
+      if (!address) {
+        setContractInfo(null);
+        return;
+      }
+      if (!isAddress(address)) throw new Error("The GYD contract address in Admin → Coins is invalid.");
+
+      const contract = new Contract(address, GYD_ADMIN_ABI, new JsonRpcProvider(rpcUrl));
+      const [symbol, decimals, totalSupply, owner, mintable] = await Promise.all([
+        contract.symbol(),
+        contract.decimals(),
+        contract.totalSupply(),
+        contract.owner(),
+        contract.mintable(),
+      ]);
+      let supportsRawMint = false;
+      try {
+        supportsRawMint = Boolean(await contract.supportsRawMint());
+      } catch {
+        // Older deployments do not expose the raw-unit mint capability marker.
+      }
+      if (String(symbol).toUpperCase() !== "GYD" || Number(decimals) !== 6) {
+        throw new Error("The configured GYD contract must report symbol GYD and use 6 decimals.");
+      }
+      setContractInfo({
+        symbol: String(symbol),
+        decimals: Number(decimals),
+        totalSupply: BigInt(totalSupply),
+        owner: String(owner),
+        mintable: Boolean(mintable),
+        supportsRawMint,
+      });
+    } catch (error) {
+      setContractInfo(null);
+      setLoadError(error instanceof Error ? error.message : "Could not read the GYD contract.");
+    } finally {
+      setLoading(false);
+    }
+  }, [rpcUrl]);
+
+  useEffect(() => { void loadContract(); }, [loadContract, refreshKey]);
+
+  const handleMint = async () => {
+    const currentSession = getStoredSession();
+    if (!currentSession || !isPrivilegedSession(currentSession)) {
+      toast.error("Sign in with an authorized admin wallet before minting.");
+      return;
+    }
+    if (!contractAddress || !contractInfo) {
+      toast.error("Deploy and register the GYD contract before minting.");
+      return;
+    }
+    if (currentSession.walletAddress.toLowerCase() !== contractInfo.owner.toLowerCase()) {
+      toast.error("This admin wallet is not the on-chain GYD owner.");
+      return;
+    }
+    if (!contractInfo.mintable) {
+      toast.error("This GYD contract was deployed with minting disabled.");
+      return;
+    }
+    if (!isAddress(recipient) || recipient.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+      toast.error("Enter a valid, non-zero recipient wallet address.");
+      return;
+    }
+    if (!amount.trim()) {
+      toast.error("Enter the amount of GYD to mint.");
+      return;
+    }
+
+    let rawAmount: bigint;
+    try {
+      rawAmount = parseUnits(amount.trim(), contractInfo.decimals);
+    } catch {
+      toast.error(`Enter a valid amount with no more than ${contractInfo.decimals} decimal places.`);
+      return;
+    }
+    if (rawAmount <= 0n) {
+      toast.error("Mint amount must be greater than zero.");
+      return;
+    }
+    if (!contractInfo.supportsRawMint && !/^\d+$/.test(amount.trim())) {
+      toast.error("This older GYD contract only supports minting whole tokens.");
+      return;
+    }
+
+    const amountLabel = `${amount.trim()} GYD`;
+    if (!window.confirm(`Mint ${amountLabel} to ${recipient}? This action changes the token supply. It does not verify reserves or maintain the GYD peg.`)) {
+      return;
+    }
+
+    const ethereum = (window as any).ethereum;
+    if (!ethereum) {
+      toast.error("MetaMask or another browser wallet is required to mint.");
+      return;
+    }
+
+    setMinting(true);
+    setTxHash("");
+    try {
+      let browserProvider = new BrowserProvider(ethereum);
+      await browserProvider.send("eth_requestAccounts", []);
+      let signer = await browserProvider.getSigner();
+      let signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("Connect the same wallet used for this admin session.");
+      }
+
+      const network = await browserProvider.getNetwork();
+      if (network.chainId !== GYDS_CHAIN_ID) {
+        try {
+          await browserProvider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+        } catch (switchError: any) {
+          if (switchError?.code === 4902) {
+            await browserProvider.send("wallet_addEthereumChain", [{
+              chainId: GYDS_CHAIN_HEX,
+              chainName: "GYDS Network",
+              rpcUrls: [rpcUrl],
+              nativeCurrency: { name: "GYDS", symbol: "GYDS", decimals: 18 },
+            }]);
+            await browserProvider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+          } else {
+            throw switchError;
+          }
+        }
+        browserProvider = new BrowserProvider(ethereum);
+        signer = await browserProvider.getSigner();
+        signerAddress = await signer.getAddress();
+      }
+      if (signerAddress.toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("The connected wallet changed. Reconnect the authenticated admin wallet.");
+      }
+      if ((await browserProvider.getNetwork()).chainId !== GYDS_CHAIN_ID) {
+        throw new Error("Switch your wallet to GYDS Network (chain ID 198282).");
+      }
+
+      const contract = new Contract(contractAddress, GYD_ADMIN_ABI, signer);
+      const [owner, mintable, symbol, decimals] = await Promise.all([
+        contract.owner(),
+        contract.mintable(),
+        contract.symbol(),
+        contract.decimals(),
+      ]);
+      if (String(owner).toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("The on-chain GYD owner does not match this admin wallet.");
+      }
+      if (!Boolean(mintable) || String(symbol).toUpperCase() !== "GYD" || Number(decimals) !== 6) {
+        throw new Error("The registered contract is no longer a mintable six-decimal GYD token.");
+      }
+
+      const tx = contractInfo.supportsRawMint
+        ? await contract.mintRaw(recipient, rawAmount)
+        : await contract.mint(recipient, BigInt(amount.trim()));
+      setTxHash(tx.hash);
+      await tx.wait();
+      toast.success("GYD mint confirmed", { description: `${amountLabel} sent to ${recipient}` });
+      setAmount("");
+      await loadContract();
+    } catch (error: any) {
+      toast.error("GYD mint failed", {
+        description: error?.shortMessage || error?.reason || error?.message || "Transaction was not completed.",
+      });
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-amber-500/30 bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-amber-500/20 bg-amber-500/5">
+        <Shield className="w-4 h-4 text-amber-500" />
+        <h2 className="font-semibold text-sm">Admin-approved GYD minting</h2>
+        <span className="ml-auto text-xs text-muted-foreground">Owner wallet required</span>
+      </div>
+      <div className="p-5 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          GYD uses 6 decimals. Minting creates new tokens and does not verify collateral, reserves, swaps, or the stablecoin peg.
+        </p>
+        {loading ? (
+          <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading GYD contract…</p>
+        ) : loadError ? (
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{loadError}</div>
+        ) : !contractAddress ? (
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 text-sm text-muted-foreground">
+            No GYD contract is registered yet. Use the GYD preset above to deploy a mintable six-decimal contract, then it will appear here.
+          </div>
+        ) : contractInfo ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border bg-secondary/20 p-3 text-xs">
+              <p><span className="text-muted-foreground">Contract:</span> <code className="break-all">{contractAddress}</code></p>
+              <p><span className="text-muted-foreground">Owner:</span> <code className="break-all">{contractInfo.owner}</code></p>
+              <p><span className="text-muted-foreground">Total supply:</span> {formatUnits(contractInfo.totalSupply, contractInfo.decimals)} GYD</p>
+              <p><span className="text-muted-foreground">Minting:</span> {contractInfo.mintable ? "Enabled" : "Disabled"}</p>
+            </div>
+            {!isAuthorizedSession ? (
+              <p className="text-sm text-destructive">An authorized admin session is required.</p>
+            ) : !isOwnerSession ? (
+              <p className="text-sm text-amber-600">The signed-in admin wallet is not the on-chain owner of this GYD contract.</p>
+            ) : !contractInfo.mintable ? (
+              <p className="text-sm text-destructive">Minting is disabled in this contract and cannot be enabled from this screen.</p>
+            ) : (
+              <div className="space-y-3">
+                {!contractInfo.supportsRawMint && (
+                  <p className="text-xs text-amber-600">Legacy contract detected: only whole-token mint amounts are supported.</p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Recipient wallet</label>
+                    <Input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="0x…" className="font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Amount in GYD</label>
+                    <Input type="number" min="0" step={contractInfo.supportsRawMint ? "0.000001" : "1"} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={contractInfo.supportsRawMint ? "e.g. 125.50" : "Whole tokens only"} />
+                  </div>
+                </div>
+                <Button onClick={handleMint} disabled={minting || !isOwnerSession} className="gap-2">
+                  {minting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
+                  {minting ? "Minting…" : "Mint GYD"}
+                </Button>
+                <Button variant="outline" size="sm" disabled={loading || minting} onClick={() => void loadContract()} className="ml-2 gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh supply
+                </Button>
+                {txHash && <p className="text-xs text-muted-foreground break-all">Transaction: {txHash}</p>}
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function TokensTab() {
   const { network, networkType } = useNetwork();
   const rpcUrl = networkType === "custom"
@@ -895,6 +1187,16 @@ function TokensTab() {
   const [mintable,      setMintable]      = useState(false);
   const [showCode,      setShowCode]      = useState(false);
   const [showManual,    setShowManual]    = useState(false);
+  const [gydRefreshKey, setGydRefreshKey] = useState(0);
+
+  const applyGydPreset = () => {
+    setTokenName("GYD Stablecoin");
+    setTokenSymbol("GYD");
+    setTokenDecimals("6");
+    setTokenSupply("0");
+    setMintable(true);
+    toast.success("GYD stablecoin preset applied");
+  };
 
   // Deploy hook
   const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(
@@ -959,20 +1261,41 @@ function TokensTab() {
       toast.error("Token name and symbol are required.");
       return;
     }
-    if (!tokenSupply || Number(tokenSupply) <= 0) {
-      toast.error("Initial supply must be greater than 0.");
+    const isGyd = tokenSymbol.trim().toUpperCase() === "GYD";
+    if (!/^\d+$/.test(tokenSupply) || Number(tokenSupply) < 0 || (!isGyd && Number(tokenSupply) === 0)) {
+      toast.error(isGyd ? "Initial supply must be a whole number of zero or more." : "Initial supply must be a positive whole number.");
+      return;
+    }
+    const decimals = Number(tokenDecimals);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      toast.error("Decimals must be a whole number from 0 to 18.");
+      return;
+    }
+    if (isGyd && (decimals !== 6 || !mintable)) {
+      toast.error("GYD must use 6 decimals with owner-controlled minting enabled.");
+      return;
+    }
+    if (isGyd && networkType !== "mainnet") {
+      toast.error("Deploy the GYD stablecoin on GYDS Mainnet, not Testnet or a custom network.");
+      return;
+    }
+    const session = getStoredSession();
+    if (isGyd && (!session || !isPrivilegedSession(session))) {
+      toast.error("An authorized admin session is required to deploy GYD.");
       return;
     }
     const result = await deploy({
       name:          tokenName.trim(),
       symbol:        tokenSymbol.trim(),
-      decimals:      parseInt(tokenDecimals) || 6,
+      decimals,
       initialSupply: tokenSupply,
       mintable,
+      expectedDeployer: isGyd ? session?.walletAddress : undefined,
     });
     if (result) {
       saveTokenToRegistry(result);
       await publishTokenSettings(result);
+      if (result.symbol.toUpperCase() === "GYD") setGydRefreshKey((key) => key + 1);
       toast.success(`${result.name} (${result.symbol}) deployed at ${result.contractAddress.slice(0, 10)}…`);
     }
   };
@@ -1032,6 +1355,13 @@ Currency:      GYDS`;
           <p className="text-sm text-muted-foreground">
             Configure your token parameters, then deploy to the GYDS network using Remix IDE or the geth console.
           </p>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium">GYD stablecoin</p>
+              <p className="text-xs text-muted-foreground">Preset: 6 decimals, zero initial supply, and admin-controlled minting.</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={applyGydPreset}>Use GYD preset</Button>
+          </div>
 
           {/* Token params grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1049,7 +1379,7 @@ Currency:      GYDS`;
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Initial Supply (whole tokens)</label>
-              <Input type="number" min={1} value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="1000000" />
+              <Input type="number" min={tokenSymbol.trim().toUpperCase() === "GYD" ? 0 : 1} step={1} value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="1000000" />
             </div>
           </div>
 
@@ -1109,6 +1439,8 @@ Currency:      GYDS`;
           </div>
         </div>
       </div>
+
+      <GydMintPanel rpcUrl={proxyRpcUrl(undefined, "mainnet")} refreshKey={gydRefreshKey} />
 
       {/* Deploy on GYDS Chain */}
       <div className="rounded-xl border border-primary/40 bg-card overflow-hidden">

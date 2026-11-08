@@ -25,6 +25,7 @@ export interface DeployParams {
   decimals: number;
   initialSupply: string;
   mintable: boolean;
+  expectedDeployer?: string;
 }
 
 export function useTokenDeploy(
@@ -56,6 +57,9 @@ export function useTokenDeploy(
       const provider = new BrowserProvider(ethereum);
       await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
+      if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+        throw new Error("Connect the admin wallet that will own this token before deploying GYD.");
+      }
       setDeployer(signer.address);
 
       // Confirm the selected RPC and wallet target the same chain. Custom RPC
@@ -94,6 +98,9 @@ export function useTokenDeploy(
         // Re-acquire signer after switch
         const refreshed = new BrowserProvider(ethereum);
         const refreshedSigner = await refreshed.getSigner();
+        if (params.expectedDeployer && refreshedSigner.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+          throw new Error("The connected wallet changed. Reconnect the admin wallet that will own this token.");
+        }
         setDeployer(refreshedSigner.address);
 
         // Deploy
@@ -110,6 +117,9 @@ export function useTokenDeploy(
   };
 
   const _deploy = async (signer: any, params: DeployParams): Promise<DeployResult | null> => {
+    if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+      throw new Error("The connected wallet does not match the authenticated admin wallet.");
+    }
     setStatus("deploying");
 
     const factory  = new ContractFactory(TOKEN_ARTIFACT.abi, TOKEN_ARTIFACT.bytecode, signer);
