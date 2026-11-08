@@ -1,4 +1,5 @@
 import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "./useTokenDeploy";
+import { NETWORK_CHAIN_IDS } from "./networkConfig";
 
 export interface WalletNetworkConfig {
   chainId: string;
@@ -34,17 +35,71 @@ export const GYD_TOKEN = {
 export type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   isMetaMask?: boolean;
+  isPhantom?: boolean;
+  isTrust?: boolean;
+  isTrustWallet?: boolean;
+  isCoinbaseWallet?: boolean;
   providers?: EthereumProvider[];
 };
 
+function injectedEthereumProviders(): EthereumProvider[] {
+  const walletWindow = window as Window & {
+    ethereum?: EthereumProvider;
+    phantom?: { ethereum?: EthereumProvider };
+    trustwallet?: { ethereum?: EthereumProvider };
+    trustWallet?: { ethereum?: EthereumProvider };
+  };
+  const ethereum = walletWindow.ethereum;
+  return [
+    ...(Array.isArray(ethereum?.providers) ? ethereum.providers : []),
+    ethereum,
+    walletWindow.phantom?.ethereum,
+    walletWindow.trustwallet?.ethereum,
+    walletWindow.trustWallet?.ethereum,
+  ].filter((provider): provider is EthereumProvider => Boolean(provider));
+}
+
 export function getEthereumProvider(): EthereumProvider | null {
-  const injected = (window as Window & { ethereum?: EthereumProvider }).ethereum;
-  if (!injected) return null;
   // Multiple wallet extensions can inject one provider that proxies requests
-  // through a fragile transport. Prefer MetaMask's direct provider when it is
-  // available, while retaining compatibility with single-provider wallets.
-  const candidates = Array.isArray(injected.providers) ? injected.providers : [injected];
-  return candidates.find((provider) => provider.isMetaMask) ?? candidates[0] ?? null;
+  // through a fragile transport. Prefer MetaMask, then Phantom, while also
+  // supporting Trust Wallet and other EIP-1193 injected wallets.
+  const candidates = [...new Set(injectedEthereumProviders())];
+  return candidates.find((provider) => provider.isMetaMask)
+    ?? candidates.find((provider) => provider.isPhantom)
+    ?? candidates.find((provider) => provider.isTrust || provider.isTrustWallet)
+    ?? candidates[0]
+    ?? null;
+}
+
+/** Find the injected wallet that currently exposes the account used by the page. */
+export async function getEthereumProviderForAccount(accountAddress: string): Promise<EthereumProvider | null> {
+  const candidates = new Set(injectedEthereumProviders());
+  const announcements: EthereumProvider[] = [];
+  const handleAnnouncement = (event: Event) => {
+    const provider = (event as CustomEvent<{ provider?: EthereumProvider }>).detail?.provider;
+    if (provider) announcements.push(provider);
+  };
+
+  window.addEventListener("eip6963:announceProvider", handleAnnouncement);
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+  await new Promise((resolve) => window.setTimeout(resolve, 200));
+  window.removeEventListener("eip6963:announceProvider", handleAnnouncement);
+  announcements.forEach((provider) => candidates.add(provider));
+
+  for (const provider of candidates) {
+    try {
+      const accounts = await provider.request({ method: "eth_accounts" });
+      if (
+        Array.isArray(accounts) &&
+        accounts.some((account) => typeof account === "string" && account.toLowerCase() === accountAddress.toLowerCase())
+      ) {
+        return provider;
+      }
+    } catch {
+      // A wallet that is locked or disconnected cannot be used for this action.
+    }
+  }
+  return null;
 }
 
 export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] {
@@ -97,10 +152,49 @@ export async function addGydsNetwork(
   });
 }
 
-export async function addGydToken(provider = getEthereumProvider()) {
-  if (!provider) throw new Error("No compatible wallet was detected. Use the manual token import details below.");
-  if (!/^0x[a-fA-F0-9]{40}$/.test(GYD_TOKEN.address)) {
-    throw new Error("The official GYD contract address has not been configured yet.");
+export async function switchToGydsNetwork(
+  provider: EthereumProvider,
+  rpcUrls: string[],
+  network: "mainnet" | "testnet" = "mainnet",
+) {
+  const chainId = network === "testnet" ? BigInt(NETWORK_CHAIN_IDS.testnet) : GYDS_CHAIN_ID;
+  const chainHex = `0x${chainId.toString(16)}`;
+  const walletNetwork: WalletNetworkConfig = network === "testnet"
+    ? { ...GYDS_NETWORK, chainId: chainHex, chainName: "GYDS Testnet" }
+    : GYDS_NETWORK;
+  const currentChainId = await provider.request({ method: "eth_chainId" });
+  if (typeof currentChainId === "string" && BigInt(currentChainId) === chainId) return;
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chainHex }],
+    });
+  } catch (error) {
+    if ((error as { code?: number })?.code !== 4902) throw error;
+    await addGydsNetwork(rpcUrls, walletNetwork, provider);
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chainHex }],
+    });
+  }
+}
+
+export interface WalletTokenAsset {
+  address: string;
+  symbol: string;
+  decimals: number;
+  image?: string | null;
+}
+
+export async function addTokenToWallet(
+  asset: WalletTokenAsset,
+  provider = getEthereumProvider(),
+) {
+  if (!provider) throw new Error("No compatible Web3 wallet was detected.");
+  if (!/^0x[a-fA-F0-9]{40}$/.test(asset.address)) throw new Error("The token contract address is invalid.");
+  if (!asset.symbol.trim() || !Number.isInteger(asset.decimals) || asset.decimals < 0 || asset.decimals > 255) {
+    throw new Error("Token symbol or decimals are invalid.");
   }
 
   const accepted = await provider.request({
@@ -108,14 +202,27 @@ export async function addGydToken(provider = getEthereumProvider()) {
     params: [{
       type: "ERC20",
       options: {
-        address: GYD_TOKEN.address,
-        symbol: GYD_TOKEN.symbol,
-        decimals: GYD_TOKEN.decimals,
-        image: new URL(GYD_TOKEN.image, window.location.origin).toString(),
+        address: asset.address,
+        symbol: asset.symbol.trim(),
+        decimals: asset.decimals,
+        ...(asset.image ? { image: new URL(asset.image, window.location.origin).toString() } : {}),
       },
     }],
   });
-  if (accepted === false) throw new Error("The wallet declined the GYD token import.");
+  if (accepted === false) throw new Error("The wallet declined the token import.");
+}
+
+export async function addGydToken(provider = getEthereumProvider()) {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(GYD_TOKEN.address)) {
+    throw new Error("The official GYD contract address has not been configured yet.");
+  }
+
+  await addTokenToWallet({
+    address: GYD_TOKEN.address,
+    symbol: GYD_TOKEN.symbol,
+    decimals: GYD_TOKEN.decimals,
+    image: GYD_TOKEN.image,
+  }, provider);
 }
 
 export function getWalletError(error: unknown): string {

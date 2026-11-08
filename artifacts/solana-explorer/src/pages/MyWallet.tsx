@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, Copy, ExternalLink, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Copy, ExternalLink, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type PublicNetworkNode } from "@/lib/networkApi";
-import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
-import { GYD_TOKEN, getEthereumProvider, getWalletError } from "@/lib/wallet";
+import { fetchTokenBalances, GYDS_CHAIN_ID, type TokenBalance } from "@/lib/useTokenDeploy";
+import {
+  addTokenToWallet,
+  getEthereumProvider,
+  getEthereumProviderForAccount,
+  getRpcUrls,
+  getWalletError,
+  GYD_TOKEN,
+  switchToGydsNetwork,
+} from "@/lib/wallet";
 import { dashboardPathFor, signInWithWallet } from "@/lib/session";
 import { toast } from "sonner";
 
@@ -30,6 +38,16 @@ interface RegisteredToken {
   name: string;
   symbol?: string;
   decimals?: number;
+}
+
+interface WalletImportAsset {
+  key: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  contractAddress: string | null;
+  logoUrl?: string | null;
+  isNative?: boolean;
 }
 
 function shortAddress(address: string) {
@@ -71,6 +89,7 @@ export default function MyWallet() {
   const [sendTo, setSendTo] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sending, setSending] = useState(false);
+  const [addingAsset, setAddingAsset] = useState("");
 
   const fallbackNode = useMemo<PublicNetworkNode>(() => ({
     id: 0,
@@ -164,6 +183,40 @@ export default function MyWallet() {
     toast.success(`${label} copied`);
   };
 
+  const addAsset = async (asset: WalletImportAsset) => {
+    setAddingAsset(asset.key);
+    try {
+      const provider = await getEthereumProviderForAccount(address);
+      if (!provider) {
+        throw new Error("Unlock the wallet that matches this address and try again.");
+      }
+      const mainnetRpc = proxyRpcUrl(undefined, "mainnet");
+      await switchToGydsNetwork(provider, getRpcUrls(mainnetRpc));
+      const activeChain = await provider.request({ method: "eth_chainId" });
+      if (typeof activeChain !== "string" || BigInt(activeChain) !== GYDS_CHAIN_ID) {
+        throw new Error("The wallet did not switch to GYDS Mainnet.");
+      }
+
+      if (asset.isNative) {
+        toast.success("GYDS Mainnet is ready in your wallet");
+      } else if (asset.contractAddress) {
+        await addTokenToWallet({
+          address: asset.contractAddress,
+          symbol: asset.symbol,
+          decimals: asset.decimals,
+          image: asset.logoUrl,
+        }, provider);
+        toast.success(`${asset.symbol} added to your wallet`);
+      } else {
+        throw new Error("This token does not have a registered contract address.");
+      }
+    } catch (error) {
+      toast.error("Could not add asset to wallet", { description: getWalletError(error) });
+    } finally {
+      setAddingAsset("");
+    }
+  };
+
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!address || !/^0x[0-9a-fA-F]{40}$/.test(sendTo)) {
@@ -221,6 +274,45 @@ export default function MyWallet() {
 
   const nativeCoin = coins.find((coin) => coin.symbol.toUpperCase() === "GYDS") || DEFAULT_COINS[0];
   const stableCoin = coins.find((coin) => coin.symbol.toUpperCase() === "GYD") || DEFAULT_COINS[1];
+  const walletImportAssets = useMemo<WalletImportAsset[]>(() => {
+    const assets: WalletImportAsset[] = [{
+      key: "native:GYDS",
+      name: nativeCoin.name,
+      symbol: nativeCoin.symbol,
+      decimals: nativeCoin.decimals,
+      contractAddress: null,
+      logoUrl: nativeCoin.logoUrl,
+      isNative: true,
+    }];
+    const seen = new Set<string>();
+    const addToken = (asset: WalletImportAsset) => {
+      const addressKey = asset.contractAddress?.toLowerCase();
+      if (!addressKey || !/^0x[a-f0-9]{40}$/.test(addressKey) || seen.has(addressKey)) return;
+      seen.add(addressKey);
+      assets.push(asset);
+    };
+
+    coins
+      .filter((coin) => coin.symbol.toUpperCase() !== "GYDS")
+      .forEach((coin) => addToken({
+        key: `token:${coin.symbol}:${coin.contractAddress || ""}`,
+        name: coin.name,
+        symbol: coin.symbol,
+        decimals: coin.decimals,
+        contractAddress: coin.contractAddress || (coin.symbol.toUpperCase() === "GYD" ? GYD_TOKEN.address || null : null),
+        logoUrl: coin.logoUrl,
+      }));
+    registeredTokens
+      .filter((token): token is RegisteredToken & { symbol: string } => Boolean(token.symbol?.trim()))
+      .forEach((token) => addToken({
+        key: `token:${token.address}`,
+        name: token.name,
+        symbol: token.symbol.trim(),
+        decimals: Number.isInteger(token.decimals) ? Number(token.decimals) : 6,
+        contractAddress: token.address,
+      }));
+    return assets;
+  }, [coins, nativeCoin, registeredTokens]);
   const portfolio = useMemo(() => {
     const source = balances.find((result) => !result.error && result.native !== null);
     if (!source || source.native === null) return [];
@@ -259,6 +351,9 @@ export default function MyWallet() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-1.5">
+              <Link to="/swap"><ArrowLeftRight className="w-4 h-4" /> Swap</Link>
+            </Button>
             {address && <Button variant="outline" size="sm" onClick={() => setShowReceive(true)} className="gap-1.5"><ArrowDownToLine className="w-4 h-4" /> Receive</Button>}
             {address && <Button size="sm" onClick={() => setShowSend(true)} className="gap-1.5"><ArrowUpFromLine className="w-4 h-4" /> Send</Button>}
             {isEmbedded ? (
@@ -281,6 +376,42 @@ export default function MyWallet() {
             <span className="font-mono text-sm break-all">{address}</span>
             <Button variant="ghost" size="sm" onClick={() => copy(address, "Wallet address")} className="gap-1.5"><Copy className="w-3.5 h-3.5" /> Copy</Button>
           </div>
+        )}
+
+        {address && (
+          <section className="rounded-2xl border border-border bg-card p-5">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Add coins to your wallet</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Token imports use your wallet’s Web3 request. Your wallet must support token imports and be on GYDS Mainnet.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {walletImportAssets.map((asset) => (
+                <div key={asset.key} className="flex items-center gap-3 rounded-xl border border-border bg-secondary/20 p-3">
+                  {asset.logoUrl ? (
+                    <img src={asset.logoUrl} alt="" className="h-9 w-9 rounded-full bg-secondary object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{asset.symbol.slice(0, 2)}</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{asset.name}</p>
+                    <p className="text-xs text-muted-foreground">{asset.symbol}{asset.isNative ? " · Native coin" : ` · ${asset.decimals} decimals`}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={Boolean(addingAsset)}
+                    onClick={() => void addAsset(asset)}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {addingAsset === asset.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}
+                    {addingAsset === asset.key ? "Adding…" : asset.isNative ? "Add network" : "Add to wallet"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {!address ? (
