@@ -1433,13 +1433,16 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = getStoredToken();
     const session = getStoredSession();
-    if (session && !isPrivilegedSession(session)) {
+    if (!session) {
+      setIsAuthenticated(false);
+      return;
+    }
+    if (!isPrivilegedSession(session)) {
       navigate("/dashboard", { replace: true });
       return;
     }
-    if (token) setIsAuthenticated(true);
+    setIsAuthenticated(true);
   }, [navigate]);
 
   if (!isAuthenticated) {
