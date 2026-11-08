@@ -72,7 +72,7 @@ LOG_DIR="/var/log/gyds"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
 CHAIN_ID=198282
 NETWORK_ID=198282
-NATIVE_DECIMALS=9
+NATIVE_DECIMALS=18
 NATIVE_SUPPLY=1000000000
 NODE_NAME="gyds-node"
 SERVICE_NAME="gyds-node"
@@ -121,7 +121,7 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   FULL_NODE_IPS       comma-separated IPs of full nodes (for lite)
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
-#   NATIVE_DECIMALS     native GYDS precision (must remain 9)
+#   NATIVE_DECIMALS     native GYDS precision (must remain 18)
 #   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
 #   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
 #   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
@@ -206,7 +206,7 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "9" ]] || err "NATIVE_DECIMALS must be 9 for GYDS."
+[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
 [[ "$ADMIN_SUPPLY" =~ ^[0-9]+$ ]] || err "ADMIN_SUPPLY must be a whole number."
 [ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
@@ -216,7 +216,7 @@ ADMIN_SUPPLY_VALUE=$((10#${ADMIN_SUPPLY}))
 [ "$NATIVE_SUPPLY_VALUE" -le 1000000000 ] || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
 [ "$ADMIN_SUPPLY_VALUE" -le "$NATIVE_SUPPLY_VALUE" ] || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
 ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
-NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY_VALUE}${ZEROS}"   # raw EVM base units (9 decimals)
+NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY_VALUE}${ZEROS}"   # raw EVM base units (18 decimals)
 info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
 
 echo ""

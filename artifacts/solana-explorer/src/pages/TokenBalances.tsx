@@ -211,7 +211,7 @@ export default function TokenBalances() {
                 <span className="text-xs text-muted-foreground">{tokenBalances.length + 1} asset{tokenBalances.length === 0 ? "" : "s"}</span>
               </div>
               <div className="divide-y divide-border">
-                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals || 9)} GYDS</span></div>
+                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals ?? 18)} GYDS</span></div>
                 {tokenBalances.map((token) => (
                   <div key={`combined-${token.contractAddress}`} className="flex items-center justify-between px-5 py-3 text-sm"><span>{token.name} <span className="text-xs text-muted-foreground">({token.symbol})</span></span><span className="font-mono font-semibold">{fmt(token.balance, token.decimals)} {token.symbol}</span></div>
                 ))}

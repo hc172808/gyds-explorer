@@ -300,7 +300,7 @@ verified before a production deployment.
   - Full name: `GYDSChain`
   - Symbol: `GYDS`
   - Requested initial/max supply: `1,000,000,000 GYDS`
-  - Native decimals: `9` (must be verified against the chain protocol and
+  - Native decimals: `18` (must be verified against the chain protocol and
     genesis configuration).
 - [ ] Treat **GYD** as a separate token deployed on GYDSChain:
   - Token name: `GYD` or the final approved full name
@@ -318,7 +318,7 @@ verified before a production deployment.
   - GYD: fixed `10B` cap, or controlled minting against verified reserves.
 - [ ] Record the smallest unit and display precision for both assets, and use
       integer base units for all balances and supply calculations:
-  - GYDS: 9 decimals (`1 GYDS = 1,000,000,000` base units).
+  - GYDS: 18 decimals (`1 GYDS = 1,000,000,000,000,000,000` base units).
   - GYD: 6 decimals (`1 GYD = 1,000,000` base units).
 
 ## 14. Add coin logo and project information
@@ -356,7 +356,7 @@ verified before a production deployment.
 
       VITE_NATIVE_COIN_NAME=GYDSChain
       VITE_NATIVE_COIN_SYMBOL=GYDS
-       VITE_NATIVE_COIN_DECIMALS=9
+       VITE_NATIVE_COIN_DECIMALS=18
       VITE_NATIVE_COIN_SUPPLY=1000000000
        VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
       VITE_NATIVE_COIN_DESCRIPTION=
@@ -412,7 +412,7 @@ verified before a production deployment.
 - [ ] Confirm the production consensus and execution stack:
   - Geth/EVM version and supported hardfork.
   - Consensus mode, validator authority, block time, gas limit, and chain ID.
-  - Native GYDS uses a `9`-decimal base-unit/display convention. EVM does not
+  - Native GYDS uses an `18`-decimal base-unit/display convention. EVM does not
     store native-currency decimal metadata, so every wallet, RPC integration,
     and gas display must implement the convention consistently.
   - Genesis file, alloc accounts, premines, validator set, and bootnodes.
@@ -471,9 +471,9 @@ are produced.
   copy the main genesis, but the setup does not enforce one expected genesis
   hash across the network. Archive the exact reviewed genesis and verify the
   same hash on every node before joining it.
-- `NATIVE_DECIMALS=9` is enforced by the setup script, and genesis allocations
-  multiply whole GYDS by `10^9`. The project decimals checker passes for GYDS
-  `9` and GYD `6`; that verifies repository consistency, not compatibility with
+- `NATIVE_DECIMALS=18` is enforced by the setup script, and genesis allocations
+  multiply whole GYDS by `10^18`. The project decimals checker passes for GYDS
+  `18` and GYD `6`; that verifies repository consistency, not compatibility with
   generic wallets or external RPC clients.
 - RPC and boost roles default to public RPC. They bind HTTP/WS to all interfaces
   and allow wildcard host/origin settings; the setup warns operators to put
@@ -582,7 +582,7 @@ one server with separate services, data directories, and ports. Keep staging
   - Separate authenticated internal RPC for operations.
 - [ ] Configure transaction and gas policy:
   - Minimum gas price, base-fee rules, gas limit, and fee recipient/burn rules.
-  - Verify how 9-decimal GYDS interacts with EVM wallet display and gas math.
+  - Verify how 18-decimal GYDS interacts with EVM wallet display and gas math.
   - Document whether users need GYDS for gas before they can send tokens.
 - [ ] Run health checks for block height, peer count, consensus progress, RPC
       latency, chain ID, genesis hash, disk space, memory, CPU, and clock drift.
@@ -1308,7 +1308,7 @@ protocol balances have been erased.
 
 - [ ] **Staging end-to-end smoke test** that hits `rpc.netlifegy.com` and
       `rpc2.netlifegy.com` from a staging environment and verifies chain id,
-      latest block, and a sample transfer render correctly with 9 decimals
+      latest block, and a sample transfer render correctly with 18 decimals
       (run in CI against staging, not the sandbox).
 - [ ] **UI decimals guard**: detect when fetched/assumed GYDS decimals differ
       from `chain-spec.json` and show a clear warning banner stating the
@@ -1362,8 +1362,8 @@ protocol balances have been erased.
       PUBLIC_RPC, RPC_ALLOWED_METHODS, RPC_RATE_LIMIT, MAIN_NODE_IP,
       MAIN_NODE_ENODE, FULL_NODE_IPS, VALIDATOR_ADDRESS, ADMIN_WALLET,
       ADMIN_WALLET_LABEL, ADMIN_SUPPLY, EXPLORER_API_URL) with safe defaults,
-      and set `NATIVE_DECIMALS=9`.
-- [x] **GYDS = 9 decimals everywhere**: align explorer formatting, wallet
+      and set `NATIVE_DECIMALS=18`.
+- [x] **GYDS = 18 decimals everywhere**: align explorer formatting, wallet
       transactions, node scripts, genesis allocation metadata and the decimal
       guard with `chain-spec.json`; keep GYD at 6.
 - [ ] **Refresh `check-services.sh`**: match current unit names
@@ -1465,7 +1465,7 @@ protocol balances have been erased.
 
 - [x] **`pre-launch-check.sh`**: single go/no-go script run on a node before it is
       promoted to production. Verifies env sanity (required vars, node type,
-      GYDS `NATIVE_DECIMALS=9` cross-checked against `chain-spec.json`, GYD 6,
+      GYDS `NATIVE_DECIMALS=18` cross-checked against `chain-spec.json`, GYD 6,
       no secrets in `node.env`, keystore mode 700, free disk), service active +
       enabled at boot, NTP sync, required ports listening (RPC/WS localhost-only
       unless `PUBLIC_RPC=yes`, P2P open, metrics localhost-only), RPC/metrics

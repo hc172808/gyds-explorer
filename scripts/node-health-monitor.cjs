@@ -1,7 +1,13 @@
 const DEFAULT_INTERVAL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 3000;
+const DEFAULT_PRIMARY_RPC = "https://app.netlifegy.com/api/rpc";
+const DEFAULT_BOOST_RPC = "https://boost.netlifegy.com";
 
 let activeStop = null;
+
+function firstHttpUrl(...values) {
+  return values.find((value) => typeof value === "string" && /^https?:\/\//i.test(value));
+}
 
 function getExpectedChainId() {
   const configured = Number(
@@ -13,6 +19,74 @@ function getExpectedChainId() {
   return Number.isSafeInteger(configured) && configured > 0
     ? configured
     : process.env.NODE_ENV === "production" ? 198282 : 198281;
+}
+
+function getEnvironmentRpcEndpoints(localChainId) {
+  const mode = (
+    process.env.GYDS_RPC_MODE ||
+    process.env.NODE_CONNECTION_MODE ||
+    "auto"
+  ).trim().toLowerCase();
+  const localRpc = firstHttpUrl(
+    process.env.GYDS_LOCAL_RPC_URL,
+    process.env.REPLIT_RPC_URL,
+    process.env.LOCAL_RPC_URL,
+    process.env.RPC_LOCAL_URL,
+    "http://127.0.0.1:8545",
+  );
+  const configuredLocalRpc = firstHttpUrl(
+    process.env.GYDS_LOCAL_RPC_URL,
+    process.env.REPLIT_RPC_URL,
+    process.env.LOCAL_RPC_URL,
+    process.env.RPC_LOCAL_URL,
+  );
+  const remotePrimary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL,
+    process.env.RPC_URL,
+    process.env.VITE_RPC_URL,
+    process.env.NODE_ENV === "production" ? DEFAULT_PRIMARY_RPC : undefined,
+  );
+  const remoteSecondary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL_2,
+    process.env.RPC_URL_2,
+    process.env.BOOSTNODE_RPC_URL,
+    process.env.VITE_BOOSTNODE_RPC_URL,
+    process.env.VITE_RPC_URL_2,
+    process.env.NODE_ENV === "production" ? DEFAULT_BOOST_RPC : undefined,
+  );
+  const endpoints = [];
+  if (mode === "local" || mode === "server") {
+    endpoints.push({
+      name: "Explorer Primary RPC",
+      rpcUrl: localRpc,
+      expectedChainId: localChainId,
+    });
+  } else {
+    if (remotePrimary) {
+      endpoints.push({
+        name: "Explorer Primary RPC",
+        rpcUrl: remotePrimary,
+        expectedChainId: 198282,
+      });
+    }
+    // The RPC proxy can route through a server-local upstream even while
+    // the explorer's mainnet RPC setting points at a remote provider.
+    if (configuredLocalRpc) {
+      endpoints.push({
+        name: "Local RPC upstream",
+        rpcUrl: configuredLocalRpc,
+        expectedChainId: localChainId,
+      });
+    }
+  }
+  if (remoteSecondary) {
+    endpoints.push({
+      name: "Explorer Boost RPC",
+      rpcUrl: remoteSecondary,
+      expectedChainId: 198282,
+    });
+  }
+  return endpoints.filter((endpoint) => endpoint.rpcUrl);
 }
 
 function writeLog(logger, level, fields, message) {
@@ -36,24 +110,38 @@ async function checkRpc(rpcUrl, expectedChainId) {
   }
 
   try {
-    const response = await fetch(rpcUrl, {
+    const request = (method) => fetch(rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id: 1 }),
+      body: JSON.stringify({ jsonrpc: "2.0", method, params: [], id: 1 }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) {
+    const [chainResponse, blockResponse] = await Promise.all([
+      request("eth_chainId"),
+      request("eth_blockNumber"),
+    ]);
+    if (!chainResponse.ok || !blockResponse.ok) {
+      const response = !chainResponse.ok ? chainResponse : blockResponse;
       return { status: "disconnected", reason: `HTTP ${response.status}` };
     }
 
-    const payload = await response.json();
-    if (payload?.error || typeof payload?.result !== "string") {
+    const [chainPayload, blockPayload] = await Promise.all([
+      chainResponse.json(),
+      blockResponse.json(),
+    ]);
+    if (chainPayload?.error || blockPayload?.error ||
+        typeof chainPayload?.result !== "string" ||
+        typeof blockPayload?.result !== "string") {
       return { status: "disconnected", reason: "Invalid JSON-RPC response" };
     }
 
-    const chainId = Number.parseInt(payload.result, 16);
+    const chainId = Number.parseInt(chainPayload.result, 16);
+    const blockNumber = Number.parseInt(blockPayload.result, 16);
     if (!Number.isSafeInteger(chainId)) {
       return { status: "disconnected", reason: "RPC returned an invalid chain ID" };
+    }
+    if (!Number.isSafeInteger(blockNumber)) {
+      return { status: "disconnected", reason: "RPC returned an invalid block number" };
     }
     if (chainId !== expectedChainId) {
       return {
@@ -61,7 +149,7 @@ async function checkRpc(rpcUrl, expectedChainId) {
         reason: `Wrong chain ID ${chainId}; expected ${expectedChainId}`,
       };
     }
-    return { status: "connected", chainId };
+    return { status: "connected", chainId, blockNumber };
   } catch (error) {
     const reason = error?.name === "TimeoutError" || error?.name === "AbortError"
       ? "RPC timed out"
@@ -81,6 +169,8 @@ function startNodeHealthMonitor({
   if (activeStop) return activeStop;
 
   const expectedChainId = getExpectedChainId();
+  const environmentEndpoints = getEnvironmentRpcEndpoints(expectedChainId);
+  const previousEnvironmentStatuses = new Map();
   let checking = false;
   let lastDatabaseErrorAt = 0;
 
@@ -94,29 +184,39 @@ function startNodeHealthMonitor({
          FROM network_nodes
          ORDER BY id`,
       );
-      const activeUrls = [...new Set(
-        rows
-          .filter((node) => node.is_active)
-          .map((node) => String(node.rpc_url || "").trim())
-          .filter(Boolean),
-      )];
-      const checks = await Promise.all(activeUrls.map(async (rpcUrl) => [
-        rpcUrl,
-        await checkRpc(rpcUrl, expectedChainId),
+      const targets = new Map();
+      for (const node of rows.filter((row) => row.is_active)) {
+        const rpcUrl = String(node.rpc_url || "").trim();
+        if (!rpcUrl) continue;
+        const key = `${rpcUrl}\u0000${expectedChainId}`;
+        targets.set(key, { rpcUrl, expectedChainId });
+      }
+      for (const endpoint of environmentEndpoints) {
+        const key = `${endpoint.rpcUrl}\u0000${endpoint.expectedChainId}`;
+        targets.set(key, {
+          rpcUrl: endpoint.rpcUrl,
+          expectedChainId: endpoint.expectedChainId,
+        });
+      }
+      const checks = await Promise.all([...targets.entries()].map(async ([key, target]) => [
+        key,
+        await checkRpc(target.rpcUrl, target.expectedChainId),
       ]));
       const results = new Map(checks);
 
       const updates = rows.filter((node) => {
-        const result = node.is_active
-          ? results.get(String(node.rpc_url || "").trim())
+        const rpcUrl = String(node.rpc_url || "").trim();
+        const result = node.is_active && rpcUrl
+          ? results.get(`${rpcUrl}\u0000${expectedChainId}`)
           : null;
         const nextStatus = result?.status || "disconnected";
         return node.status !== nextStatus;
       });
 
       await Promise.all(updates.map(async (node) => {
-        const result = node.is_active
-          ? results.get(String(node.rpc_url || "").trim())
+        const rpcUrl = String(node.rpc_url || "").trim();
+        const result = node.is_active && rpcUrl
+          ? results.get(`${rpcUrl}\u0000${expectedChainId}`)
           : null;
         const nextStatus = result?.status || "disconnected";
         await pool.query(
@@ -136,6 +236,27 @@ function startNodeHealthMonitor({
           `RPC node status changed to ${nextStatus}`,
         );
       }));
+
+      for (const endpoint of environmentEndpoints) {
+        const key = `${endpoint.rpcUrl}\u0000${endpoint.expectedChainId}`;
+        const result = results.get(key);
+        const nextStatus = result?.status || "disconnected";
+        const previousStatus = previousEnvironmentStatuses.get(endpoint.name);
+        if (previousStatus !== nextStatus) {
+          writeLog(
+            logger,
+            nextStatus === "connected" ? "info" : "warn",
+            {
+              endpoint: endpoint.name,
+              expectedChainId: endpoint.expectedChainId,
+              ...(result?.chainId ? { chainId: result.chainId } : {}),
+              ...(result?.reason ? { reason: result.reason } : {}),
+            },
+            `Environment RPC status changed to ${nextStatus}`,
+          );
+          previousEnvironmentStatuses.set(endpoint.name, nextStatus);
+        }
+      }
     } catch (error) {
       const now = Date.now();
       if (now - lastDatabaseErrorAt >= 60000) {

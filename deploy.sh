@@ -655,7 +655,7 @@ VITE_FEATURE_GATE_URL=/api
 # ---------- Wallet (Add network / Add token) ----------
 VITE_NATIVE_COIN_NAME=GYDSChain
 VITE_NATIVE_COIN_SYMBOL=GYDS
-VITE_NATIVE_COIN_DECIMALS=9
+VITE_NATIVE_COIN_DECIMALS=18
 VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
 VITE_EXPLORER_URL=${BASE_URL}
 # Set this to the deployed GYD token contract before "Add GYD to wallet" can work.

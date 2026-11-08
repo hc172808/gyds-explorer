@@ -1,4 +1,6 @@
 const fs = require("node:fs");
+const registerLegacyNodeRoutes = require("./legacy-node-routes.cjs");
+const { startNodeHealthMonitor } = require("./node-health-monitor.cjs");
 
 const SETTING_KEY = "auto_update_enabled";
 const TIMER_FILE = "/etc/systemd/system/gyds-explorer-auto-update.timer";
@@ -7,6 +9,14 @@ const TIME_ZONE = "America/Guyana";
 
 module.exports = function registerAutoUpdateRoutes({ app, pool, requireAdmin }) {
   const schedulerInstalled = () => fs.existsSync(TIMER_FILE);
+  registerLegacyNodeRoutes({ app, pool, requireAdmin });
+  startNodeHealthMonitor({
+    pool,
+    logger: {
+      info(fields, message) { console.info(`[Node Monitor] ${message}`, fields); },
+      warn(fields, message) { console.warn(`[Node Monitor] ${message}`, fields); },
+    },
+  });
 
   const apiRoot = (_req, res) => res.json({
     service: "GYDS Explorer API",

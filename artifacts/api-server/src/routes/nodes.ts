@@ -6,7 +6,6 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
 const NODE_TYPES = ["main", "full", "lite", "rpc", "boost", "validator", "boot"] as const;
-const NODE_STATUSES = ["connected", "disconnected"] as const;
 const PUBLIC_NODE_FIELDS = {
   id: networkNodesTable.id,
   name: networkNodesTable.name,
@@ -25,7 +24,7 @@ function validUrl(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
     const url = new URL(value);
-    return ["http:", "https:", "ws:", "wss:"].includes(url.protocol);
+    return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
   }
@@ -123,12 +122,6 @@ function nodeValues(body: Record<string, unknown>, partial = false) {
     }
     values.enode = enode || null;
   }
-  if ("status" in body) {
-    if (typeof body.status !== "string" || !NODE_STATUSES.includes(body.status as typeof NODE_STATUSES[number])) {
-      return { error: "status must be one of: connected, disconnected" };
-    }
-    values.status = body.status;
-  }
   if ("isActive" in body) {
     if (typeof body.isActive !== "boolean") return { error: "isActive must be a boolean" };
     values.isActive = body.isActive;
@@ -163,6 +156,7 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
     res.status(400).json({ ok: false, error: "rpcUrl must be a valid HTTP(S) URL" });
     return;
   }
+  const started = Date.now();
   try {
     const request = (method: string) => fetch(rpcUrl, {
       method: "POST",
@@ -184,11 +178,31 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
       res.json({ ok: false, error: "RPC returned no chain ID" });
       return;
     }
+    const configuredChainId = Number(
+      process.env.GYDS_CHAIN_ID ||
+      process.env.CHAIN_ID ||
+      process.env.REPLIT_CHAIN_ID ||
+      (process.env.NODE_ENV === "production" ? 198282 : 198281),
+    );
+    const expectedChainId = Number.isSafeInteger(configuredChainId) && configuredChainId > 0
+      ? configuredChainId
+      : process.env.NODE_ENV === "production" ? 198282 : 198281;
+    const blockNumber = block.result ? Number.parseInt(block.result, 16) : undefined;
+    if (chainId !== expectedChainId) {
+      res.json({
+        ok: false,
+        chainId,
+        blockNumber,
+        latencyMs: Date.now() - started,
+        error: `Wrong chain ID: expected ${expectedChainId}, received ${chainId}`,
+      });
+      return;
+    }
     res.json({
       ok: true,
       chainId,
-      blockNumber: block.result ? Number.parseInt(block.result, 16) : undefined,
-      latencyMs: undefined,
+      blockNumber,
+      latencyMs: Date.now() - started,
     });
   } catch (err) {
     res.json({ ok: false, error: err instanceof Error ? err.message : "RPC unreachable" });
@@ -272,7 +286,7 @@ router.put("/runtime-settings", requireAdmin, async (req: AdminRequest, res) => 
       }
       if (existing) {
         await db.update(networkNodesTable)
-          .set({ ...setting, updatedAt: new Date() })
+          .set({ ...setting, status: "disconnected", updatedAt: new Date() })
           .where(eq(networkNodesTable.id, existing.id));
       } else {
         await db.insert(networkNodesTable).values(setting);
@@ -392,7 +406,7 @@ router.put("/:id/toggle", requireAdmin, async (req: AdminRequest, res) => {
       return;
     }
     const [node] = await db.update(networkNodesTable)
-      .set({ isActive: req.body.isActive, updatedAt: new Date() })
+      .set({ isActive: req.body.isActive, status: "disconnected", updatedAt: new Date() })
       .where(eq(networkNodesTable.id, id))
       .returning();
     if (!node) {

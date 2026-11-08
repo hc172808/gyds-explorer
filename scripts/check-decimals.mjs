@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CI guard: protocol metadata, node scripts, and UI token decimals must match
- * chain-spec.json (GYDS 9, GYD 6).
+ * chain-spec.json (GYDS 18, GYD 6).
  */
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -12,7 +12,7 @@ const GYDS = spec.coins.GYDS.decimals;
 const GYD = spec.coins.GYD.decimals;
 
 const errors = [];
-if (GYDS !== 9) errors.push(`chain-spec.json: GYDS decimals are ${GYDS}, expected 9`);
+if (GYDS !== 18) errors.push(`chain-spec.json: GYDS decimals are ${GYDS}, expected 18`);
 if (GYD !== 6) errors.push(`chain-spec.json: GYD decimals are ${GYD}, expected 6`);
 const read = (rel) => {
   const p = path.join(root, rel);
@@ -60,10 +60,12 @@ check("artifacts/solana-explorer/src/pages/MyWallet.tsx", [
 
 check("artifacts/solana-explorer/src/pages/Dashboard.tsx", [
   { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
+  { label: "GYDS balance fallback decimals", re: /\?\.decimals\s*\?\?\s*(\d+)/, expected: GYDS },
 ]);
 
 check("artifacts/solana-explorer/src/pages/TokenBalances.tsx", [
   { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
+  { label: "GYDS balance fallback decimals", re: /\?\.decimals\s*\?\?\s*(\d+)/, expected: GYDS },
 ]);
 
 check("artifacts/api-server/src/routes/coin-settings.ts", [

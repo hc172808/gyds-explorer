@@ -409,7 +409,6 @@ function NodesTab() {
     rpcUrl: "",
     enode: "",
   });
-  const [pingStates, setPingStates] = useState<Record<number, RpcStatus>>({});
   const nodesRequestInFlight = useRef(false);
 
   const loadNodes = useCallback(async (silent = false) => {
@@ -504,12 +503,6 @@ function NodesTab() {
     }
   };
 
-  const ping = async (node: NetworkNode) => {
-    setPingStates((current) => ({ ...current, [node.id]: { ok: false, error: "Checking…" } }));
-    const result = await pingNetworkNode(node.rpcUrl);
-    setPingStates((current) => ({ ...current, [node.id]: result }));
-  };
-
   return (
     <div className="space-y-5">
       <form onSubmit={saveNode} className="rounded-xl border border-border bg-card p-5">
@@ -570,44 +563,35 @@ function NodesTab() {
                Enode is optional for RPC access. Boot nodes require one; other nodes can be added when <code className="rounded bg-secondary px-1">admin_nodeInfo</code> is disabled.
              </p>
            </div>
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
-            <option value="connected">Connected</option>
-            <option value="disconnected">Disconnected</option>
-          </select>
           <div className="flex gap-2">
             <Button type="submit" disabled={saving || !form.connectionMode} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
-            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
+            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "" }); }}>Cancel</Button>}
           </div>
         </div>
       </form>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
-          <div><h2 className="text-sm font-semibold">Configured nodes</h2><p className="text-xs text-muted-foreground">Connected nodes are available to the public wallet balance view.</p></div>
-          <Button variant="ghost" size="sm" onClick={loadNodes} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
+          <div><h2 className="text-sm font-semibold">Configured nodes</h2><p className="text-xs text-muted-foreground">The API checks active nodes every five seconds and retries disconnected nodes automatically.</p></div>
+          <Button variant="ghost" size="sm" onClick={() => { void loadNodes(); }} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
         </div>
         {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : nodes.length === 0 ? (
           <p className="px-5 py-12 text-center text-sm text-muted-foreground">No nodes configured yet.</p>
-        ) : nodes.map((node) => {
-          const pingStatus = pingStates[node.id];
-          return (
+        ) : nodes.map((node) => (
             <div key={node.id} className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4 last:border-0">
-              <span className={`h-2.5 w-2.5 rounded-full ${node.isActive ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
+              <span className={`h-2.5 w-2.5 rounded-full ${node.isActive && node.status === "connected" ? "bg-primary" : node.isActive ? "bg-destructive" : "bg-muted-foreground"}`} />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{node.name}</p><span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] uppercase text-muted-foreground">{node.type}</span></div>
+                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{node.name}</p><span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] uppercase text-muted-foreground">{node.type}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${!node.isActive ? "bg-secondary text-muted-foreground" : node.status === "connected" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>{!node.isActive ? "Disabled" : node.status === "connected" ? "Connected" : "Disconnected"}</span></div>
                 <p className="break-all font-mono text-xs text-muted-foreground">{node.rpcUrl}</p>
                 {node.enode && <p className="break-all font-mono text-[11px] text-muted-foreground">{node.enode}</p>}
-                {pingStatus && <p className={`mt-1 text-xs ${pingStatus.ok ? "text-primary" : "text-destructive"}`}>{pingStatus.ok ? `Online · block ${pingStatus.blockNumber?.toLocaleString()} · ${pingStatus.latencyMs}ms` : pingStatus.error}</p>}
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" onClick={() => ping(node)} className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Ping</Button>
                 <Button variant="ghost" size="sm" onClick={() => beginEdit(node)} className="gap-1.5 text-xs"><Settings className="h-3.5 w-3.5" /> Edit</Button>
-                <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disconnect" : "Connect"}</Button>
+                <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disable" : "Enable"}</Button>
                 <Button variant="ghost" size="sm" onClick={() => remove(node)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
-          );
-        })}
+          ))}
       </div>
     </div>
   );

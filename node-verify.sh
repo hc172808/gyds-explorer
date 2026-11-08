@@ -12,7 +12,7 @@ set -uo pipefail
 RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
 EXPECTED_CHAIN_ID="${EXPECTED_CHAIN_ID:-198282}"
 EXPECTED_NETWORK_ID="${EXPECTED_NETWORK_ID:-198282}"
-EXPECTED_NATIVE_DECIMALS="${EXPECTED_NATIVE_DECIMALS:-9}"
+EXPECTED_NATIVE_DECIMALS="${EXPECTED_NATIVE_DECIMALS:-18}"
 MIN_PEERS="${MIN_PEERS:-1}"
 MIN_DISK_FREE_GB="${MIN_DISK_FREE_GB:-10}"
 DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
@@ -54,7 +54,7 @@ CLIENT_VERSION="$(rpc web3_clientVersion | jq -r '.result // empty' 2>/dev/null 
 EXPECTED_CHAIN_HEX="$(printf '0x%x' "$EXPECTED_CHAIN_ID")"
 [ "$CHAIN_HEX" = "$EXPECTED_CHAIN_HEX" ] || fail "eth_chainId=${CHAIN_HEX}, expected ${EXPECTED_CHAIN_HEX}."
 [ "$NETWORK_ID" = "$EXPECTED_NETWORK_ID" ] || fail "net_version=${NETWORK_ID}, expected ${EXPECTED_NETWORK_ID}."
-[ "$EXPECTED_NATIVE_DECIMALS" = "9" ] || fail "GYDS native decimals must be 9."
+[ "$EXPECTED_NATIVE_DECIMALS" = "18" ] || fail "GYDS native decimals must be 18."
 if [ -n "$CLIENT_VERSION" ]; then
   if printf '%s' "$CLIENT_VERSION" | grep -Eqi 'mock|replit-test|localnode|test-node'; then
     fail "RPC reports a mock/test client (${CLIENT_VERSION}); it is not a production consensus node."

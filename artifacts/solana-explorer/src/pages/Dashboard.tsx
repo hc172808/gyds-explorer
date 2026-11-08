@@ -43,7 +43,7 @@ export default function Dashboard() {
     try {
       const provider = new JsonRpcProvider(rpcUrl);
       const raw = await provider.getBalance(session.walletAddress);
-      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 9;
+      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 18;
       setBalance(formatUnits(raw, decimals));
     } catch {
       setBalance(null);
