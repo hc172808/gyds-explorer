@@ -29,6 +29,30 @@ export interface DeployParams {
   expectedDeployer?: string;
 }
 
+export function formatDeployError(
+  error: unknown,
+  networkName: string,
+  chainId: bigint | number | null,
+): string {
+  const value = error as any;
+  const message = [
+    typeof error === "string" ? error : "",
+    value?.reason,
+    value?.shortMessage,
+    value?.message,
+    value?.info?.error?.message,
+    value?.error?.message,
+    value?.data?.message,
+  ].filter((part) => typeof part === "string" && part.length > 0).join(" ");
+
+  if (/no asset fund|no native gyds|insufficient funds|funds for gas|not enough funds|insufficient balance|balance too low/i.test(message)) {
+    const chainText = chainId === null ? "" : ` (chain ID ${chainId})`;
+    return `This wallet does not have enough native GYDS to pay deployment fees on ${networkName}${chainText}. Fund the same admin wallet with native GYDS on this network, then retry. Token balances such as GYD or tUSDT cannot pay gas.`;
+  }
+
+  return message.replace(/\(action=.*/, "").trim() || "Deployment failed";
+}
+
 export function useTokenDeploy(
   rpcUrl: string,
   selectedChainId: number | null = Number(GYDS_CHAIN_ID),
@@ -41,6 +65,7 @@ export function useTokenDeploy(
   const [deployer,        setDeployer]        = useState<string | null>(null);
 
   const deploy = async (params: DeployParams): Promise<DeployResult | null> => {
+    let activeChainId: bigint | null = null;
     const ethereum = params.expectedDeployer
       ? await getEthereumProviderForAccount(params.expectedDeployer)
       : getEthereumProvider();
@@ -72,6 +97,7 @@ export function useTokenDeploy(
       const targetChainId = selectedChainId === null
         ? rpcNetwork.chainId
         : BigInt(selectedChainId);
+      activeChainId = targetChainId;
       if (rpcNetwork.chainId !== targetChainId) {
         throw new Error(`Selected RPC is on chain ${rpcNetwork.chainId}; expected ${targetChainId}.`);
       }
@@ -107,23 +133,27 @@ export function useTokenDeploy(
         setDeployer(refreshedSigner.address);
 
         // Deploy
-        return await _deploy(refreshedSigner, params);
+        return await _deploy(refreshedSigner, params, targetChainId);
       }
 
-      return await _deploy(signer, params);
+      return await _deploy(signer, params, targetChainId);
     } catch (e: any) {
-      const msg = e?.reason || e?.shortMessage || e?.message || "Deployment failed";
-      setError(msg.replace(/\(action=.*/, "").trim());
+      setError(formatDeployError(e, selectedNetworkName, activeChainId ?? selectedChainId));
       setStatus("error");
       return null;
     }
   };
 
-  const _deploy = async (signer: any, params: DeployParams): Promise<DeployResult | null> => {
+  const _deploy = async (signer: any, params: DeployParams, chainId: bigint): Promise<DeployResult | null> => {
     if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
       throw new Error("The connected wallet does not match the authenticated admin wallet.");
     }
     setStatus("deploying");
+
+    const balance = await signer.provider.getBalance(signer.address);
+    if (balance === 0n) {
+      throw new Error("NO_NATIVE_GYDS_FOR_GAS");
+    }
 
     const factory  = new ContractFactory(TOKEN_ARTIFACT.abi, TOKEN_ARTIFACT.bytecode, signer);
     const contract = await factory.deploy(

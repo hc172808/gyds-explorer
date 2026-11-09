@@ -1454,6 +1454,11 @@ Currency:      GYDS`;
           <p className="text-sm text-muted-foreground">
             Deploy the token above to the selected GYDS network. Your browser wallet will add that network if needed.
           </p>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+            Deployment needs native GYDS for network fees on {network.name}
+            {network.chainId === null ? "" : ` (chain ID ${network.chainId})`}. Fund the same admin wallet on this network first;
+            token balances such as GYD or tUSDT cannot pay gas.
+          </div>
 
           {/* Status display */}
           {deployStatus === "idle" && (
