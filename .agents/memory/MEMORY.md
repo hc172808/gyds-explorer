@@ -13,3 +13,4 @@
 - [Wallet connect routing](wallet-connect-routing.md) — connect actions that redirect must complete signed login and use role-specific destinations.
 - [Geth flag checks under pipefail](gyds-geth-flag-checks.md) — capture help output before checking options; `grep -q` can cause false negatives in strict pipelines.
 - [GYD mint compatibility](gyd-mint-compatibility.md) — preserve whole-token mint semantics for existing contracts; use a separate raw-unit method for fractional GYD.
+- [Testnet DEX scope](dex-testnet-scope.md) — keep swaps testnet-only and never treat a testnet “USDT” ticker as verified Tether.
