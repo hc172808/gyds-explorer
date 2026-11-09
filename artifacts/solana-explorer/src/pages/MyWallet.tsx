@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Copy, ExternalLink, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Coins, Copy, ExternalLink, Loader2, RefreshCw, Send, Wallet, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNetwork } from "@/contexts/NetworkContext";
-import { fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type PublicNetworkNode } from "@/lib/networkApi";
+import { API_BASE, fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type PublicNetworkNode } from "@/lib/networkApi";
 import { fetchTokenBalances, GYDS_CHAIN_ID, type TokenBalance } from "@/lib/useTokenDeploy";
 import {
   addTokenToWallet,
@@ -90,6 +90,7 @@ export default function MyWallet() {
   const [sendAmount, setSendAmount] = useState("");
   const [sending, setSending] = useState(false);
   const [addingAsset, setAddingAsset] = useState("");
+  const [requestingTestFunds, setRequestingTestFunds] = useState(false);
 
   const fallbackNode = useMemo<PublicNetworkNode>(() => ({
     id: 0,
@@ -181,6 +182,30 @@ export default function MyWallet() {
   const copy = async (value: string, label: string) => {
     await navigator.clipboard.writeText(value);
     toast.success(`${label} copied`);
+  };
+
+  const requestTestnetFunds = async () => {
+    if (networkType !== "testnet" || !address) return;
+    setRequestingTestFunds(true);
+    try {
+      const response = await fetch(`${API_BASE}/faucet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const result = await response.json() as { amount?: string; symbol?: string; transactionHash?: string; error?: string };
+      if (!response.ok) throw new Error(result.error || "Could not request testnet funds.");
+      toast.success(`${result.amount} ${result.symbol} sent`, {
+        description: `Transaction: ${result.transactionHash}`,
+      });
+      window.setTimeout(() => void loadBalances(), 6000);
+    } catch (faucetError) {
+      toast.error("Testnet funding failed", {
+        description: faucetError instanceof Error ? faucetError.message : "Try again after checking the selected network.",
+      });
+    } finally {
+      setRequestingTestFunds(false);
+    }
   };
 
   const addAsset = async (asset: WalletImportAsset) => {
@@ -432,6 +457,24 @@ export default function MyWallet() {
           </div>
         ) : (
           <>
+            {networkType === "testnet" && (
+              <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
+                <div className="flex items-start gap-3">
+                  <Coins className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+                  <div>
+                    <h2 className="text-sm font-semibold">Private Testnet funds</h2>
+                    <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                      Request 1 test GYDS for gas on the isolated local chain (198281). One request per wallet every 24 hours.
+                      These coins have no real-world value and are not on the public GYDS Testnet.
+                    </p>
+                  </div>
+                </div>
+                <Button onClick={() => void requestTestnetFunds()} disabled={requestingTestFunds} className="gap-2">
+                  {requestingTestFunds ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
+                  {requestingTestFunds ? "Requesting…" : "Get test GYDS"}
+                </Button>
+              </section>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Balances</h2>

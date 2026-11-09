@@ -79,7 +79,12 @@ fi
 
 if [ ! -f "${PASSWORD_FILE}" ]; then
   umask 077
-  printf '%s\n' "${REPLIT_NODE_PASSWORD:-replit-local-test-password}" > "${PASSWORD_FILE}"
+  if [ -n "${REPLIT_NODE_PASSWORD:-}" ]; then
+    printf '%s\n' "${REPLIT_NODE_PASSWORD}" > "${PASSWORD_FILE}"
+  else
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' > "${PASSWORD_FILE}"
+    printf '\n' >> "${PASSWORD_FILE}"
+  fi
 fi
 
 ACCOUNT="$("${GETH_BIN}" account list --datadir "${DATA_DIR}" 2>/dev/null |
@@ -144,13 +149,13 @@ GETH_ARGS=(
   --port "${P2P_PORT}"
   --nat none
   --http
-  --http.addr 0.0.0.0
+  --http.addr "${REPLIT_HTTP_ADDR:-0.0.0.0}"
   --http.port "${RPC_PORT}"
   --http.api eth,net,web3,txpool
   --http.vhosts "*"
   --http.corsdomain "*"
   --ws
-  --ws.addr 0.0.0.0
+  --ws.addr "${REPLIT_WS_ADDR:-0.0.0.0}"
   --ws.port "${WS_PORT}"
   --ws.api eth,net,web3,txpool
   --ws.origins "*"

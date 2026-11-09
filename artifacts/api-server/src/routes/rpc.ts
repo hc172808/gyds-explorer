@@ -42,6 +42,9 @@ const NETWORK_CHAIN_IDS = {
   testnet: 198281,
 } as const;
 const TESTNET_RPC_ENDPOINTS = [
+  ...(process.env.NODE_ENV === "production"
+    ? []
+    : [process.env.GYDS_PRIVATE_TESTNET_RPC_URL || "http://127.0.0.1:18565"]),
   firstHttpEndpoint(process.env.GYDS_TESTNET_RPC_URL, process.env.TESTNET_RPC_URL),
   firstHttpEndpoint(process.env.GYDS_TESTNET_RPC_URL_2, process.env.TESTNET_RPC_URL_2),
   ...(RPC_CONNECTION_MODE === "remote" ? [] : LOCAL_RPC_ENDPOINTS),
