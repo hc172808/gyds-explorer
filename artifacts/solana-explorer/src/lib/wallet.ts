@@ -1,5 +1,10 @@
 import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "./useTokenDeploy";
 import { NETWORK_CHAIN_IDS } from "./networkConfig";
+import { getEthereumProvider } from "./ethereumProvider";
+import type { EthereumProvider } from "./ethereumProvider";
+
+export { getEthereumProvider, getEthereumProviderForAccount } from "./ethereumProvider";
+export type { EthereumProvider } from "./ethereumProvider";
 
 export interface WalletNetworkConfig {
   chainId: string;
@@ -31,76 +36,6 @@ export const GYD_TOKEN = {
   decimals: Number(import.meta.env.VITE_GYD_DECIMALS || 6),
   image: import.meta.env.VITE_GYD_LOGO_URL || "/assets/gyd-logo.svg",
 } as const;
-
-export type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  isMetaMask?: boolean;
-  isPhantom?: boolean;
-  isTrust?: boolean;
-  isTrustWallet?: boolean;
-  isCoinbaseWallet?: boolean;
-  providers?: EthereumProvider[];
-};
-
-function injectedEthereumProviders(): EthereumProvider[] {
-  const walletWindow = window as Window & {
-    ethereum?: EthereumProvider;
-    phantom?: { ethereum?: EthereumProvider };
-    trustwallet?: { ethereum?: EthereumProvider };
-    trustWallet?: { ethereum?: EthereumProvider };
-  };
-  const ethereum = walletWindow.ethereum;
-  return [
-    ...(Array.isArray(ethereum?.providers) ? ethereum.providers : []),
-    ethereum,
-    walletWindow.phantom?.ethereum,
-    walletWindow.trustwallet?.ethereum,
-    walletWindow.trustWallet?.ethereum,
-  ].filter((provider): provider is EthereumProvider => Boolean(provider));
-}
-
-export function getEthereumProvider(): EthereumProvider | null {
-  // Multiple wallet extensions can inject one provider that proxies requests
-  // through a fragile transport. Prefer MetaMask, then Phantom, while also
-  // supporting Trust Wallet and other EIP-1193 injected wallets.
-  const candidates = [...new Set(injectedEthereumProviders())];
-  return candidates.find((provider) => provider.isMetaMask)
-    ?? candidates.find((provider) => provider.isPhantom)
-    ?? candidates.find((provider) => provider.isTrust || provider.isTrustWallet)
-    ?? candidates[0]
-    ?? null;
-}
-
-/** Find the injected wallet that currently exposes the account used by the page. */
-export async function getEthereumProviderForAccount(accountAddress: string): Promise<EthereumProvider | null> {
-  const candidates = new Set(injectedEthereumProviders());
-  const announcements: EthereumProvider[] = [];
-  const handleAnnouncement = (event: Event) => {
-    const provider = (event as CustomEvent<{ provider?: EthereumProvider }>).detail?.provider;
-    if (provider) announcements.push(provider);
-  };
-
-  window.addEventListener("eip6963:announceProvider", handleAnnouncement);
-  window.dispatchEvent(new Event("eip6963:requestProvider"));
-  await new Promise((resolve) => window.setTimeout(resolve, 200));
-  window.removeEventListener("eip6963:announceProvider", handleAnnouncement);
-  announcements.forEach((provider) => candidates.add(provider));
-
-  for (const provider of candidates) {
-    try {
-      const accounts = await provider.request({ method: "eth_accounts" });
-      if (
-        Array.isArray(accounts) &&
-        accounts.some((account) => typeof account === "string" && account.toLowerCase() === accountAddress.toLowerCase())
-      ) {
-        return provider;
-      }
-    } catch {
-      // A wallet that is locked or disconnected cannot be used for this action.
-    }
-  }
-  return null;
-}
 
 export function getRpcUrls(primaryRpc: string, secondaryRpc?: string): string[] {
   return [primaryRpc, secondaryRpc]

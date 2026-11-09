@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrowserProvider, ContractFactory, JsonRpcProvider, Contract } from "ethers";
 import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
+import { getEthereumProvider, getEthereumProviderForAccount } from "./ethereumProvider";
 
 const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198282);
 export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198282);
@@ -40,9 +41,11 @@ export function useTokenDeploy(
   const [deployer,        setDeployer]        = useState<string | null>(null);
 
   const deploy = async (params: DeployParams): Promise<DeployResult | null> => {
-    const ethereum = (window as any).ethereum;
+    const ethereum = params.expectedDeployer
+      ? await getEthereumProviderForAccount(params.expectedDeployer)
+      : getEthereumProvider();
     if (!ethereum) {
-      setError("MetaMask not detected. Install MetaMask and configure the GYDS network.");
+      setError("Could not find the connected admin wallet. Reconnect the same authorized wallet, then try again.");
       setStatus("error");
       return null;
     }
@@ -54,7 +57,7 @@ export function useTokenDeploy(
       setContractAddress(null);
 
       // Request accounts
-      const provider = new BrowserProvider(ethereum);
+      const provider = new BrowserProvider(ethereum as any);
       await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
       if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {

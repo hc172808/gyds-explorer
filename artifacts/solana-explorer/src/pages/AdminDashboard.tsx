@@ -1275,13 +1275,13 @@ function TokensTab() {
       toast.error("GYD must use 6 decimals with owner-controlled minting enabled.");
       return;
     }
-    if (isGyd && networkType !== "mainnet") {
-      toast.error("Deploy the GYD stablecoin on GYDS Mainnet, not Testnet or a custom network.");
+    const session = getStoredSession();
+    if (!session || !isPrivilegedSession(session)) {
+      toast.error("Sign in with an authorized admin wallet before deploying tokens.");
       return;
     }
-    const session = getStoredSession();
-    if (isGyd && (!session || !isPrivilegedSession(session))) {
-      toast.error("An authorized admin session is required to deploy GYD.");
+    if (isGyd && networkType !== "mainnet") {
+      toast.error("Deploy the GYD stablecoin on GYDS Mainnet, not Testnet or a custom network.");
       return;
     }
     const result = await deploy({
@@ -1290,7 +1290,7 @@ function TokensTab() {
       decimals,
       initialSupply: tokenSupply,
       mintable,
-      expectedDeployer: isGyd ? session?.walletAddress : undefined,
+      expectedDeployer: session.walletAddress,
     });
     if (result) {
       saveTokenToRegistry(result);
@@ -1338,9 +1338,10 @@ function TokensTab() {
     error:       "Deployment failed",
   };
 
-  const metaMaskSetup = `Network name:  GYDS Network
+  const walletNetworkName = networkType === "custom" ? "GYDS Custom Network" : `GYDS ${network.name}`;
+  const metaMaskSetup = `Network name:  ${walletNetworkName}
 RPC URL:       ${rpcUrl}
-Chain ID:      198282
+Chain ID:      ${network.chainId ?? "Check the custom RPC"}
 Currency:      GYDS`;
 
   return (
@@ -1447,11 +1448,11 @@ Currency:      GYDS`;
         <div className="flex items-center gap-2 px-5 py-4 border-b border-primary/20 bg-primary/5">
           <Zap className="w-4 h-4 text-primary" />
           <h2 className="font-semibold text-sm">Deploy on GYDS Chain</h2>
-          <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">Requires MetaMask</span>
+          <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">Requires an EVM wallet</span>
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-muted-foreground">
-            Deploy the token above directly to the GYDS network. MetaMask will add the GYDS network automatically if needed.
+            Deploy the token above to the selected GYDS network. Your browser wallet will add that network if needed.
           </p>
 
           {/* Status display */}
@@ -1461,7 +1462,7 @@ Currency:      GYDS`;
               className="w-full gap-2 h-11 text-sm font-semibold"
             >
               <Zap className="w-4 h-4" />
-              Deploy {tokenName || "Token"} ({tokenSymbol || "???"}) with MetaMask
+              Deploy {tokenName || "Token"} ({tokenSymbol || "???"}) with wallet
             </Button>
           )}
 
@@ -1537,7 +1538,7 @@ Currency:      GYDS`;
 
           {/* MetaMask network config (always visible) */}
           <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1.5">
-            <p className="text-xs text-muted-foreground font-medium">Add GYDS network to MetaMask manually if needed:</p>
+            <p className="text-xs text-muted-foreground font-medium">Add the selected GYDS network to your wallet manually if needed:</p>
             <div className="relative">
               <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto">{metaMaskSetup}</pre>
               <Button variant="ghost" size="sm" onClick={() => copyText(metaMaskSetup, "MetaMask config")}
@@ -1565,7 +1566,7 @@ Currency:      GYDS`;
                     <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
                       remix.ethereum.org <ExternalLink className="w-3 h-3" />
                     </a>
-                    , paste the Solidity code above, compile with 0.8.20+, connect MetaMask → Injected Provider, deploy.
+                    , paste the Solidity code above, compile with 0.8.20+, connect your browser wallet → Injected Provider, deploy.
                   </p>
                 </div>
                 <div className="space-y-1.5">
