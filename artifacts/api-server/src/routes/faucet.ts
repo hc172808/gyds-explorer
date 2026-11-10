@@ -2,8 +2,11 @@ import { Router } from "express";
 
 const router = Router();
 const PRIVATE_TESTNET_CHAIN_ID = "0x30689";
-const FAUCET_RPC_URL = process.env.GYDS_PRIVATE_TESTNET_RPC_URL || "http://127.0.0.1:18565";
-const FAUCET_AMOUNT = "0xde0b6b3a7640000"; // 1 native GYDS
+const FAUCET_RPC_URL =
+  process.env.GYDS_PRIVATE_TESTNET_RPC_URL ||
+  process.env.REPLIT_RPC_URL ||
+  `http://127.0.0.1:${process.env.REPLIT_RPC_PORT || "18545"}`;
+const FAUCET_AMOUNT = "0x3b9aca00"; // 1 native GYDS at 9 decimals
 const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const GLOBAL_CLAIM_WINDOW_MS = 60 * 60 * 1000;
 const MAX_CLAIMS_PER_HOUR = 50;
@@ -66,6 +69,14 @@ router.post("/faucet", async (req, res) => {
     const chainId = await rpc("eth_chainId");
     if (chainId !== PRIVATE_TESTNET_CHAIN_ID) {
       res.status(503).json({ error: "The private Testnet node is not running on chain 198281." });
+      return;
+    }
+
+    const clientVersion = await rpc("web3_clientVersion");
+    if (typeof clientVersion === "string" && clientVersion.startsWith("GydsReplit/")) {
+      res.status(503).json({
+        error: "The Replit test-node simulator cannot send transactions. Configure GYDS_PRIVATE_TESTNET_RPC_URL to a real unlocked private Testnet node.",
+      });
       return;
     }
 
