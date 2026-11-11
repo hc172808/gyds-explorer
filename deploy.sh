@@ -168,6 +168,19 @@ check_port_number "WEB_PORT" "${WEB_PORT}"
 # HTTP on the HTTPS port and make browsers report a connection/TLS failure.
 [ "${WEB_PORT}" != "443" ] || err "WEB_PORT 443 is reserved for HTTPS. Use the default port 80 or --web-port=8080."
 
+if [ "${NODE_ONLY}" != true ]; then
+  if [ -z "${ADMIN_WALLET:-}" ]; then
+    read -r -p "Founder admin wallet address (public 0x... address): " ADMIN_WALLET || \
+      err "ADMIN_WALLET is required for an explorer deployment."
+  fi
+  [[ "${ADMIN_WALLET}" =~ ^0[xX][0-9a-fA-F]{40}$ ]] || \
+    err "ADMIN_WALLET must be a valid 20-byte EVM address."
+  ADMIN_WALLET="${ADMIN_WALLET,,}"
+  [ "${ADMIN_WALLET}" != "0x6422d12bfaddee5142bfad21b3006a74d09017b1" ] || \
+    err "The built-in test founder wallet cannot be used for production."
+  export ADMIN_WALLET
+fi
+
 # ---------- Existing deployment reset prompt ----------
 # The source directory alone is not treated as a deployed-state marker:
 # deploy.sh may be run from a freshly cloned checkout before first install.
@@ -506,11 +519,6 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_by VARCHAR(42)
 );
 
--- Seed the founder admin wallet (lowercase)
-INSERT INTO admin_wallets (wallet_address, label, is_active)
-VALUES ('0x6422d12bfaddee5142bfad21b3006a74d09017b1', 'Founder', TRUE)
-ON CONFLICT (wallet_address) DO UPDATE SET is_active = TRUE, label = EXCLUDED.label;
-
 -- Indexes for performance
 
 CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_number);
@@ -575,6 +583,9 @@ fi
 # Frontend must use RELATIVE paths so the app works over the bare IP, over the
 # domain, and over both http and https. Absolute localhost URLs break the browser.
 API_URL="/api"
+CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",https://${DOMAIN}" )"
+GYDS_REMOTE_RPC_URL="${GYDS_REMOTE_RPC_URL:-}"
+GYDS_REMOTE_RPC_URL_2="${GYDS_REMOTE_RPC_URL_2:-}"
 
 # Create Supabase-compatible anon/service-role JWTs signed with the same secret
 # used by the explorer API. These are for compatible services; this app itself
@@ -616,12 +627,17 @@ cat > "${APP_DIR}/.env" <<EOF
 # ---------- RPC Configuration ----------
 GYDS_RPC_MODE=auto
 GYDS_LOCAL_RPC_URL=http://127.0.0.1:${RPC_PORT}
-GYDS_REMOTE_RPC_URL=https://app.netlifegy.com/api/rpc
-GYDS_REMOTE_RPC_URL_2=https://boost.netlifegy.com
+# Set these to real, reachable chain-198282 RPC URLs, or configure them later
+# in the authenticated admin dashboard. Leave blank rather than using a dead default.
+GYDS_REMOTE_RPC_URL=${GYDS_REMOTE_RPC_URL}
+GYDS_REMOTE_RPC_URL_2=${GYDS_REMOTE_RPC_URL_2}
+# Browser calls use the same-origin API proxy. The indexer uses absolute server-side RPC URLs.
 VITE_RPC_URL=/api/rpc
 VITE_RPC_URL_2=/api/rpc
 VITE_BOOSTNODE_RPC_URL=/api/rpc
-BOOSTNODE_RPC_URL=https://boost.netlifegy.com
+RPC_URL=${GYDS_REMOTE_RPC_URL}
+RPC_URL_2=${GYDS_REMOTE_RPC_URL_2}
+BOOSTNODE_RPC_URL=${GYDS_REMOTE_RPC_URL_2}
 
 # ---------- Application Settings ----------
 VITE_PORT=${WEB_PORT}
@@ -640,6 +656,10 @@ DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NA
 
 # ---------- API Server ----------
 API_PORT=${API_PORT}
+API_HOST=127.0.0.1
+TRUST_PROXY_HOPS=1
+NODE_ENV=production
+VITE_API_BASE_URL=${API_URL}
 VITE_API_URL=${API_URL}
 API_SECRET_KEY=${API_SECRET}
 JWT_SECRET=${API_SECRET}
@@ -666,7 +686,10 @@ VITE_GYD_LOGO_URL=/assets/gyd-logo.svg
 
 # ---------- Optional ----------
 API_RATE_LIMIT=100
-API_CORS_ORIGINS=http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",http://${DOMAIN},https://${DOMAIN}" )
+CORS_ALLOWED_ORIGINS=${CORS_ORIGINS}
+API_CORS_ORIGINS=${CORS_ORIGINS}
+API_RPC_RATE_LIMIT=300
+API_AUTH_RATE_LIMIT=20
 EOF
 
 chmod 600 "${APP_DIR}/.env"
@@ -750,8 +773,8 @@ app.use("/api/", limiter);
 
 // ---------- JSON-RPC Proxy ----------
 const rpcEndpoints = [
-  process.env.GYDS_REMOTE_RPC_URL || process.env.RPC_URL || "https://app.netlifegy.com/api/rpc",
-  process.env.GYDS_REMOTE_RPC_URL_2 || process.env.RPC_URL_2 || "https://boost.netlifegy.com",
+  process.env.GYDS_REMOTE_RPC_URL || process.env.RPC_URL,
+  process.env.GYDS_REMOTE_RPC_URL_2 || process.env.RPC_URL_2,
 ];
 
 app.post("/api/rpc", async (req, res) => {
@@ -832,7 +855,7 @@ app.get("/api/blocks/:number", async (req, res) => {
   }
 });
 
-app.post("/api/blocks", async (req, res) => {
+app.post("/api/blocks", requireAdmin, async (req, res) => {
   try {
     const { number, hash, parent_hash, timestamp, miner, gas_used, gas_limit, transaction_count, size, extra_data } = req.body;
     const result = await pool.query(
@@ -930,7 +953,7 @@ app.get("/api/stats/history", async (req, res) => {
   }
 });
 
-app.post("/api/stats", async (req, res) => {
+app.post("/api/stats", requireAdmin, async (req, res) => {
   try {
     const { block_height, gas_price, peer_count, chain_id } = req.body;
     const result = await pool.query(
@@ -973,7 +996,8 @@ app.get("/api/search", async (req, res) => {
 const jwt = require("jsonwebtoken");
 const { ethers } = require("ethers");
 
-const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET || "change-me";
+const JWT_SECRET = process.env.API_SECRET_KEY || process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error("API_SECRET_KEY or JWT_SECRET is required.");
 const AUTH_MESSAGE = (nonce) =>
   `Sign this message to authenticate as GYDS admin:\n\nNonce: ${nonce}`;
 
@@ -1154,11 +1178,6 @@ cd "${APP_DIR}"
 # Workspace dependencies
 npm install --legacy-peer-deps
 
-# API dependencies
-cd "${API_DIR}"
-npm install --legacy-peer-deps
-cd "${APP_DIR}"
-
 # Install feature-gate-service dependencies if present
 if [ -d "${APP_DIR}/feature-gate-service" ]; then
   cd "${APP_DIR}/feature-gate-service"
@@ -1194,24 +1213,28 @@ if [ "$DEPLOY_WEB" = true ]; then
   info "Frontend built to ${APP_DIR}/dist ($(find "${APP_DIR}/dist" -type f | wc -l) files)"
 else
   info "Web interface disabled. Building API only."
-  npm run build --workspace=@workspace/api-server
 fi
 
+# The running API is the current workspace service, not the legacy generated API template.
+npm run build --workspace=@workspace/api-server || err "API build failed."
+
 # ============================================================
-# STEP 7b: Database schema + seed test admin wallet
+# STEP 7b: Database schema + seed the configured admin wallet
 # ============================================================
 cd "${APP_DIR}"
 # Push drizzle schema (creates admin_wallets, feature_gates, etc. if missing)
-if ! npm run push --workspace=@workspace/db; then
-  npm run push-force --workspace=@workspace/db || warn "Schema push failed — run 'npm run push-force --workspace=@workspace/db' manually."
-fi
-# Seed admin wallet. Override with ADMIN_WALLET / ADMIN_WALLET_LABEL env vars.
-# Defaults to the test founder wallet 0x6422D12BFADdEE5142BFaD21b3006a74D09017B1.
-if npm run seed:admin --workspace=@workspace/api-server; then
-  info "Admin wallet seeded (${ADMIN_WALLET:-0x6422D12BFADdEE5142BFaD21b3006a74D09017B1})."
-else
-  warn "Admin wallet seed failed — run 'npm run seed:admin --workspace=@workspace/api-server' manually."
-fi
+npm run push --workspace=@workspace/db || \
+  err "Database schema push failed. No forced schema change was attempted; review the migration before retrying."
+ADMIN_WALLET="${ADMIN_WALLET}" npm run seed:admin --workspace=@workspace/api-server || \
+  err "Could not seed the configured admin wallet."
+
+# Disable the known legacy test wallet on upgrades, without affecting the newly configured admin.
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${DB_NAME}" <<SQL
+UPDATE admin_wallets
+SET is_active = FALSE
+WHERE LOWER(wallet_address) = '0x6422d12bfaddee5142bfad21b3006a74d09017b1'
+  AND LOWER(wallet_address) <> LOWER('${ADMIN_WALLET}');
+SQL
 
 # ============================================================
 # STEP 8: Setup PM2 Process Manager
@@ -1228,29 +1251,24 @@ pm2 delete gyds-api 2>/dev/null || true
 pm2 delete gyds-indexer 2>/dev/null || true
 pm2 delete gyds-feature-gates 2>/dev/null || true
 
-# Use ecosystem config if available
-if [ -f "${APP_DIR}/ecosystem.config.js" ]; then
-  cd "${APP_DIR}"
-  pm2 start ecosystem.config.js
-  info "All services started via PM2 ecosystem config."
-else
-  # Start API server
-  cd "${API_DIR}"
-  pm2 start server.js --name gyds-api --env production
+# Start the current built workspace API. The generated legacy API template is not used.
+cd "${APP_DIR}/artifacts/api-server"
+PORT="${API_PORT}" API_HOST=127.0.0.1 NODE_ENV=production \
+  pm2 start npm --name gyds-api -- run start
 
-  # Start indexer if present
-  if [ -d "${APP_DIR}/indexer" ] && [ -f "${APP_DIR}/indexer/indexer.js" ]; then
-    cd "${APP_DIR}/indexer"
-    pm2 start indexer.js --name gyds-indexer --env production
-    info "Block indexer started via PM2."
-  fi
+# Start indexer if present. It reads admin-configured RPC nodes from PostgreSQL,
+# then falls back to absolute server-side RPC URLs in .env.
+if [ -d "${APP_DIR}/indexer" ] && [ -f "${APP_DIR}/indexer/indexer.js" ]; then
+  cd "${APP_DIR}/indexer"
+  pm2 start indexer.js --name gyds-indexer
+  info "Block indexer started via PM2."
+fi
 
-  # Start feature gate service if present
-  if [ -d "${APP_DIR}/feature-gate-service" ] && [ -f "${APP_DIR}/feature-gate-service/server.js" ]; then
-    cd "${APP_DIR}/feature-gate-service"
-    pm2 start server.js --name gyds-feature-gates --env production
-    info "Feature Gate Service started via PM2."
-  fi
+# Start legacy feature gate service only when an existing install still has it.
+if [ -d "${APP_DIR}/feature-gate-service" ] && [ -f "${APP_DIR}/feature-gate-service/server.js" ]; then
+  cd "${APP_DIR}/feature-gate-service"
+  pm2 start server.js --name gyds-feature-gates --env production
+  info "Legacy Feature Gate Service started via PM2."
 fi
 
 # ------------------------------------------------------------

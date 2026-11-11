@@ -54,9 +54,10 @@ sudo ./deploy.sh example.com --web-port=8080
 ```
 
 The script installs Node.js 22.18 or newer, local PostgreSQL, Nginx, PM2, and
-the frontend dependencies. It creates `/var/www/gyds-explorer/dist`, writes
-the server `.env`, configures Nginx, and prints the final URLs. It does **not**
-install or configure Supabase.
+the workspace dependencies. It prompts for the public Founder wallet address,
+builds the frontend and current API, creates `/var/www/gyds-explorer/dist`,
+writes the server `.env`, configures Nginx, and prints the final URLs. It does
+**not** install or configure Supabase.
 
 pgAdmin is optional and is not installed by the normal command. To explicitly
 install it and expose it at `/pgadmin4`, run:
@@ -71,9 +72,11 @@ pgAdmin credentials to `.env`. `--no-web --with-pgadmin` skips pgAdmin because
 there is no web interface to proxy it through.
 
 The script asks whether to install a blockchain node. Answer `N` if this
-machine should only host the explorer. The explorer itself reads the public RPC
-values in `.env` directly from the browser and does not require the API service
-for normal browsing.
+machine should only host the explorer. The API is required: browser RPC calls,
+wallet sessions, node settings, and admin features use it. Configure a reachable
+Mainnet RPC in Admin → Nodes or set `GYDS_REMOTE_RPC_URL` and
+`GYDS_REMOTE_RPC_URL_2` in the API server's `.env`. Leave those values blank
+rather than relying on an unverified public endpoint.
 
 ## 2a. What `update.sh` does
 
@@ -265,10 +268,10 @@ eth.syncing
 Add additional FULL node enodes to
 `/var/lib/gyds/geth/static-nodes.json`, then run `sudo gyds-restart`.
 The LITE node exposes `http://SERVER_IP:8545` and
-`ws://SERVER_IP:8546`; point the explorer's `VITE_RPC_URL` and
-`VITE_RPC_URL_2` at reachable HTTPS reverse-proxy URLs in production.
-Opening raw HTTP RPC on an internet-facing IP is not recommended without an
-authenticated proxy and rate limiting.
+`ws://SERVER_IP:8546`. Configure the API server's `GYDS_REMOTE_RPC_URL` or add
+the node through Admin → Nodes. Keep browser settings on the same-origin
+`/api/rpc` proxy; do not put upstream node URLs in `VITE_RPC_URL`. For public
+use, expose only a protected HTTPS RPC endpoint.
 
 ### RPC node
 
@@ -316,13 +319,13 @@ sudo NODE_TYPE=boost \
 sudo gyds-status
 ```
 
-After it is reachable through HTTPS, configure it in Admin → Node Settings as
-the **Boost node RPC URL**. The generated deployment values are:
+After it is reachable through HTTPS, configure it in Admin → Nodes as the
+**Boost node RPC URL**, or set `GYDS_REMOTE_RPC_URL_2` in the API server's
+`.env`. The browser continues to call the API proxy:
 
 ```dotenv
-VITE_RPC_URL_2=https://boost.example.com
-VITE_BOOSTNODE_RPC_URL=https://boost.example.com
-BOOSTNODE_RPC_URL=https://boost.example.com
+VITE_RPC_URL=/api/rpc
+VITE_RPC_URL_2=/api/rpc
 ```
 
 ### Hosting the explorer UI and nodes separately
@@ -340,7 +343,8 @@ configured node RPC endpoints. These can be on different machines:
 3. In Admin → Nodes, choose whether each node is on the API server or on a
    remote server. A local URL such as `http://127.0.0.1:8545` is resolved from
    the API server, not the user's browser. For a remote node, enter an
-   HTTP(S) RPC URL that the API server can reach.
+   HTTP(S) RPC URL that the API server can reach. The block indexer reads these
+   saved node URLs from PostgreSQL and accepts only chain ID 198282.
 
 Do not expose a node's raw RPC or admin interface publicly without a protected
 HTTPS proxy, access controls, and rate limiting.
@@ -406,6 +410,9 @@ requests from many embedded iframes. Use the same origin as the API, for
 example `http://SERVER_IP/` or the published HTTPS domain.
 
 Then seed the public address that will sign in:
+
+On a fresh deployment, `deploy.sh` prompts for this public wallet and seeds it
+as Founder. It does not seed a shared test wallet. On an existing install, use:
 
 ```bash
 cd /var/www/gyds-explorer

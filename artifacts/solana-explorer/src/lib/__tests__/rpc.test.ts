@@ -17,8 +17,8 @@ afterEach(() => {
 });
 
 describe("active network RPC configuration", () => {
-  it("defaults the admin primary RPC to the requested Guardian Chain endpoint", () => {
-    expect(DEFAULT_PRIMARY_RPC).toBe("https://app.netlifegy.com/api/rpc");
+  it("does not assume an upstream RPC endpoint is reachable", () => {
+    expect(DEFAULT_PRIMARY_RPC).toBe("");
   });
 
   it("saves changed RPC URLs through the authenticated server settings endpoint", async () => {
@@ -26,8 +26,8 @@ describe("active network RPC configuration", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const settings = {
-      primaryRpc: "https://app.netlifegy.com/api/rpc",
-      boostnodeRpc: "https://rpc2.netlifegy.com",
+      primaryRpc: "https://mainnet-rpc.example",
+      boostnodeRpc: "https://fallback-rpc.example",
       bootnodeEnode: "",
     };
     expect(await saveRuntimeNodeSettings(settings)).toEqual({ success: true });
@@ -41,7 +41,7 @@ describe("active network RPC configuration", () => {
   it("does not report a save as successful when the API rejects it", async () => {
     vi.stubGlobal("localStorage", { getItem: () => null });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Admin authorization required" }), { status: 403 })));
-    await expect(saveRuntimeNodeSettings({ primaryRpc: DEFAULT_PRIMARY_RPC, boostnodeRpc: "https://rpc2.netlifegy.com", bootnodeEnode: "" }))
+    await expect(saveRuntimeNodeSettings({ primaryRpc: "https://mainnet-rpc.example", boostnodeRpc: "https://fallback-rpc.example", bootnodeEnode: "" }))
       .rejects.toThrow("Admin authorization required");
   });
 

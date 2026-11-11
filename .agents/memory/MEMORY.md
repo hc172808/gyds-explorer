@@ -15,3 +15,4 @@
 - [Geth flag checks under pipefail](gyds-geth-flag-checks.md) — capture help output before checking options; `grep -q` can cause false negatives in strict pipelines.
 - [GYD mint compatibility](gyd-mint-compatibility.md) — preserve whole-token mint semantics for existing contracts; use a separate raw-unit method for fractional GYD.
 - [Testnet DEX scope](dex-testnet-scope.md) — keep swaps testnet-only and never treat a testnet “USDT” ticker as verified Tether.
+- [Bun override limits](bun-overrides.md) — Bun can ignore nested or version-scoped overrides; verify resolved packages in both lockfiles.

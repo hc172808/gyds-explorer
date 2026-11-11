@@ -138,13 +138,13 @@ module.exports = function registerLegacyNodeRoutes({ app, pool, requireAdmin }) 
     const remotePrimary = process.env.GYDS_REMOTE_RPC_URL ||
       process.env.RPC_URL ||
       process.env.VITE_RPC_URL ||
-      "https://app.netlifegy.com/api/rpc";
+      "";
     const remoteSecondary = process.env.GYDS_REMOTE_RPC_URL_2 ||
       process.env.RPC_URL_2 ||
       process.env.BOOSTNODE_RPC_URL ||
       process.env.VITE_BOOSTNODE_RPC_URL ||
       process.env.VITE_RPC_URL_2 ||
-      "https://boost.netlifegy.com";
+      "";
     res.json({
       primaryRpc: connectionMode === "server" ? localRpc : remotePrimary,
       boostnodeRpc: remoteSecondary,

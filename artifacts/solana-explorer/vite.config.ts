@@ -78,7 +78,7 @@ export default defineConfig({
         target:
           process.env.API_SERVER_URL ||
           process.env.API_PROXY_TARGET ||
-          "https://app.netlifegy.com",
+          `http://127.0.0.1:${process.env.REPL_ID ? "8080" : "3001"}`,
         changeOrigin: true,
       },
     },

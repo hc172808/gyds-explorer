@@ -38,8 +38,14 @@ const TOKEN_SYMBOL    = getArg("--symbol",       "TOKEN_SYMBOL",        "");
 const TOKEN_SUPPLY    = getArg("--supply",       "TOKEN_SUPPLY",        "1000000");
 const TOKEN_DECIMALS  = getArg("--decimals",     "TOKEN_DECIMALS",      "18");
 const PRIVATE_KEY     = getArg("--private-key",  "DEPLOYER_PRIVATE_KEY","");
-const RPC_URL         = getArg("--rpc",          "VITE_RPC_URL",        "https://rpc.netlifegy.com");
+const RPC_URL         = getArg("--rpc",          "GYDS_REMOTE_RPC_URL", "");
+const EXPECTED_CHAIN_ID = 198282n;
 const MINTABLE        = getArg("--mintable",     "TOKEN_MINTABLE",      "false") === "true";
+
+function getRpcHost(value) {
+  const rpcUrl = new URL(value);
+  return `${rpcUrl.protocol}//${rpcUrl.host}`;
+}
 
 // ---- Validate ----------------------------------------------
 if (!TOKEN_NAME)   { console.error("Error: --name is required.   Example: --name 'Gold Token'"); process.exit(1); }
@@ -48,6 +54,17 @@ if (!PRIVATE_KEY || PRIVATE_KEY === "0xYOUR_PRIVATE_KEY") {
   console.error("Error: --private-key (or DEPLOYER_PRIVATE_KEY in .env) is required.");
   console.error("This is the private key of the account that will deploy the contract.");
   console.error("Make sure the account has enough GYDS to pay gas.");
+  process.exit(1);
+}
+if (!RPC_URL) {
+  console.error("Error: --rpc (or GYDS_REMOTE_RPC_URL in .env) must point to a reachable GYDS Mainnet RPC.");
+  process.exit(1);
+}
+try {
+  const rpcUrl = new URL(RPC_URL);
+  if (rpcUrl.protocol !== "http:" && rpcUrl.protocol !== "https:") throw new Error("unsupported protocol");
+} catch {
+  console.error("Error: RPC URL must be an absolute HTTP(S) URL.");
   process.exit(1);
 }
 
@@ -106,7 +123,7 @@ async function deployViaRpc() {
   console.log(`║   Supply:   ${TOKEN_SUPPLY.padEnd(41)}║`);
   console.log(`║   Decimals: ${TOKEN_DECIMALS.padEnd(41)}║`);
   console.log(`║   Deployer: ${wallet.address.padEnd(41)}║`);
-  console.log(`║   RPC:      ${RPC_URL.padEnd(41)}║`);
+  console.log(`║   RPC host: ${getRpcHost(RPC_URL).padEnd(41)}║`);
   console.log("╚══════════════════════════════════════════════════════╝");
   console.log("");
 
@@ -121,6 +138,9 @@ async function deployViaRpc() {
 
   // Get chain info
   const network = await provider.getNetwork();
+  if (network.chainId !== EXPECTED_CHAIN_ID) {
+    throw new Error(`Configured RPC is on chain ${network.chainId}, expected GYDS Mainnet chain ${EXPECTED_CHAIN_ID}.`);
+  }
   console.log(`Chain ID: ${network.chainId}`);
 
   // Encode constructor arguments for the geth script approach
@@ -176,7 +196,7 @@ function generateGethScript(deployerAddress, supply) {
   console.log("4. In Deploy tab: select 'Injected Provider - MetaMask'");
   console.log(`5. Add your GYDS network to MetaMask:`);
   console.log(`     Network name: GYDS Network`);
-  console.log(`     RPC URL:      ${RPC_URL}`);
+  console.log(`     RPC host:     ${getRpcHost(RPC_URL)}`);
   console.log(`     Chain ID:     198282`);
   console.log(`     Currency:     GYDS`);
   console.log("6. Deploy with constructor args:");

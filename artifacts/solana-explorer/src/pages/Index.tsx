@@ -12,16 +12,18 @@ import { useNetwork } from "@/contexts/NetworkContext";
 
 const Index = () => {
   const { networkType } = useNetwork();
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery({
     queryKey: ["networkStats", networkType],
     queryFn: getNetworkStats,
-    refetchInterval: 3000,
+    retry: false,
+    refetchInterval: (query) => query.state.status === "error" ? 30_000 : 3000,
   });
 
-  const { data: blocks, isLoading: blocksLoading } = useQuery({
+  const { data: blocks, isLoading: blocksLoading, isError: blocksError } = useQuery({
     queryKey: ["latestBlocks", networkType],
     queryFn: () => getLatestBlocks(10),
-    refetchInterval: 3000,
+    retry: false,
+    refetchInterval: (query) => query.state.status === "error" ? 30_000 : 3000,
   });
 
   // Extract transactions from blocks
@@ -32,6 +34,7 @@ const Index = () => {
         : []
     )
     .slice(0, 10);
+  const rpcUnavailable = statsError || blocksError;
 
   return (
     <div className="min-h-0">
@@ -76,6 +79,18 @@ const Index = () => {
 
       {/* Content */}
       <section className="container mx-auto px-4 py-8">
+        {rpcUnavailable && (
+          <div
+            role="alert"
+            className="mb-6 rounded-xl border border-destructive/40 bg-destructive/5 px-5 py-4"
+          >
+            <h2 className="text-sm font-semibold text-destructive">Network data is unavailable</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The explorer cannot reach a configured Mainnet node. Add a reachable RPC with chain
+              ID 198282 in Admin → Nodes, or set GYDS_REMOTE_RPC_URL on the API server.
+            </p>
+          </div>
+        )}
         <div className="grid lg:grid-cols-2 gap-6">
           <div>
             <BlockList blocks={blocks ?? []} loading={blocksLoading} />

@@ -2,7 +2,9 @@ import { API_BASE_URL } from "./apiBase";
 
 export type NetworkType = "mainnet" | "testnet" | "custom";
 
-export const DEFAULT_PRIMARY_RPC = "https://app.netlifegy.com/api/rpc";
+// Upstream endpoints are configured by an admin or in the API server's .env.
+// The browser only calls the same-origin /api/rpc proxy.
+export const DEFAULT_PRIMARY_RPC = "";
 
 export const NETWORK_CHAIN_IDS = {
   mainnet: 198282,

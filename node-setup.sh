@@ -1402,8 +1402,8 @@ case "$NODE_TYPE" in
     printf "║     HTTP RPC: %-43s║\n" "http://${SERVER_IP}:${RPC_PORT}"
     printf "║     WS RPC:   %-43s║\n" "ws://${SERVER_IP}:${WS_PORT}"
     echo "║                                                          ║"
-    echo "║   Update .env:                                           ║"
-    printf "║     VITE_RPC_URL=%-41s║\n" "http://${SERVER_IP}:${RPC_PORT}"
+    echo "║   Configure this node on the API server:                 ║"
+    echo "║     Admin → Nodes or GYDS_REMOTE_RPC_URL                 ║"
     ;;
   validator)
     printf "║   Validator:  %-43s║\n" "${VALIDATOR_ADDRESS}"
@@ -1435,8 +1435,8 @@ case "$NODE_TYPE" in
     echo "  1. Check it's running:      gyds-logs"
     echo "  2. Get your enode URL:      gyds-enode"
     echo "  3. Copy genesis.json + enode to other nodes"
-    echo "  4. Point the explorer's VITE_RPC_URL to this node:"
-    printf "       VITE_RPC_URL=http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
+    echo "  4. Configure the API server to reach this node in Admin → Nodes"
+    echo "     or set GYDS_REMOTE_RPC_URL in the API server's .env"
     ;;
   full)
     echo "  1. Verify genesis.json matches the MAIN node"
@@ -1447,19 +1447,22 @@ case "$NODE_TYPE" in
     echo "  1. Verify genesis.json matches the MAIN node"
     echo "  2. Wait for sync:           gyds-console → eth.syncing"
     printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
-    echo "  4. Use this RPC in the explorer's VITE_RPC_URL"
+    echo "  4. Add this RPC in the API server's Admin → Nodes"
+    echo "     or set GYDS_REMOTE_RPC_URL in the API server's .env"
     ;;
   boost)
     echo "  1. Verify genesis.json matches the MAIN node"
     echo "  2. Wait for sync:           gyds-console → eth.syncing"
     printf "  3. Point wallets/websites to: http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
-    echo "  4. Use this RPC as VITE_RPC_URL_2 / BOOSTNODE_RPC_URL"
+    echo "  4. Add this RPC in the API server's Admin → Nodes"
+    echo "     or set GYDS_REMOTE_RPC_URL_2 in the API server's .env"
     ;;
   lite)
     printf "  1. Add full node enodes to %s/geth/static-nodes.json\n" "${DATA_DIR}"
     echo "  2. Restart:                 gyds-restart"
     printf "  3. Point wallets to:        http://%s:%s\n" "${SERVER_IP}" "${RPC_PORT}"
-    echo "  4. Update VITE_RPC_URL in the explorer's .env"
+    echo "  4. Add this RPC in the API server's Admin → Nodes"
+    echo "     or set GYDS_REMOTE_RPC_URL in the API server's .env"
     ;;
   validator)
     echo "  1. Ask the MAIN node admin to run:"

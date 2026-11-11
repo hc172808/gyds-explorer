@@ -1,7 +1,5 @@
 const DEFAULT_INTERVAL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 3000;
-const DEFAULT_PRIMARY_RPC = "https://app.netlifegy.com/api/rpc";
-const DEFAULT_BOOST_RPC = "https://boost.netlifegy.com";
 
 let activeStop = null;
 
@@ -44,7 +42,6 @@ function getEnvironmentRpcEndpoints(localChainId) {
     process.env.GYDS_REMOTE_RPC_URL,
     process.env.RPC_URL,
     process.env.VITE_RPC_URL,
-    process.env.NODE_ENV === "production" ? DEFAULT_PRIMARY_RPC : undefined,
   );
   const remoteSecondary = firstHttpUrl(
     process.env.GYDS_REMOTE_RPC_URL_2,
@@ -52,7 +49,6 @@ function getEnvironmentRpcEndpoints(localChainId) {
     process.env.BOOSTNODE_RPC_URL,
     process.env.VITE_BOOSTNODE_RPC_URL,
     process.env.VITE_RPC_URL_2,
-    process.env.NODE_ENV === "production" ? DEFAULT_BOOST_RPC : undefined,
   );
   const endpoints = [];
   if (mode === "local" || mode === "server") {

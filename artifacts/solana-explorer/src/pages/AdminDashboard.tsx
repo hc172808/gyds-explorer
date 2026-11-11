@@ -287,7 +287,7 @@ ${configuredNodes.map((node) => [
               aria-label="Primary RPC URL"
               value={rpc1}
               onChange={(e) => setRpc1(e.target.value)}
-              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://app.netlifegy.com/api/rpc"}
+              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://your-mainnet-rpc.example"}
               className="font-mono text-xs"
             />
             {status1 && <div className="mt-1.5"><RpcStatusBadge s={status1} /></div>}
@@ -298,7 +298,7 @@ ${configuredNodes.map((node) => [
               aria-label="Fallback RPC URL"
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
-              placeholder="https://boost.netlifegy.com"
+              placeholder="https://your-fallback-rpc.example"
               className="font-mono text-xs"
             />
             {status2 && <div className="mt-1.5"><RpcStatusBadge s={status2} /></div>}

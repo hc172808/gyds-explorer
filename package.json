@@ -15,12 +15,13 @@
     "dev": "cd artifacts/solana-explorer && PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite --config vite.config.ts --host 0.0.0.0",
     "start": "cd artifacts/solana-explorer && PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite preview --config vite.config.ts --host 0.0.0.0",
     "build": "PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite build --config artifacts/solana-explorer/vite.config.ts",
-    "build:check": "npm run typecheck && npm run build",
+    "build:check": "npm run typecheck && npm run build && npm run build --workspace=@workspace/api-server",
     "build:dev": "PORT=${PORT:-8080} BASE_PATH=${BASE_PATH:-/} vite build --config artifacts/solana-explorer/vite.config.ts",
     "replit:dev": "bash scripts/replit-dev.sh",
     "typecheck:libs": "tsc --build",
     "typecheck": "bash scripts/typecheck-all.sh",
-    "test": "npm run test --workspace=@workspace/solana-explorer",
+    "test": "npm run test --workspace=@workspace/solana-explorer && npm run test:indexer",
+    "test:indexer": "node --test indexer/test/*.test.js",
     "check:decimals": "node scripts/check-decimals.mjs"
   },
   "private": true,
@@ -31,5 +32,20 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0"
+  },
+  "overrides": {
+    "@vitest/mocker": "4.1.12",
+    "body-parser": "2.4.0",
+    "brace-expansion": "5.0.12",
+    "fast-copy": "4.3.1",
+    "fast-uri": "3.1.9",
+    "js-yaml": "4.3.2",
+    "markdown-it": "14.3.3",
+    "minimatch": "11.0.1",
+    "postcss-selector-parser": "6.1.5",
+    "proxy-addr": "2.0.8",
+    "qs": "6.17.1",
+    "source-map-js": "1.2.2",
+    "vite": "7.3.7"
   }
 }

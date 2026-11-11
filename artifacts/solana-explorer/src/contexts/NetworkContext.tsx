@@ -15,7 +15,7 @@ interface NetworkConfig {
 // Browser RPC consumers always use the API proxy. Upstream node URLs remain
 // server-side and are exposed only through authenticated admin settings.
 const ENV_RPC1 = DEFAULT_PRIMARY_RPC;
-const ENV_RPC2 = "https://boost.netlifegy.com";
+const ENV_RPC2 = "";
 
 const LS_KEY_RPC1     = "gyds_rpc_primary";
 const LS_KEY_RPC2     = "gyds_rpc_secondary";
