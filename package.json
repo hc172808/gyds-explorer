@@ -22,7 +22,8 @@
     "typecheck": "bash scripts/typecheck-all.sh",
     "test": "npm run test --workspace=@workspace/solana-explorer && npm run test:indexer",
     "test:indexer": "node --test indexer/test/*.test.js",
-    "check:decimals": "node scripts/check-decimals.mjs"
+    "check:decimals": "node scripts/check-decimals.mjs",
+    "compile:tgyd-token": "node scripts/compile-tgyd-token.mjs"
   },
   "private": true,
   "devDependencies": {
@@ -31,7 +32,8 @@
   },
   "dependencies": {
     "dotenv": "^17.4.2",
-    "ethers": "^6.17.0"
+    "ethers": "^6.17.0",
+    "solc": "^0.8.30"
   },
   "overrides": {
     "@vitest/mocker": "4.1.12",

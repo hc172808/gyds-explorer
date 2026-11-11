@@ -1,5 +1,5 @@
 import { Block, Transaction, TransactionReceipt, NetworkStats } from "./types";
-import { formatUnitsRaw, GYDS_COIN } from "./coins";
+import { formatUnitsRaw, getNativeCoinForNetwork } from "./coins";
 import { getSelectedNetworkConfig } from "./networkConfig";
 
 const RPC_TIMEOUT_MS = 5000;
@@ -114,9 +114,15 @@ export async function getSyncStatus(): Promise<SyncStatus> {
 
 export const hexToNumber = (hex: string): number => parseInt(hex, 16);
 export const hexToDecimal = (hex: string): string => BigInt(hex).toString();
-/** Raw native-coin base units -> GYDS, BigInt-safe with 6 fraction digits. */
+/** Raw native-coin base units -> selected network currency, BigInt-safe. */
 export const nativeBaseUnitsToGyds = (rawBaseUnits: string): string =>
-  formatUnitsRaw(rawBaseUnits, GYDS_COIN.decimals, { maxFractionDigits: 6, minFractionDigits: 6 });
+  formatUnitsRaw(rawBaseUnits, getNativeCoinForNetwork(getSelectedNetworkConfig().type).decimals, {
+    maxFractionDigits: 6,
+    minFractionDigits: 6,
+  });
+
+export const nativeCoinSymbol = () =>
+  getNativeCoinForNetwork(getSelectedNetworkConfig().type).symbol;
 /** Raw wei -> gwei (1e9 wei), used for gas prices only. */
 export const gweiFromWei = (wei: string): string =>
   formatUnitsRaw(wei, 9, { maxFractionDigits: 2, minFractionDigits: 2 });

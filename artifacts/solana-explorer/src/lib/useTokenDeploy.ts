@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { BrowserProvider, ContractFactory, JsonRpcProvider, Contract } from "ethers";
 import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
+import TGYD_TOKEN_ARTIFACT from "./tgyd-token-artifact.json";
 import { getEthereumProvider, getEthereumProviderForAccount } from "./ethereumProvider";
+import { getNativeCoinForNetwork } from "./coins";
+import type { NetworkType } from "./networkConfig";
 
 const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198282);
 export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198282);
@@ -17,6 +20,7 @@ export interface DeployResult {
   decimals: number;
   supply: string;
   mintable: boolean;
+  maxSupply?: string;
   deployedAt: string;
 }
 
@@ -26,6 +30,7 @@ export interface DeployParams {
   decimals: number;
   initialSupply: string;
   mintable: boolean;
+  maxSupply?: string;
   expectedDeployer?: string;
 }
 
@@ -33,6 +38,7 @@ export function formatDeployError(
   error: unknown,
   networkName: string,
   chainId: bigint | number | null,
+  nativeCoinSymbol = "GYDS",
 ): string {
   const value = error as any;
   const message = [
@@ -47,7 +53,7 @@ export function formatDeployError(
 
   if (/no asset fund|no native gyds|insufficient funds|funds for gas|not enough funds|insufficient balance|balance too low/i.test(message)) {
     const chainText = chainId === null ? "" : ` (chain ID ${chainId})`;
-    return `This wallet does not have enough native GYDS to pay deployment fees on ${networkName}${chainText}. Fund the same admin wallet with native GYDS on this network, then retry. Token balances such as GYD or tUSDT cannot pay gas.`;
+    return `This wallet does not have enough native ${nativeCoinSymbol} to pay deployment fees on ${networkName}${chainText}. Fund the same admin wallet with ${nativeCoinSymbol} on this network, then retry. ERC-20 token balances cannot pay gas.`;
   }
 
   return message.replace(/\(action=.*/, "").trim() || "Deployment failed";
@@ -57,6 +63,7 @@ export function useTokenDeploy(
   rpcUrl: string,
   selectedChainId: number | null = Number(GYDS_CHAIN_ID),
   selectedNetworkName = "GYDS Network",
+  selectedNetworkType: NetworkType = "mainnet",
 ) {
   const [status,          setStatus]          = useState<DeployStatus>("idle");
   const [txHash,          setTxHash]          = useState<string | null>(null);
@@ -80,6 +87,14 @@ export function useTokenDeploy(
       setError(null);
       setTxHash(null);
       setContractAddress(null);
+
+      const isTgyd = params.symbol.trim().toUpperCase() === "TGYD";
+      if (isTgyd && (selectedNetworkType !== "testnet" || selectedChainId !== 198281)) {
+        throw new Error("TGYD can only be deployed on GYDS Testnet.");
+      }
+      if (isTgyd && (!params.maxSupply || BigInt(params.initialSupply) > BigInt(params.maxSupply))) {
+        throw new Error("TGYD requires a valid supply cap at least as large as its initial supply.");
+      }
 
       // Request accounts
       const provider = new BrowserProvider(ethereum as any);
@@ -116,7 +131,11 @@ export function useTokenDeploy(
               chainId:         targetChainHex,
               chainName:       selectedNetworkName,
               rpcUrls:         [rpcUrl],
-              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 18 },
+              nativeCurrency:  {
+                name: getNativeCoinForNetwork(selectedNetworkType).name,
+                symbol: getNativeCoinForNetwork(selectedNetworkType).symbol,
+                decimals: getNativeCoinForNetwork(selectedNetworkType).decimals,
+              },
             }]);
             // After adding, switch again
             await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
@@ -138,7 +157,12 @@ export function useTokenDeploy(
 
       return await _deploy(signer, params, targetChainId);
     } catch (e: any) {
-      setError(formatDeployError(e, selectedNetworkName, activeChainId ?? selectedChainId));
+      setError(formatDeployError(
+        e,
+        selectedNetworkName,
+        activeChainId ?? selectedChainId,
+        getNativeCoinForNetwork(selectedNetworkType).symbol,
+      ));
       setStatus("error");
       return null;
     }
@@ -155,14 +179,25 @@ export function useTokenDeploy(
       throw new Error("NO_NATIVE_GYDS_FOR_GAS");
     }
 
-    const factory  = new ContractFactory(TOKEN_ARTIFACT.abi, TOKEN_ARTIFACT.bytecode, signer);
-    const contract = await factory.deploy(
-      params.name,
-      params.symbol,
-      params.decimals,
-      BigInt(params.initialSupply),
-      params.mintable,
-    );
+    const isTgyd = params.symbol.trim().toUpperCase() === "TGYD";
+    const artifact = isTgyd ? TGYD_TOKEN_ARTIFACT : TOKEN_ARTIFACT;
+    const factory = new ContractFactory(artifact.abi, artifact.bytecode, signer);
+    const contract = isTgyd
+      ? await factory.deploy(
+          params.name,
+          params.symbol,
+          params.decimals,
+          BigInt(params.initialSupply),
+          BigInt(params.maxSupply!),
+          params.mintable,
+        )
+      : await factory.deploy(
+          params.name,
+          params.symbol,
+          params.decimals,
+          BigInt(params.initialSupply),
+          params.mintable,
+        );
 
     const hash = contract.deploymentTransaction()?.hash ?? "";
     setTxHash(hash);
@@ -181,6 +216,7 @@ export function useTokenDeploy(
       decimals:        params.decimals,
       supply:          params.initialSupply,
       mintable:        params.mintable,
+      ...(isTgyd ? { maxSupply: params.maxSupply } : {}),
       deployedAt:      new Date().toISOString(),
     };
   };

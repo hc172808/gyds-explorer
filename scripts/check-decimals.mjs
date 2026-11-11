@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
- * CI guard: protocol metadata, node scripts, and UI token decimals must match
- * chain-spec.json (GYDS 18, GYD 6).
+ * CI guard for network-specific coin precision and deployment defaults.
  */
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -10,6 +9,8 @@ const root = path.resolve(import.meta.dirname, "..");
 const spec = JSON.parse(readFileSync(path.join(root, "chain-spec.json"), "utf8"));
 const GYDS = spec.coins.GYDS.decimals;
 const GYD = spec.coins.GYD.decimals;
+const TGYDS = 18;
+const TGYD = 6;
 
 const errors = [];
 if (GYDS !== 18) errors.push(`chain-spec.json: GYDS decimals are ${GYDS}, expected 18`);
@@ -29,7 +30,7 @@ function check(rel, patterns) {
       continue;
     }
     const actual = Number(m[1]);
-    if (actual !== expected) {
+    if (expected !== undefined && actual !== expected) {
       errors.push(`${rel}: ${label} is ${actual}, expected ${expected}`);
     }
   }
@@ -38,6 +39,8 @@ function check(rel, patterns) {
 check("artifacts/solana-explorer/src/lib/coins.ts", [
   { label: "GYDS_COIN.decimals", re: /GYDS_COIN[\s\S]*?decimals:\s*(\d+)/, expected: GYDS },
   { label: "GYD_COIN.decimals", re: /GYD_COIN:[\s\S]*?decimals:\s*(\d+)/, expected: GYD },
+  { label: "TGYDS_COIN.decimals", re: /TGYDS_COIN:[\s\S]*?decimals:\s*(\d+)/, expected: TGYDS },
+  { label: "TGYD_COIN.decimals", re: /TGYD_COIN:[\s\S]*?decimals:\s*(\d+)/, expected: TGYD },
 ]);
 
 check("artifacts/solana-explorer/src/lib/wallet.ts", [
@@ -47,15 +50,14 @@ check("artifacts/solana-explorer/src/lib/wallet.ts", [
 
 check("artifacts/solana-explorer/src/lib/useTokenDeploy.ts", [
   {
-    label: "wallet_addEthereumChain nativeCurrency decimals",
-    re: /nativeCurrency:\s*\{[^}]*symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/,
-    expected: GYDS,
+    label: "wallet_addEthereumChain network-native decimals",
+    re: /nativeCurrency:[\s\S]*?decimals:\s*getNativeCoinForNetwork\(selectedNetworkType\)\.decimals/,
   },
 ]);
 
 check("artifacts/solana-explorer/src/pages/MyWallet.tsx", [
-  { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
-  { label: "GYD fallback decimals", re: /symbol:\s*"GYD"[^}]*decimals:\s*(\d+)/, expected: GYD },
+  { label: "network-native fallback metadata", re: /getNativeCoinForNetwork\(networkType\)/ },
+  { label: "network token fallback metadata", re: /getTokenCoinForNetwork\(networkType\)/ },
 ]);
 
 check("artifacts/solana-explorer/src/pages/Dashboard.tsx", [
@@ -64,8 +66,8 @@ check("artifacts/solana-explorer/src/pages/Dashboard.tsx", [
 ]);
 
 check("artifacts/solana-explorer/src/pages/TokenBalances.tsx", [
-  { label: "GYDS fallback decimals", re: /symbol:\s*"GYDS"[^}]*decimals:\s*(\d+)/, expected: GYDS },
-  { label: "GYDS balance fallback decimals", re: /\?\.decimals\s*\?\?\s*(\d+)/, expected: GYDS },
+  { label: "network-native fallback metadata", re: /getNativeCoinForNetwork\(networkType\)/ },
+  { label: "network token fallback metadata", re: /getTokenCoinForNetwork\(networkType\)/ },
 ]);
 
 check("artifacts/api-server/src/routes/coin-settings.ts", [
@@ -116,4 +118,4 @@ if (errors.length) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`✅ Token decimals match chain spec (GYDS=${GYDS}, GYD=${GYD})`);
+console.log(`✅ Mainnet/Testnet decimals match (GYDS=${GYDS}, GYD=${GYD}, TGYDS=${TGYDS}, TGYD=${TGYD})`);

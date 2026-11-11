@@ -39,6 +39,9 @@ import { fetchAutoUpdateSettings, saveAutoUpdateSettings, type AutoUpdateSetting
 import RpcStatusPanel from "@/components/RpcStatusPanel";
 import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, isAddress, parseUnits } from "ethers";
 import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "@/lib/useTokenDeploy";
+import TGYD_TEST_TOKEN_SOURCE from "@/lib/TGYDTestToken.sol?raw";
+import { getNativeCoinForNetwork } from "@/lib/coins";
+import { localTokenStorageKey, TESTNET_ADMIN_WALLET } from "@/lib/networkConfig";
 
 const API_BASE = API_BASE_URL;
 
@@ -1197,29 +1200,49 @@ function TokensTab() {
     setMintable(true);
     toast.success("GYD stablecoin preset applied");
   };
+  const applyTgydPreset = () => {
+    setTokenName("TGYD");
+    setTokenSymbol("TGYD");
+    setTokenDecimals("6");
+    setTokenSupply("5000");
+    setMintable(true);
+    toast.success("TGYD Testnet preset applied: 5,000 initial supply, 1,000,000 cap");
+  };
 
   // Deploy hook
   const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(
     rpcUrl,
     network.chainId,
     network.name,
+    networkType,
   );
 
   // Deployed tokens registry (localStorage)
+  const tokenStorageKey = localTokenStorageKey();
   const [deployedTokens, setDeployedTokens] = useState<DeployedToken[]>(() => {
-    try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
+    try { return JSON.parse(localStorage.getItem(tokenStorageKey) || "[]"); }
     catch { return []; }
   });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(tokenStorageKey) || "[]");
+      setDeployedTokens(Array.isArray(saved) ? saved : []);
+    } catch {
+      setDeployedTokens([]);
+    }
+  }, [tokenStorageKey]);
   const [newTokenAddr,  setNewTokenAddr]  = useState("");
   const [newTokenLabel, setNewTokenLabel] = useState("");
 
-  const solidityCode = SOLIDITY_TEMPLATE(
-    tokenName || "MyToken",
-    tokenSymbol || "MTK",
-    parseInt(tokenDecimals) || 6,
-    tokenSupply || "1000000",
-    mintable,
-  );
+  const solidityCode = tokenSymbol.trim().toUpperCase() === "TGYD"
+    ? TGYD_TEST_TOKEN_SOURCE
+    : SOLIDITY_TEMPLATE(
+        tokenName || "MyToken",
+        tokenSymbol || "MTK",
+        parseInt(tokenDecimals) || 6,
+        tokenSupply || "1000000",
+        mintable,
+      );
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
@@ -1236,7 +1259,7 @@ function TokensTab() {
     };
     const updated = [entry, ...deployedTokens.filter((t) => t.address !== result.contractAddress)];
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
   };
 
   const publishTokenSettings = async (result: DeployResult) => {
@@ -1262,6 +1285,7 @@ function TokensTab() {
       return;
     }
     const isGyd = tokenSymbol.trim().toUpperCase() === "GYD";
+    const isTgyd = tokenSymbol.trim().toUpperCase() === "TGYD";
     if (!/^\d+$/.test(tokenSupply) || Number(tokenSupply) < 0 || (!isGyd && Number(tokenSupply) === 0)) {
       toast.error(isGyd ? "Initial supply must be a whole number of zero or more." : "Initial supply must be a positive whole number.");
       return;
@@ -1275,6 +1299,17 @@ function TokensTab() {
       toast.error("GYD must use 6 decimals with owner-controlled minting enabled.");
       return;
     }
+    if (isTgyd && (
+      networkType !== "testnet" ||
+      network.chainId !== 198281 ||
+      tokenName.trim() !== "TGYD" ||
+      decimals !== 6 ||
+      tokenSupply !== "5000" ||
+      !mintable
+    )) {
+      toast.error("Use the TGYD Testnet preset: 5,000 initial tokens, 6 decimals, and a hard 1,000,000-token cap.");
+      return;
+    }
     const session = getStoredSession();
     if (!session || !isPrivilegedSession(session)) {
       toast.error("Sign in with an authorized admin wallet before deploying tokens.");
@@ -1284,17 +1319,26 @@ function TokensTab() {
       toast.error("Deploy the GYD stablecoin on GYDS Mainnet, not Testnet or a custom network.");
       return;
     }
+    if (isTgyd && session.walletAddress.toLowerCase() !== TESTNET_ADMIN_WALLET) {
+      toast.error("Connect the configured Testnet admin wallet before deploying TGYD.");
+      return;
+    }
     const result = await deploy({
       name:          tokenName.trim(),
       symbol:        tokenSymbol.trim(),
       decimals,
       initialSupply: tokenSupply,
       mintable,
+      ...(isTgyd ? { maxSupply: "1000000" } : {}),
       expectedDeployer: session.walletAddress,
     });
     if (result) {
       saveTokenToRegistry(result);
-      await publishTokenSettings(result);
+      if (isTgyd) {
+        toast.info("TGYD was saved to the Testnet-only token registry; Mainnet settings were not changed.");
+      } else {
+        await publishTokenSettings(result);
+      }
       if (result.symbol.toUpperCase() === "GYD") setGydRefreshKey((key) => key + 1);
       toast.success(`${result.name} (${result.symbol}) deployed at ${result.contractAddress.slice(0, 10)}…`);
     }
@@ -1315,7 +1359,7 @@ function TokensTab() {
     };
     const updated = [entry, ...deployedTokens];
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
     setNewTokenAddr("");
     setNewTokenLabel("");
     toast.success("Token address saved.");
@@ -1324,25 +1368,26 @@ function TokensTab() {
   const removeToken = (addr: string) => {
     const updated = deployedTokens.filter((t) => t.address !== addr);
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
   };
 
   const isDeploying = ["connecting","switching","deploying","confirming"].includes(deployStatus);
 
   const deployStepLabels: Record<string, string> = {
     connecting:  "Connecting to MetaMask…",
-    switching:   "Switching to GYDS Network…",
+    switching:   `Switching to ${network.name}…`,
     deploying:   "Sending transaction…",
     confirming:  "Waiting for confirmation…",
     success:     "Deployed!",
     error:       "Deployment failed",
   };
 
-  const walletNetworkName = networkType === "custom" ? "GYDS Custom Network" : `GYDS ${network.name}`;
+  const nativeCoin = getNativeCoinForNetwork(networkType);
+  const walletNetworkName = networkType === "custom" ? "Custom Network" : `GYDS ${network.name}`;
   const metaMaskSetup = `Network name:  ${walletNetworkName}
 RPC URL:       ${rpcUrl}
 Chain ID:      ${network.chainId ?? "Check the custom RPC"}
-Currency:      GYDS`;
+Currency:      ${nativeCoin.symbol}`;
 
   return (
     <div className="space-y-6">
@@ -1363,6 +1408,15 @@ Currency:      GYDS`;
             </div>
             <Button type="button" variant="outline" size="sm" onClick={applyGydPreset}>Use GYD preset</Button>
           </div>
+          {networkType === "testnet" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <div className="flex-1">
+                <p className="text-sm font-medium">TGYD Testnet token</p>
+                <p className="text-xs text-muted-foreground">5,000 initial TGYD to the configured admin wallet; immutable 1,000,000 TGYD maximum supply.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={applyTgydPreset}>Use TGYD preset</Button>
+            </div>
+          )}
 
           {/* Token params grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

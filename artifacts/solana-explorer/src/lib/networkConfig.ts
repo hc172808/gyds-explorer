@@ -10,6 +10,9 @@ export const NETWORK_CHAIN_IDS = {
   mainnet: 198282,
   testnet: 198281,
 };
+export const TESTNET_ADMIN_WALLET = (
+  import.meta.env.VITE_TESTNET_ADMIN_WALLET || "0x6422d12bfaddee5142bfad21b3006a74d09017b1"
+).toLowerCase();
 
 export interface SelectedNetworkConfig {
   type: NetworkType;

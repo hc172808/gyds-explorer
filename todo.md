@@ -530,19 +530,20 @@ and a user-supplied Custom RPC, while Mainnet and Testnet run simultaneously on
 one server with separate services, data directories, and ports. Keep staging
 (`198283`) independent.
 
-- [ ] Provide distinct production network targets in the explorer:
+- [x] Provide distinct production network targets in the explorer:
   - Mainnet: chain ID `198282`.
   - Testnet: chain ID `198281`.
   - Custom RPC: use the URL entered by the user.
   Switching targets must change the RPC endpoint and expected chain identity,
   not only the displayed label.
-- [ ] Support running Mainnet and Testnet simultaneously on the same server:
+- [x] Configure Mainnet and Testnet to run independently on one server:
   - Use separate node processes/service units, data directories, genesis
-    configurations, logs, and backups.
+    configurations, logs, and backups. Mainnet uses HTTP/WS/P2P/metrics ports
+    `8545/8546/30303/6060`; Testnet uses `9545/9546/30304/6061`.
   - Assign and document nonconflicting ports for HTTP RPC, WebSocket RPC, P2P,
     and metrics/health endpoints. Set the exact port numbers in the deployment
     configuration and matching firewall rules.
-- [ ] Configure separate Mainnet and Testnet RPC endpoints and expected chain
+- [x] Configure separate Mainnet and Testnet RPC endpoints and expected chain
   IDs in the explorer and API. Validate each endpoint's `eth_chainId` before
   serving it for the selected network.
 - [ ] Ensure Custom RPC selection routes explorer requests to the entered URL
@@ -552,6 +553,13 @@ one server with separate services, data directories, and ports. Keep staging
   ports as well.
 - [ ] Verify both nodes run concurrently on one host, their ports do not
   collide, and the explorer displays data from the selected chain.
+
+- [x] Configure Testnet native coin `TGYDS` with a 1,000,000-token genesis
+  supply and 5,000 TGYDS allocated to the configured admin wallet.
+- [x] Add the Testnet-only `TGYD` token with 5,000 initial tokens for the admin
+  wallet and an immutable 1,000,000-token maximum supply.
+- [ ] Initialize the Testnet node and deploy TGYD from the authorized admin
+  wallet; this requires the server and a wallet-signed deployment transaction.
 
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
@@ -1486,17 +1494,16 @@ protocol balances have been erased.
 
 ### H. Single chain, two environments (mainnet + testnet) — added 2026-09-08
 
-- [ ] **One blockchain, different ports**: testnet and mainnet run the same
+- [x] **One blockchain, different ports**: testnet and mainnet run the same
       Guardian Chain codebase/genesis rules on one host, separated only by port
-      and data dir — not by a forked build. Testnet identifier/port: **198283**
+      and data dir — not by a forked build. Testnet identifier: **198281**
       (mainnet stays 198282).
-- [ ] **Port map**: document and script mainnet vs testnet ports (P2P, RPC, WS,
-      metrics) so both can run side by side without collisions; testnet base
-      offset derived from 198283.
-- [ ] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
+- [x] **Port map**: Mainnet RPC/WS/P2P/metrics `8545/8546/30303/6060`;
+      Testnet `9545/9546/30304/6061`.
+- [x] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
       id/port set, data dir (`/var/lib/gyds` vs `/var/lib/gyds-testnet`),
       service name (`gyds-node` vs `gyds-node-testnet`) and firewall rules.
-- [ ] **Explorer network switch** points Testnet at the 198283 endpoints and
+- [x] **Explorer network switch** points Testnet at the 198281 endpoint and
       shows a clear testnet banner; faucet-style test coins optional.
 - [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
       filtering, so nodes of both environments are managed in one place.

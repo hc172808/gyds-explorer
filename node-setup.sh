@@ -73,10 +73,14 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/gyds}"
 CHAIN_ID=198282
 NETWORK_ID=198282
 NATIVE_DECIMALS=18
-NATIVE_SUPPLY=1000000000
-NODE_NAME="gyds-node"
+NATIVE_SUPPLY="${NATIVE_SUPPLY:-}"
+NATIVE_COIN_NAME="${NATIVE_COIN_NAME:-}"
+NATIVE_COIN_SYMBOL="${NATIVE_COIN_SYMBOL:-}"
+NODE_NAME="${NODE_NAME:-}"
 SERVICE_NAME="gyds-node"
 TOOL_PREFIX="gyds"
+TESTNET_ADMIN_WALLET="0x6422d12bfaddee5142bfad21b3006a74d09017b1"
+NODE_TYPE="${NODE_TYPE:-}"
 
 # Ports
 RPC_PORT=8545
@@ -97,7 +101,7 @@ MAIN_ACCOUNT=""
 ADMIN_WALLET="${ADMIN_WALLET:-}"
 ADMIN_WALLET_LABEL="${ADMIN_WALLET_LABEL:-Founder}"
 ADMIN_WALLET_CREATED="no"
-ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"          # GYDS credited to the admin wallet in genesis
+ADMIN_SUPPLY="${ADMIN_SUPPLY:-}"                 # Native coins credited to the admin wallet in genesis
 EXPLORER_API_URL="${EXPLORER_API_URL:-http://127.0.0.1:3001/api}"
 GYDS_RPC_MODE="${GYDS_RPC_MODE:-local}"
 GYDS_LOCAL_RPC_URL="${GYDS_LOCAL_RPC_URL:-}"
@@ -126,11 +130,24 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
 #   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for ENV_FILE in \
-    "${SCRIPT_DIR}/.env" \
-    "${SCRIPT_DIR}/node.env" \
-    "/var/www/gyds-explorer/.env" \
-    "/etc/gyds/node.env"; do
+if [ "${NETWORK_ENV,,}" = "testnet" ]; then
+  ENV_FILES=(
+    "${SCRIPT_DIR}/node.testnet.env"
+    "/etc/gyds-testnet/node.env"
+    "${SCRIPT_DIR}/.env"
+    "${SCRIPT_DIR}/node.env"
+    "/var/www/gyds-explorer/.env"
+    "/etc/gyds/node.env"
+  )
+else
+  ENV_FILES=(
+    "${SCRIPT_DIR}/.env"
+    "${SCRIPT_DIR}/node.env"
+    "/var/www/gyds-explorer/.env"
+    "/etc/gyds/node.env"
+  )
+fi
+for ENV_FILE in "${ENV_FILES[@]}"; do
   if [ -f "$ENV_FILE" ]; then
     info "Loading configuration from ${ENV_FILE} ..."
     # Source only key=value lines (skip comments, blanks, complex shell)
@@ -143,6 +160,7 @@ for ENV_FILE in \
       val="${val#\'}" ; val="${val%\'}"
       case "$key" in
         NETWORK_ENV)       [ -n "$NETWORK_ENV" ] || NETWORK_ENV="$val" ;;
+        NODE_NAME)          [ -n "$NODE_NAME" ] || NODE_NAME="$val" ;;
         NODE_TYPE)          [ -z "$NODE_TYPE"         ] && NODE_TYPE="$val" ;;
         MAIN_NODE_IP)       [ -z "$MAIN_NODE_IP"      ] && MAIN_NODE_IP="$val" ;;
         MAIN_NODE_ENODE)    [ -z "$MAIN_NODE_ENODE"   ] && MAIN_NODE_ENODE="$val" ;;
@@ -152,6 +170,8 @@ for ENV_FILE in \
         CHAIN_ID)           CHAIN_ID="$val" ;;
         NETWORK_ID)         NETWORK_ID="${val:-$CHAIN_ID}" ;;
         NATIVE_DECIMALS)    NATIVE_DECIMALS="$val" ;;
+        NATIVE_COIN_NAME)   NATIVE_COIN_NAME="$val" ;;
+        NATIVE_COIN_SYMBOL) NATIVE_COIN_SYMBOL="$val" ;;
         NATIVE_SUPPLY)      NATIVE_SUPPLY="$val" ;;
         RPC_PORT)           RPC_PORT="$val" ;;
         WS_PORT)            WS_PORT="$val" ;;
@@ -180,6 +200,11 @@ NETWORK_ENV="${NETWORK_ENV:-mainnet}"
 case "${NETWORK_ENV,,}" in
   mainnet)
     NETWORK_ENV="mainnet"
+    NATIVE_COIN_NAME="${NATIVE_COIN_NAME:-GYDSChain}"
+    NATIVE_COIN_SYMBOL="${NATIVE_COIN_SYMBOL:-GYDS}"
+    NATIVE_SUPPLY="${NATIVE_SUPPLY:-1000000000}"
+    ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"
+    NODE_NAME="${NODE_NAME:-gyds-node}"
     ;;
   testnet)
     NETWORK_ENV="testnet"
@@ -195,6 +220,13 @@ case "${NETWORK_ENV,,}" in
     METRICS_PORT=6061
     SERVICE_NAME="gyds-node-testnet"
     TOOL_PREFIX="gyds-testnet"
+    NATIVE_COIN_NAME="${NATIVE_COIN_NAME:-TGYDS}"
+    NATIVE_COIN_SYMBOL="${NATIVE_COIN_SYMBOL:-TGYDS}"
+    NATIVE_SUPPLY="${NATIVE_SUPPLY:-1000000}"
+    ADMIN_SUPPLY="${ADMIN_SUPPLY:-5000}"
+    ADMIN_WALLET="${ADMIN_WALLET:-$TESTNET_ADMIN_WALLET}"
+    [ "${ADMIN_WALLET,,}" = "${TESTNET_ADMIN_WALLET,,}" ] || err "Testnet ADMIN_WALLET must match the configured Testnet admin wallet."
+    NODE_NAME="${NODE_NAME:-gyds-testnet-main-01}"
     ;;
   *) err "NETWORK_ENV must be mainnet or testnet; found '${NETWORK_ENV}'." ;;
 esac
@@ -206,18 +238,31 @@ fi
 # ---------- Chain invariants ----------
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
-[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18 for GYDS."
+[[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18."
 [[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
 [[ "$ADMIN_SUPPLY" =~ ^[0-9]+$ ]] || err "ADMIN_SUPPLY must be a whole number."
-[ "$CHAIN_ID" = "198282" ] || err "Production GYDSChain chain ID must be 198282."
-[ "$NETWORK_ID" = "198282" ] || err "Production GYDSChain network ID must be 198282."
+EXPECTED_CHAIN_ID=198282
+if [ "$NETWORK_ENV" = "testnet" ]; then
+  EXPECTED_CHAIN_ID=198281
+fi
+[ "$CHAIN_ID" = "$EXPECTED_CHAIN_ID" ] || err "${NETWORK_ENV} chain ID must be ${EXPECTED_CHAIN_ID}."
+[ "$NETWORK_ID" = "$EXPECTED_CHAIN_ID" ] || err "${NETWORK_ENV} network ID must be ${EXPECTED_CHAIN_ID}."
 NATIVE_SUPPLY_VALUE=$((10#${NATIVE_SUPPLY}))
 ADMIN_SUPPLY_VALUE=$((10#${ADMIN_SUPPLY}))
-[ "$NATIVE_SUPPLY_VALUE" -le 1000000000 ] || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
+if [ "$NETWORK_ENV" = "testnet" ]; then
+  [ "$NATIVE_SUPPLY_VALUE" -eq 1000000 ] || err "Testnet NATIVE_SUPPLY must be exactly 1,000,000 TGYDS."
+  [ "$ADMIN_SUPPLY_VALUE" -eq 5000 ] || err "Testnet ADMIN_SUPPLY must be exactly 5,000 TGYDS."
+else
+  [ "$NATIVE_SUPPLY_VALUE" -le 1000000000 ] || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
+fi
 [ "$ADMIN_SUPPLY_VALUE" -le "$NATIVE_SUPPLY_VALUE" ] || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
 ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
 NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY_VALUE}${ZEROS}"   # raw EVM base units (18 decimals)
-info "GYDS native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
+info "${NATIVE_COIN_SYMBOL} native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
+
+if [ -d "${DATA_DIR}/geth/chaindata" ]; then
+  err "Refusing to initialize ${NETWORK_ENV}: ${DATA_DIR}/geth/chaindata already exists. This setup will not reset or overwrite an initialized chain."
+fi
 
 echo ""
 echo "╔════════════════════════════════════════════════╗"
@@ -295,7 +340,7 @@ if [ "${RPC_PORT}" = "${WS_PORT}" ] || [ "${RPC_PORT}" = "${P2P_PORT}" ] ||
   err "RPC_PORT, WS_PORT, P2P_PORT, and METRICS_PORT must all be different."
 fi
 
-NODE_NAME="gyds-${NODE_TYPE}"
+NODE_NAME="${NODE_NAME:-${TOOL_PREFIX}-${NODE_TYPE}}"
 
 # ---------- Collect Info Based on Node Type ----------
 header "Configuration for ${NODE_TYPE^^} node"
@@ -629,11 +674,15 @@ NODE_NAME=${NODE_NAME}
 NODE_IP=${SERVER_IP}
 
 # ---------- Chain Settings ----------
+NETWORK_ENV=${NETWORK_ENV}
 CHAIN_ID=${CHAIN_ID}
 NETWORK_ID=${NETWORK_ID}
 NATIVE_DECIMALS=${NATIVE_DECIMALS}
+NATIVE_COIN_NAME=${NATIVE_COIN_NAME}
+NATIVE_COIN_SYMBOL=${NATIVE_COIN_SYMBOL}
 NATIVE_SUPPLY=${NATIVE_SUPPLY}
 NATIVE_SUPPLY_BASE_UNITS=${NATIVE_SUPPLY_BASE_UNITS}
+ADMIN_SUPPLY=${ADMIN_SUPPLY}
 
 # ---------- Directories ----------
 DATA_DIR=${DATA_DIR}
@@ -851,9 +900,9 @@ if [ "$NODE_TYPE" = "lite" ]; then
 fi
 
 # Create the systemd service unit
-cat > /etc/systemd/system/gyds-node.service <<SERVICE
+cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<SERVICE
 [Unit]
-Description=GYDS ${NODE_TYPE^^} Node (${NODE_NAME})
+Description=${NATIVE_COIN_NAME} ${NETWORK_ENV^^} ${NODE_TYPE^^} Node (${NODE_NAME})
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -875,7 +924,7 @@ SERVICE
 chown -R gyds:gyds "${DATA_DIR}" "${LOG_DIR}"
 
 systemctl daemon-reload
-log "Systemd service created: /etc/systemd/system/gyds-node.service"
+log "Systemd service created: /etc/systemd/system/${SERVICE_NAME}.service"
 
 # ============================================================
 # STEP 7: Configure Firewall
@@ -927,7 +976,7 @@ done
 log "Keystore and password files locked down (700/600)."
 
 # --- Log rotation ---
-cat > /etc/logrotate.d/gyds-node <<LOGROTATE
+cat > "/etc/logrotate.d/${SERVICE_NAME}" <<LOGROTATE
 ${LOG_DIR}/*.log {
   daily
   rotate 14
@@ -956,7 +1005,7 @@ header "Step 7c/9: Backups & Monitoring"
 mkdir -p "${BACKUP_DIR}"
 chmod 700 "${BACKUP_DIR}"
 
-cat > /usr/local/bin/gyds-backup <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-backup" <<'MGMT'
 #!/bin/bash
 # Snapshot chain data, genesis, keystore and node.env.
 set -euo pipefail
@@ -986,7 +1035,7 @@ ls -1t "${BACKUP_DIR}"/gyds-*.tar.gz 2>/dev/null | tail -n +$((BACKUP_KEEP + 1))
 done
 MGMT
 
-cat > /usr/local/bin/gyds-restore <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-restore" <<'MGMT'
 #!/bin/bash
 # Usage: gyds-restore /var/backups/gyds/gyds-main-YYYYmmdd-HHMMSS.tar.gz
 set -euo pipefail
@@ -1004,7 +1053,7 @@ systemctl start gyds-node
 echo "Restore complete. Verify with: gyds-health"
 MGMT
 
-cat > /usr/local/bin/gyds-health <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-health" <<'MGMT'
 #!/bin/bash
 # Peer-count and block-stall health check. Restarts a stuck node.
 set -uo pipefail
@@ -1056,7 +1105,7 @@ fi
 [ "$STATUS" = "OK" ] || exit 1
 MGMT
 
-cat > /usr/local/bin/gyds-upgrade <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-upgrade" <<'MGMT'
 #!/bin/bash
 # Versioned geth upgrade with automatic rollback.
 # Usage: gyds-upgrade /path/to/new/geth   |   gyds-upgrade --rollback
@@ -1095,11 +1144,11 @@ else
 fi
 MGMT
 
-chmod +x /usr/local/bin/gyds-backup /usr/local/bin/gyds-restore \
-         /usr/local/bin/gyds-health /usr/local/bin/gyds-upgrade
+chmod +x "/usr/local/bin/${TOOL_PREFIX}-backup" "/usr/local/bin/${TOOL_PREFIX}-restore" \
+         "/usr/local/bin/${TOOL_PREFIX}-health" "/usr/local/bin/${TOOL_PREFIX}-upgrade"
 
 # --- Timers: nightly backup, health check every 2 minutes ---
-cat > /etc/systemd/system/gyds-backup.service <<'UNIT'
+cat > "/etc/systemd/system/${TOOL_PREFIX}-backup.service" <<'UNIT'
 [Unit]
 Description=GYDS chain data backup
 [Service]
@@ -1107,7 +1156,7 @@ Type=oneshot
 ExecStart=/usr/local/bin/gyds-backup
 UNIT
 
-cat > /etc/systemd/system/gyds-backup.timer <<'UNIT'
+cat > "/etc/systemd/system/${TOOL_PREFIX}-backup.timer" <<'UNIT'
 [Unit]
 Description=Nightly GYDS chain data backup
 [Timer]
@@ -1117,7 +1166,7 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
-cat > /etc/systemd/system/gyds-health.service <<'UNIT'
+cat > "/etc/systemd/system/${TOOL_PREFIX}-health.service" <<'UNIT'
 [Unit]
 Description=GYDS node health check
 [Service]
@@ -1125,7 +1174,7 @@ Type=oneshot
 ExecStart=/usr/local/bin/gyds-health --auto-restart
 UNIT
 
-cat > /etc/systemd/system/gyds-health.timer <<'UNIT'
+cat > "/etc/systemd/system/${TOOL_PREFIX}-health.timer" <<'UNIT'
 [Unit]
 Description=Run GYDS node health check every 2 minutes
 [Timer]
@@ -1136,7 +1185,7 @@ WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now gyds-backup.timer gyds-health.timer 2>/dev/null || \
+systemctl enable --now "${TOOL_PREFIX}-backup.timer" "${TOOL_PREFIX}-health.timer" 2>/dev/null || \
   warn "Could not enable backup/health timers — enable them manually."
 log "Backups (nightly), health monitor (2 min) and upgrade/rollback installed."
 
@@ -1145,27 +1194,27 @@ log "Backups (nightly), health monitor (2 min) and upgrade/rollback installed."
 # ============================================================
 header "Step 8/9: Creating Management Scripts"
 
-cat > /usr/local/bin/gyds-start <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-start" <<'MGMT'
 #!/bin/bash
 systemctl start gyds-node
 echo "GYDS node started."
 systemctl status gyds-node --no-pager -l
 MGMT
 
-cat > /usr/local/bin/gyds-stop <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-stop" <<'MGMT'
 #!/bin/bash
 systemctl stop gyds-node
 echo "GYDS node stopped."
 MGMT
 
-cat > /usr/local/bin/gyds-restart <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-restart" <<'MGMT'
 #!/bin/bash
 systemctl restart gyds-node
 echo "GYDS node restarted."
 systemctl status gyds-node --no-pager -l
 MGMT
 
-cat > /usr/local/bin/gyds-status <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-status" <<'MGMT'
 #!/bin/bash
 echo "=== GYDS Node Status ==="
 systemctl status gyds-node --no-pager -l
@@ -1174,12 +1223,12 @@ echo "=== Logs (last 20 lines) ==="
 tail -20 /var/log/gyds/node.log 2>/dev/null || echo "No logs yet."
 MGMT
 
-cat > /usr/local/bin/gyds-logs <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-logs" <<'MGMT'
 #!/bin/bash
 tail -f /var/log/gyds/node.log
 MGMT
 
-cat > /usr/local/bin/gyds-console <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-console" <<'MGMT'
 #!/bin/bash
 source /etc/gyds/node.env
 geth attach "${DATA_DIR}/geth.ipc"
@@ -1187,16 +1236,16 @@ MGMT
 
 install -o root -g root -m 0755 \
   "${SCRIPT_DIR}/scripts/gyds-enode" \
-  /usr/local/bin/gyds-enode
+  "/usr/local/bin/${TOOL_PREFIX}-enode"
 
-cat > /usr/local/bin/gyds-peers <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-peers" <<'MGMT'
 #!/bin/bash
 source /etc/gyds/node.env
 geth attach --exec "admin.peers.length" "${DATA_DIR}/geth.ipc" 2>/dev/null \
   || echo "Node not running or RPC not available."
 MGMT
 
-cat > /usr/local/bin/gyds-admin-check <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-admin-check" <<'MGMT'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -1230,7 +1279,7 @@ echo "peer count:      ${PEERS:-unknown}"
 MGMT
 
 # Add / remove bootnode enodes in static-nodes.json at runtime
-cat > /usr/local/bin/gyds-add-bootnode <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-add-bootnode" <<'MGMT'
 #!/bin/bash
 # Usage: gyds-add-bootnode "enode://PUBKEY@IP:30303"
 #        gyds-add-bootnode --list
@@ -1299,7 +1348,7 @@ echo "  gyds-peers"
 MGMT
 
 # Update also writes to BOOTNODE_ENODE in the env file and geth static-nodes
-cat > /usr/local/bin/gyds-set-bootnode <<'MGMT'
+cat > "/usr/local/bin/${TOOL_PREFIX}-set-bootnode" <<'MGMT'
 #!/bin/bash
 # Usage: gyds-set-bootnode "enode://PUBKEY@IP:30303"
 # Sets the bootnode in both static-nodes.json AND /etc/gyds/node.env
@@ -1321,29 +1370,47 @@ fi
 echo "Updated /etc/gyds/node.env with new bootnode enode."
 MGMT
 
-chmod +x /usr/local/bin/gyds-{start,stop,restart,status,logs,console,enode,peers,admin-check,add-bootnode,set-bootnode}
-log "Management commands installed: gyds-start, gyds-stop, gyds-restart, gyds-status, gyds-logs, gyds-console, gyds-enode, gyds-peers, gyds-admin-check"
+if [ -f "${SCRIPT_DIR}/scripts/gyds-enode" ]; then
+  install -m 0755 "${SCRIPT_DIR}/scripts/gyds-enode" "/usr/local/bin/${TOOL_PREFIX}-enode"
+fi
+
+if [ "$NETWORK_ENV" = "testnet" ]; then
+  for INSTANCE_FILE in /usr/local/bin/${TOOL_PREFIX}-* /etc/systemd/system/${TOOL_PREFIX}-*; do
+    [ -f "$INSTANCE_FILE" ] || continue
+    sed -i -E \
+      -e "s#/etc/gyds/#${CONFIG_DIR}/#g" \
+      -e "s#/var/lib/gyds#${DATA_DIR}#g" \
+      -e "s#/var/log/gyds#${LOG_DIR}#g" \
+      -e "s#/var/backups/gyds#${BACKUP_DIR}#g" \
+      -e "s#\\bgyds-node\\b#${SERVICE_NAME}#g" \
+      -e "s#\\bgyds-(backup|restore|health|upgrade|start|stop|restart|status|logs|console|enode|peers|admin-check|add-bootnode|set-bootnode)\\b#${TOOL_PREFIX}-\\1#g" \
+      "$INSTANCE_FILE"
+  done
+fi
+
+chmod +x "/usr/local/bin/${TOOL_PREFIX}-"{start,stop,restart,status,logs,console,enode,peers,admin-check,add-bootnode,set-bootnode}
+log "Management commands installed with prefix ${TOOL_PREFIX}-."
 
 # ============================================================
 # STEP 9: Enable & Start the Node
 # ============================================================
 header "Step 9/9: Starting Node"
 
-systemctl enable gyds-node
-systemctl restart gyds-node
+systemctl enable "${SERVICE_NAME}.service"
+systemctl restart "${SERVICE_NAME}.service"
 
 for ATTEMPT in $(seq 1 10); do
-  systemctl is-active --quiet gyds-node && break
+  systemctl is-active --quiet "${SERVICE_NAME}.service" && break
   sleep 1
 done
 
-if systemctl is-active --quiet gyds-node; then
-  log "GYDS ${NODE_TYPE^^} node is running!"
+if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  log "${NATIVE_COIN_NAME} ${NODE_TYPE^^} node is running!"
 else
-  warn "GYDS ${NODE_TYPE^^} node failed to start. Recent service output:"
-  systemctl --no-pager --full status gyds-node || true
-  journalctl -u gyds-node -n 50 --no-pager || true
-  err "Node setup did not complete because gyds-node is not active."
+  warn "${NATIVE_COIN_NAME} ${NODE_TYPE^^} node failed to start. Recent service output:"
+  systemctl --no-pager --full status "${SERVICE_NAME}.service" || true
+  journalctl -u "${SERVICE_NAME}.service" -n 50 --no-pager || true
+  err "Node setup did not complete because ${SERVICE_NAME} is not active."
 fi
 
 # ============================================================
@@ -1418,14 +1485,14 @@ echo "║                                                          ║"
 echo "╠══════════════════════════════════════════════════════════╣"
 echo "║   Management Commands:                                   ║"
 echo "╠══════════════════════════════════════════════════════════╣"
-echo "║   gyds-start    — Start the node                         ║"
-echo "║   gyds-stop     — Stop the node                          ║"
-echo "║   gyds-restart  — Restart the node                       ║"
-echo "║   gyds-status   — View status & recent logs              ║"
-echo "║   gyds-logs     — Follow live logs                       ║"
-echo "║   gyds-console  — Attach geth JS console                 ║"
-echo "║   gyds-enode    — Show this node's enode URL             ║"
-echo "║   gyds-peers    — Show connected peer count              ║"
+printf "║   %-14s — Start the node                         ║\n" "${TOOL_PREFIX}-start"
+printf "║   %-14s — Stop the node                          ║\n" "${TOOL_PREFIX}-stop"
+printf "║   %-14s — Restart the node                       ║\n" "${TOOL_PREFIX}-restart"
+printf "║   %-14s — View status & recent logs              ║\n" "${TOOL_PREFIX}-status"
+printf "║   %-14s — Follow live logs                       ║\n" "${TOOL_PREFIX}-logs"
+printf "║   %-14s — Attach geth JS console                 ║\n" "${TOOL_PREFIX}-console"
+printf "║   %-14s — Show this node's enode URL             ║\n" "${TOOL_PREFIX}-enode"
+printf "║   %-14s — Show connected peer count              ║\n" "${TOOL_PREFIX}-peers"
 echo "╚══════════════════════════════════════════════════════════╝"
 
 echo ""

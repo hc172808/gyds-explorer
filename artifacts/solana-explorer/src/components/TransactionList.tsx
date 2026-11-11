@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRightLeft } from "lucide-react";
 import { Transaction } from "@/lib/types";
-import { formatAddress, nativeBaseUnitsToGyds, hexToNumber } from "@/lib/rpc";
+import { formatAddress, nativeBaseUnitsToGyds, nativeCoinSymbol, hexToNumber } from "@/lib/rpc";
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -52,7 +52,7 @@ const TransactionList = ({ transactions, loading }: TransactionListProps) => (
                 </div>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-xs font-mono">{nativeBaseUnitsToGyds(tx.value)} GYDS</p>
+                <p className="text-xs font-mono">{nativeBaseUnitsToGyds(tx.value)} {nativeCoinSymbol()}</p>
                 <p className="text-xs text-muted-foreground">Block #{hexToNumber(tx.blockNumber).toLocaleString()}</p>
               </div>
             </div>

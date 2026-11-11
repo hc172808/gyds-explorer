@@ -9,11 +9,40 @@ import { fetchCoinSettings, proxyRpcUrl, type CoinSetting } from "@/lib/networkA
 import { GYD_TOKEN } from "@/lib/wallet";
 import { JsonRpcProvider } from "ethers";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { getNativeCoinForNetwork, getTokenCoinForNetwork } from "@/lib/coins";
+import { localTokenStorageKey } from "@/lib/networkConfig";
 
-const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
-  { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
-];
+function defaultCoins(networkType: "mainnet" | "testnet" | "custom"): CoinSetting[] {
+  const native = getNativeCoinForNetwork(networkType);
+  const token = getTokenCoinForNetwork(networkType);
+  return [
+    {
+      symbol: native.symbol,
+      name: native.name,
+      decimals: native.decimals,
+      contractAddress: null,
+      logoUrl: native.symbol === "TGYDS" ? "/assets/gyds-logo.svg" : "/assets/gyds-logo.svg",
+      description: native.description,
+    },
+    ...(token ? [{
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      contractAddress: null,
+      logoUrl: token.symbol === "TGYD" ? "/assets/gyd-logo.svg" : "/assets/gyd-logo.svg",
+      description: token.description,
+    }] : []),
+  ];
+}
+
+function readRegisteredTokens(): { address: string; name: string }[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(localTokenStorageKey()) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
 
 function fmt(raw: bigint, decimals: number, maxDecimals = 6): string {
   if (raw === 0n) return "0";
@@ -41,11 +70,9 @@ export default function TokenBalances() {
   const [activeAddress, setActiveAddress] = useState(paramAddress ?? "");
 
   // Registered tokens from localStorage
-  const [registeredTokens, setRegisteredTokens] = useState<{ address: string; name: string }[]>(() => {
-    try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
-    catch { return []; }
-  });
-  const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
+  const [registeredTokens, setRegisteredTokens] = useState<{ address: string; name: string }[]>(readRegisteredTokens);
+  const [coins, setCoins] = useState<CoinSetting[]>(() => defaultCoins(networkType));
+  const nativeCoin = getNativeCoinForNetwork(networkType);
 
   const [nativeBalance, setNativeBalance]       = useState<bigint | null>(null);
   const [tokenBalances, setTokenBalances]       = useState<TokenBalance[]>([]);
@@ -55,16 +82,23 @@ export default function TokenBalances() {
 
   const isValidAddress = (addr: string) => /^0x[0-9a-fA-F]{40}$/.test(addr);
   const configuredAddresses = [
-    ...(GYD_TOKEN.address ? [GYD_TOKEN.address] : []),
+    ...(networkType === "mainnet" && GYD_TOKEN.address ? [GYD_TOKEN.address] : []),
     ...coins.map((coin) => coin.contractAddress).filter((address): address is string => Boolean(address)),
     ...registeredTokens.map((token) => token.address),
   ].filter((address, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === address.toLowerCase()) === index);
 
   useEffect(() => {
+    setRegisteredTokens(readRegisteredTokens());
+    setCoins(defaultCoins(networkType));
+    setNativeBalance(null);
+    setTokenBalances([]);
+    setLastFetched(null);
+    setError(null);
+    if (networkType !== "mainnet") return;
     fetchCoinSettings().then((settings) => {
       if (settings.length) setCoins(settings);
     }).catch(() => undefined);
-  }, []);
+  }, [networkType, network.chainId]);
 
   const lookup = async (addr: string) => {
     if (!isValidAddress(addr)) {
@@ -128,7 +162,7 @@ export default function TokenBalances() {
             <div>
               <h1 className="text-2xl font-bold">Token Balances</h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Look up GYDS and ERC-20 token balances for any wallet address
+                 Look up {nativeCoin.symbol} and ERC-20 token balances for this network
               </p>
             </div>
           </div>
@@ -156,7 +190,7 @@ export default function TokenBalances() {
               <p className="font-medium text-yellow-300">No ERC-20 tokens registered yet</p>
               <p className="text-muted-foreground text-xs mt-1">
                 Go to <Link to="/admin" className="text-primary hover:underline">Admin → Tokens</Link> to deploy or register token contract addresses.
-                Native GYDS balance will still be shown.
+                 Native {nativeCoin.symbol} balance will still be shown.
               </p>
             </div>
           </div>
@@ -190,18 +224,18 @@ export default function TokenBalances() {
               </button>
             </div>
 
-            {/* Native GYDS balance */}
+            {/* Native network balance */}
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-bold text-sm shrink-0">G</div>
               <div className="flex-1">
-                 <p className="text-sm font-medium">{coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.name || "GYDS"} (Native Coin)</p>
+                  <p className="text-sm font-medium">{coins.find((coin) => coin.symbol.toUpperCase() === nativeCoin.symbol)?.name || nativeCoin.name} (Native Coin)</p>
                 <p className="text-xs text-muted-foreground font-mono">
                   Native chain currency · Chain ID {network.chainId ?? "Custom"}
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-lg font-bold font-mono">{fmt(nativeBalance, 18)} <span className="text-sm text-muted-foreground">GYDS</span></p>
-                <p className="text-xs text-muted-foreground">{nativeBalance.toString()} wei</p>
+                 <p className="text-lg font-bold font-mono">{fmt(nativeBalance, nativeCoin.decimals)} <span className="text-sm text-muted-foreground">{nativeCoin.symbol}</span></p>
+                 <p className="text-xs text-muted-foreground">{nativeBalance.toString()} base units</p>
               </div>
             </div>
 
@@ -211,7 +245,7 @@ export default function TokenBalances() {
                 <span className="text-xs text-muted-foreground">{tokenBalances.length + 1} asset{tokenBalances.length === 0 ? "" : "s"}</span>
               </div>
               <div className="divide-y divide-border">
-                <div className="flex items-center justify-between px-5 py-3 text-sm"><span>GYDS</span><span className="font-mono font-semibold">{fmt(nativeBalance, coins.find((coin) => coin.symbol.toUpperCase() === "GYDS")?.decimals ?? 18)} GYDS</span></div>
+                 <div className="flex items-center justify-between px-5 py-3 text-sm"><span>{nativeCoin.symbol}</span><span className="font-mono font-semibold">{fmt(nativeBalance, nativeCoin.decimals)} {nativeCoin.symbol}</span></div>
                 {tokenBalances.map((token) => (
                   <div key={`combined-${token.contractAddress}`} className="flex items-center justify-between px-5 py-3 text-sm"><span>{token.name} <span className="text-xs text-muted-foreground">({token.symbol})</span></span><span className="font-mono font-semibold">{fmt(token.balance, token.decimals)} {token.symbol}</span></div>
                 ))}
@@ -285,7 +319,7 @@ export default function TokenBalances() {
         {loading && (
           <div className="text-center py-16">
             <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary mb-3" />
-            <p className="text-sm text-muted-foreground">Fetching balances from the GYDS network…</p>
+            <p className="text-sm text-muted-foreground">Fetching balances from {network.name}…</p>
           </div>
         )}
       </motion.div>
