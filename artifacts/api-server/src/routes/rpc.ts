@@ -69,6 +69,24 @@ router.post("/", async (req, res) => {
     res.status(400).json({ jsonrpc: "2.0", error: { code: -32600, message: "Invalid JSON-RPC request" }, id });
     return;
   }
+  const disabledMethods = new Set([
+    "eth_accounts",
+    "eth_coinbase",
+    "eth_sign",
+    "eth_signTransaction",
+    "eth_sendTransaction",
+  ]);
+  if (
+    disabledMethods.has(method) ||
+    /^(personal|admin|miner|debug|engine|txpool)_/.test(method)
+  ) {
+    res.status(403).json({
+      jsonrpc: "2.0",
+      error: { code: -32601, message: "This RPC method is disabled on the public proxy." },
+      id,
+    });
+    return;
+  }
 
   let endpoints = network === "mainnet" ? MAINNET_RPC_ENDPOINTS : TESTNET_RPC_ENDPOINTS;
   const nodeId = Number(req.query.nodeId);

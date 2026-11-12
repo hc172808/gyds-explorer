@@ -214,11 +214,26 @@ export default function MyWallet() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address }),
       });
-      const result = await response.json() as { amount?: string; symbol?: string; transactionHash?: string; error?: string };
+      const result = await response.json() as {
+        nativeAmount?: string;
+        nativeSymbol?: string;
+        nativeTransactionHash?: string;
+        tgydAmount?: string;
+        tgydSymbol?: string;
+        tgydTransactionHash?: string | null;
+        warning?: string;
+        error?: string;
+      };
       if (!response.ok) throw new Error(result.error || "Could not request testnet funds.");
-      toast.success(`${result.amount} ${result.symbol} sent`, {
-        description: `Transaction: ${result.transactionHash}`,
-      });
+      if (result.warning || !result.tgydTransactionHash) {
+        toast.error("Partial Testnet claim", {
+          description: `${result.nativeAmount ?? "100"} ${result.nativeSymbol ?? "TGYDS"} was sent. ${result.warning ?? "The TGYD transaction was not confirmed."}`,
+        });
+      } else {
+        toast.success(`${result.nativeAmount} ${result.nativeSymbol} and ${result.tgydAmount} ${result.tgydSymbol} sent`, {
+          description: `TGYDS transaction: ${result.nativeTransactionHash}\nTGYD transaction: ${result.tgydTransactionHash}`,
+        });
+      }
       window.setTimeout(() => void loadBalances(), 6000);
     } catch (faucetError) {
       toast.error("Testnet funding failed", {
@@ -528,16 +543,16 @@ export default function MyWallet() {
                 <div className="flex items-start gap-3">
                   <Coins className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
                   <div>
-                    <h2 className="text-sm font-semibold">Private Testnet funds</h2>
+                    <h2 className="text-sm font-semibold">Testnet daily faucet</h2>
                     <p className="mt-1 max-w-xl text-xs text-muted-foreground">
-                      Request 1 test GYDS for gas on the isolated local chain (198281). One request per wallet every 24 hours.
-                      These coins have no real-world value and are not on the public GYDS Testnet.
+                      Claim 100 TGYDS and 100 TGYD once per wallet every 24 hours. These are Testnet-only tokens with no real-world value.
+                      Claims pause if the faucet reserve or TGYD supply cap runs out; the chain will not reset automatically.
                     </p>
                   </div>
                 </div>
                 <Button onClick={() => void requestTestnetFunds()} disabled={requestingTestFunds} className="gap-2">
                   {requestingTestFunds ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
-                  {requestingTestFunds ? "Requesting…" : "Get test GYDS"}
+                  {requestingTestFunds ? "Claiming…" : "Get 100 TGYDS + 100 TGYD"}
                 </Button>
               </section>
             )}

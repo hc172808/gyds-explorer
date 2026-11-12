@@ -9,11 +9,14 @@ contract TGYDTestToken {
     uint8 public decimals;
     uint256 public totalSupply;
     uint256 public immutable maxSupply;
+    uint256 public constant faucetClaimAmount = 100;
+    uint256 public constant faucetCooldown = 1 days;
     address public owner;
     bool public mintable;
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => uint256) public lastFaucetClaimAt;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -89,6 +92,17 @@ contract TGYDTestToken {
 
     function supportsRawMint() external pure returns (bool) {
         return true;
+    }
+
+    /// @notice Relayer-friendly Testnet claim; each recipient can claim once per day.
+    function claimFaucet(address recipient) external {
+        require(recipient != address(0), "TGYD: faucet recipient is zero address");
+        require(
+            block.timestamp >= lastFaucetClaimAt[recipient] + faucetCooldown,
+            "TGYD: faucet cooldown active"
+        );
+        lastFaucetClaimAt[recipient] = block.timestamp;
+        _mint(recipient, faucetClaimAmount * (10 ** uint256(decimals)));
     }
 
     function burn(uint256 rawAmount) external {

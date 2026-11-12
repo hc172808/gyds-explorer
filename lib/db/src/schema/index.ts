@@ -1,4 +1,5 @@
 export * from "./feature-gates";
+export * from "./faucet";
 export * from "./network";
 // Export your models here. Add one export per file
 // export * from "./posts";

@@ -558,8 +558,15 @@ one server with separate services, data directories, and ports. Keep staging
   supply and 5,000 TGYDS allocated to the configured admin wallet.
 - [x] Add the Testnet-only `TGYD` token with 5,000 initial tokens for the admin
   wallet and an immutable 1,000,000-token maximum supply.
+- [x] Add a Testnet faucet button for 100 TGYDS and 100 TGYD per wallet every
+  24 hours, with persistent API rate limits and an on-chain TGYD cooldown.
+- [x] Set the exhaustion policy to reset the whole Testnet when faucet reserves
+  are exhausted. This erases Testnet balances, history, and the TGYD contract.
+- [ ] Add a guarded Testnet-only reset service and define how TGYD is redeployed
+  after each reset; Mainnet state must never be touched.
 - [ ] Initialize the Testnet node and deploy TGYD from the authorized admin
-  wallet; this requires the server and a wallet-signed deployment transaction.
+  wallet; configure the private faucet RPC and deployed token address on the
+  server. This requires a wallet-signed deployment transaction.
 
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
@@ -1504,7 +1511,9 @@ protocol balances have been erased.
       id/port set, data dir (`/var/lib/gyds` vs `/var/lib/gyds-testnet`),
       service name (`gyds-node` vs `gyds-node-testnet`) and firewall rules.
 - [x] **Explorer network switch** points Testnet at the 198281 endpoint and
-      shows a clear testnet banner; faucet-style test coins optional.
+      shows a clear testnet banner; daily 100 TGYDS + 100 TGYD faucet claims are
+      implemented. Automatic reset is requested but not installed until the
+      post-reset TGYD deployment path is defined.
 - [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
       filtering, so nodes of both environments are managed in one place.
 - [ ] **Pre-launch + verify scripts**: accept the environment flag and check the
