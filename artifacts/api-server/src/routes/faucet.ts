@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { access, writeFile } from "node:fs/promises";
 import { and, eq, sql } from "drizzle-orm";
 import { Interface } from "ethers";
 import { Router } from "express";
@@ -14,6 +15,13 @@ const FAUCET_RPC_URL = process.env.GYDS_TESTNET_FAUCET_RPC_URL
       || process.env.REPLIT_RPC_URL
       || `http://127.0.0.1:${process.env.REPLIT_RPC_PORT || "18545"}`);
 const TGYD_TOKEN_ADDRESS = process.env.GYDS_TESTNET_TGYD_TOKEN_ADDRESS || "";
+const AUTO_RESET_ENABLED = process.env.GYDS_TESTNET_AUTO_RESET === "true";
+const RESET_REQUEST_FILE = process.env.GYDS_TESTNET_RESET_REQUEST_FILE
+  || "/var/lib/gyds-testnet/testnet-reset.request";
+const RESET_READY_FILE = process.env.GYDS_TESTNET_RESET_READY_FILE
+  || "/etc/gyds-testnet/auto-reset-enabled";
+const RESET_PROCESSING_FILE = `${RESET_REQUEST_FILE}.processing`;
+const RESET_FAILED_FILE = `${RESET_REQUEST_FILE}.failed`;
 const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 const GLOBAL_CLAIM_WINDOW_MS = 60 * 60 * 1000;
@@ -26,6 +34,47 @@ const TGYD_INTERFACE = new Interface([
 ]);
 const inFlight = new Set<string>();
 const recentClaims: number[] = [];
+let resetRequestInProgress = false;
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function testnetResetPending(): Promise<boolean> {
+  const markerPresent = await Promise.all([
+    RESET_REQUEST_FILE,
+    RESET_PROCESSING_FILE,
+    RESET_FAILED_FILE,
+  ].map(fileExists)).then((values) => values.some(Boolean));
+  const pending = resetRequestInProgress || markerPresent;
+  if (!pending) resetRequestInProgress = false;
+  return pending;
+}
+
+async function queueTestnetReset(reason: "native-reserve-exhausted" | "tgyd-supply-exhausted"): Promise<boolean> {
+  if (!AUTO_RESET_ENABLED || !(await fileExists(RESET_READY_FILE))) return false;
+  if (await testnetResetPending()) return true;
+
+  resetRequestInProgress = true;
+  try {
+    await db.delete(faucetClaimsTable).where(eq(faucetClaimsTable.network, "testnet"));
+    await writeFile(
+      RESET_REQUEST_FILE,
+      `requestedAt=${new Date().toISOString()}\nreason=${reason}\n`,
+      { encoding: "utf8", flag: "wx", mode: 0o660 },
+    );
+    return true;
+  } catch (error) {
+    if ((error as { code?: string })?.code === "EEXIST") return true;
+    resetRequestInProgress = false;
+    return false;
+  }
+}
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   const response = await fetch(FAUCET_RPC_URL, {
@@ -108,6 +157,12 @@ router.post("/faucet", async (req, res) => {
     res.status(503).json({ error: "The Testnet faucet is disabled by the server operator." });
     return;
   }
+  if (await testnetResetPending()) {
+    res.status(503).json({
+      error: "The Testnet reset is in progress or needs operator review. TGYD claims resume after the admin wallet redeploys the token.",
+    });
+    return;
+  }
 
   const address = typeof req.body?.address === "string" ? req.body.address.trim() : "";
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -167,6 +222,11 @@ router.post("/faucet", async (req, res) => {
       throw new Error("The private Testnet faucet account is unavailable or is not unlocked on the local node.");
     }
 
+    const tokenCode = await rpc("eth_getCode", [TGYD_TOKEN_ADDRESS, "latest"]);
+    if (typeof tokenCode !== "string" || tokenCode === "0x" || tokenCode === "0x0") {
+      throw new Error("TGYD is not deployed on the current Testnet chain. The admin wallet must deploy it before faucet claims resume.");
+    }
+
     const symbolData = await rpc("eth_call", [{
       to: TGYD_TOKEN_ADDRESS,
       data: TGYD_INTERFACE.encodeFunctionData("symbol"),
@@ -188,7 +248,19 @@ router.post("/faucet", async (req, res) => {
         throw new Error("This wallet has already claimed TGYD in the past 24 hours.");
       }
       if (/cap|supply/i.test(message)) {
-        throw new Error("The TGYD faucet supply is exhausted. Claims are paused until the Testnet operator refills it.");
+        if (reservationId) {
+          await finishClaim(walletKey, reservationId);
+          reservationId = null;
+        }
+        const resetQueued = await queueTestnetReset("tgyd-supply-exhausted");
+        if (resetQueued) {
+          res.status(202).json({
+            error: "The TGYD supply cap is exhausted. A Testnet-only reset has been queued; the admin wallet must redeploy TGYD before claims resume.",
+            resetQueued: true,
+          });
+          return;
+        }
+        throw new Error("The TGYD supply cap is exhausted. Automatic reset is not ready on this server; operator action is required.");
       }
       throw new Error("The TGYD faucet contract is not ready to issue a claim.");
     }
@@ -203,7 +275,19 @@ router.post("/faucet", async (req, res) => {
       : CLAIM_GAS_PRICE_FALLBACK;
     const estimatedNativeReserve = NATIVE_CLAIM_AMOUNT + gasPrice * 200_000n;
     if (faucetBalance < estimatedNativeReserve) {
-      throw new Error("The Testnet faucet's TGYDS reserve is exhausted or too low to cover claim gas. Claims are paused.");
+      if (reservationId) {
+        await finishClaim(walletKey, reservationId);
+        reservationId = null;
+      }
+      const resetQueued = await queueTestnetReset("native-reserve-exhausted");
+      if (resetQueued) {
+        res.status(202).json({
+          error: "The TGYDS faucet reserve is exhausted. A Testnet-only reset has been queued; the admin wallet must redeploy TGYD before claims resume.",
+          resetQueued: true,
+        });
+        return;
+      }
+      throw new Error("The Testnet faucet's TGYDS reserve is exhausted. Automatic reset is not ready on this server; operator action is required.");
     }
 
     const nativeTransactionHash = await rpc("eth_sendTransaction", [{
