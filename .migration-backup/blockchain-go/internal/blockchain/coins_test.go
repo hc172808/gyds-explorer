@@ -3,6 +3,10 @@ package blockchain
 import (
 	"math/big"
 	"testing"
+	"time"
+
+	"github.com/guardian-chain/blockchain-go/internal/networkconfig"
+	"github.com/guardian-chain/blockchain-go/internal/utils"
 )
 
 func TestGYDSDenomination(t *testing.T) {
@@ -22,7 +26,7 @@ func TestGYDDenomination(t *testing.T) {
 }
 
 func TestGenesisDualCoinBaseUnits(t *testing.T) {
-	chain := &Blockchain{state: NewStateDB()}
+		chain := &Blockchain{state: NewStateDB(), chainID: networkconfig.MainnetChainID}
 	chain.createGenesis()
 	address := "0x0000000000000000000000000000000000000001"
 	if got := chain.state.GetGYDSBalance(address).String(); got != "1000000000000000000000000000" {
@@ -45,9 +49,25 @@ func TestTransfersPreserveEachCoinBaseUnits(t *testing.T) {
 			}
 			state.SetGYDSBalance(from, new(big.Int).Mul(big.NewInt(2), GYDSBaseUnits()))
 			state.SetGYDBalance(from, new(big.Int).Mul(big.NewInt(2), GYDBaseUnits()))
-			tx := &Transaction{From: from, To: to, Value: amount.String(), CoinType: coin, GasPrice: 1, GasLimit: 21000, Signature: "test"}
-			tx.Hash = ComputeTxHash(tx)
-			if err := ValidateTransaction(tx, state); err != nil {
+			privateKey, err := utils.GenerateKeyPair()
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx := &Transaction{
+				To:        to,
+				Value:     amount.String(),
+				CoinType:  coin,
+				GasPrice:  1,
+				GasLimit:  21000,
+				Timestamp: time.Now().Unix(),
+			}
+			if err := SignTransaction(tx, privateKey, networkconfig.MainnetChainID); err != nil {
+				t.Fatal(err)
+			}
+			from = tx.From
+			state.SetGYDSBalance(from, new(big.Int).Mul(big.NewInt(2), GYDSBaseUnits()))
+			state.SetGYDBalance(from, new(big.Int).Mul(big.NewInt(2), GYDBaseUnits()))
+			if err := ValidateTransaction(tx, state, networkconfig.MainnetChainID); err != nil {
 				t.Fatal(err)
 			}
 			chain := &Blockchain{state: state}

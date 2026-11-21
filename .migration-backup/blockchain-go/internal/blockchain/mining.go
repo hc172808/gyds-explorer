@@ -89,6 +89,7 @@ func (m *Miner) mineBlock() *Block {
 	difficulty := m.pos.CalculateDifficulty(stake)
 
 	header := Header{
+		ChainID:    m.chain.chainID,
 		Number:     latestNum + 1,
 		ParentHash: latestHash,
 		Timestamp:  time.Now().Unix(),

@@ -10,10 +10,12 @@ import (
 
 	"github.com/guardian-chain/blockchain-go/internal/database"
 	"github.com/guardian-chain/blockchain-go/internal/utils"
+	"github.com/guardian-chain/blockchain-go/internal/networkconfig"
 )
 
 // Header represents a block header
 type Header struct {
+	ChainID    uint64   `json:"chainId"`
 	Number     uint64   `json:"number"`
 	Hash       string   `json:"hash"`
 	ParentHash string   `json:"parentHash"`
@@ -37,6 +39,7 @@ type Block struct {
 type Blockchain struct {
 	mu         sync.RWMutex
 	db         database.Storage
+	chainID    uint64
 	state      *StateDB
 	latestHash string
 	latestNum  uint64
@@ -44,17 +47,47 @@ type Blockchain struct {
 	pendingMu  sync.Mutex
 }
 
-// NewBlockchain initializes or loads a blockchain
-func NewBlockchain(db database.Storage) (*Blockchain, error) {
-	bc := &Blockchain{
-		db:    db,
-		state: NewStateDB(),
+const (
+	chainIdentityKey     = "chain_identity"
+	chainStorageVersion  = 1
+)
+
+type persistedChainIdentity struct {
+	Version uint32 `json:"version"`
+	ChainID uint64 `json:"chainId"`
+}
+
+// NewBlockchain initializes a new supported network or loads data that is
+// already bound to the requested chain ID. It never adopts legacy data or
+// silently replaces a database whose identity is missing or different.
+func NewBlockchain(db database.Storage, chainID uint64) (*Blockchain, error) {
+	if db == nil {
+		return nil, errors.New("blockchain storage is required")
+	}
+	if _, err := networkconfig.FromChainID(chainID); err != nil {
+		return nil, err
 	}
 
-	// Try to load latest block
+	bc := &Blockchain{
+		db:      db,
+		chainID: chainID,
+		state:   NewStateDB(),
+	}
+
+	identityData, err := db.Get([]byte(chainIdentityKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read chain identity: %w", err)
+	}
 	latestData, err := db.Get([]byte("latest_block"))
-	if err != nil || latestData == nil {
-		// Create genesis block
+	if err != nil {
+		return nil, fmt.Errorf("failed to read latest block: %w", err)
+	}
+
+	if identityData == nil && latestData == nil {
+		if databaseHasAnyData(db) {
+			return nil, errors.New("database contains data but has no chain identity; refusing to initialize or reset it")
+		}
+
 		genesis := bc.createGenesis()
 		if err := bc.saveBlock(genesis); err != nil {
 			return nil, fmt.Errorf("failed to save genesis: %w", err)
@@ -64,24 +97,77 @@ func NewBlockchain(db database.Storage) (*Blockchain, error) {
 		return bc, nil
 	}
 
+	if identityData == nil {
+		return nil, errors.New("existing database has no chain identity; refusing to adopt legacy chain data")
+	}
+	if latestData == nil {
+		return nil, errors.New("database has a chain identity but no latest block; refusing to initialize incomplete data")
+	}
+
+	var identity persistedChainIdentity
+	if err := json.Unmarshal(identityData, &identity); err != nil {
+		return nil, fmt.Errorf("corrupted chain identity: %w", err)
+	}
+	if identity.Version != chainStorageVersion {
+		return nil, fmt.Errorf("unsupported chain storage version %d", identity.Version)
+	}
+	if identity.ChainID != chainID {
+		return nil, fmt.Errorf("database belongs to chain ID %d, requested %d", identity.ChainID, chainID)
+	}
+
 	var latest Header
 	if err := json.Unmarshal(latestData, &latest); err != nil {
 		return nil, fmt.Errorf("corrupted latest block: %w", err)
 	}
+	if latest.ChainID != chainID {
+		return nil, fmt.Errorf("latest block belongs to chain ID %d, requested %d", latest.ChainID, chainID)
+	}
+	if latest.Hash == "" || latest.Hash != computeBlockHash(latest) {
+		return nil, errors.New("latest block hash is invalid")
+	}
+
+	genesisData, err := db.Get([]byte("block_num:0"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read genesis block: %w", err)
+	}
+	if genesisData == nil {
+		return nil, errors.New("chain identity exists but genesis block is missing")
+	}
+	var genesis Block
+	if err := json.Unmarshal(genesisData, &genesis); err != nil {
+		return nil, fmt.Errorf("corrupted genesis block: %w", err)
+	}
+	if genesis.Header.Number != 0 || genesis.Header.ChainID != chainID || genesis.Header.Hash != computeBlockHash(genesis.Header) {
+		return nil, errors.New("genesis block does not match the persisted chain identity")
+	}
+
 	bc.latestHash = latest.Hash
 	bc.latestNum = latest.Number
 
-	// Load state from DB
 	stateData, err := db.Get([]byte("state_snapshot"))
-	if err == nil && stateData != nil {
-		bc.state.RestoreFromSnapshot(stateData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read state snapshot: %w", err)
 	}
+	if stateData == nil {
+		return nil, errors.New("chain identity exists but state snapshot is missing")
+	}
+	bc.state.RestoreFromSnapshot(stateData)
 
 	return bc, nil
 }
 
-func (bc *Blockchain) createGenesis() *Block {
-	header := Header{
+func databaseHasAnyData(db database.Storage) bool {
+	iter := db.Iterator(nil)
+	if iter == nil {
+		return true
+	}
+	defer iter.Release()
+	return iter.Next()
+}
+
+func genesisHeader(chainID uint64) Header {
+	return Header{
+		ChainID:    chainID,
 		Number:     0,
 		Timestamp:  time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
 		ParentHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -92,6 +178,22 @@ func (bc *Blockchain) createGenesis() *Block {
 		GasUsed:    0,
 		Difficulty: big.NewInt(1),
 	}
+}
+
+// ExpectedGenesisHash returns the deterministic genesis hash for a supported
+// network. Nodes include this value in their peer handshake to reject forks
+// that reuse a chain ID but have different genesis rules.
+func ExpectedGenesisHash(chainID uint64) (string, error) {
+	if _, err := networkconfig.FromChainID(chainID); err != nil {
+		return "", err
+	}
+	header := genesisHeader(chainID)
+	header.Hash = computeBlockHash(header)
+	return header.Hash, nil
+}
+
+func (bc *Blockchain) createGenesis() *Block {
+	header := genesisHeader(bc.chainID)
 	header.Hash = computeBlockHash(header)
 
 	// Pre-fund genesis allocations
@@ -151,6 +253,12 @@ func (bc *Blockchain) AddBlock(block *Block) error {
 }
 
 func (bc *Blockchain) validateBlock(block *Block) error {
+	if block == nil {
+		return errors.New("block is required")
+	}
+	if block.Header.ChainID != bc.chainID {
+		return fmt.Errorf("wrong chain ID: expected %d, got %d", bc.chainID, block.Header.ChainID)
+	}
 	if block.Header.Number != bc.latestNum+1 {
 		return fmt.Errorf("expected block %d, got %d", bc.latestNum+1, block.Header.Number)
 	}
@@ -168,7 +276,7 @@ func (bc *Blockchain) validateBlock(block *Block) error {
 	}
 	// Validate each transaction
 	for _, tx := range block.Transactions {
-		if err := ValidateTransaction(tx, bc.state); err != nil {
+		if err := ValidateTransaction(tx, bc.state, bc.chainID); err != nil {
 			return fmt.Errorf("invalid tx %s: %w", tx.Hash, err)
 		}
 	}
@@ -238,23 +346,25 @@ func (bc *Blockchain) saveBlock(block *Block) error {
 	if err != nil {
 		return err
 	}
-	// Save block by hash
-	if err := bc.db.Put([]byte("block:"+block.Header.Hash), data); err != nil {
+	headerData, err := json.Marshal(block.Header)
+	if err != nil {
 		return err
 	}
-	// Save block by number
-	key := fmt.Sprintf("block_num:%d", block.Header.Number)
-	if err := bc.db.Put([]byte(key), data); err != nil {
-		return err
-	}
-	// Update latest
-	headerData, _ := json.Marshal(block.Header)
-	if err := bc.db.Put([]byte("latest_block"), headerData); err != nil {
-		return err
-	}
-	// Save state snapshot
 	snapData := bc.state.CreateSnapshot()
-	return bc.db.Put([]byte("state_snapshot"), snapData)
+	identityData, err := json.Marshal(persistedChainIdentity{
+		Version: chainStorageVersion,
+		ChainID: bc.chainID,
+	})
+	if err != nil {
+		return err
+	}
+	return bc.db.BatchPut(map[string][]byte{
+		"block:" + block.Header.Hash:      data,
+		fmt.Sprintf("block_num:%d", block.Header.Number): data,
+		"latest_block":                   headerData,
+		"state_snapshot":                 snapData,
+		chainIdentityKey:                 identityData,
+	})
 }
 
 // AddPendingTx adds a transaction to the pending pool
@@ -330,6 +440,10 @@ func (bc *Blockchain) LatestBlock() (uint64, string) {
 // State returns the state database
 func (bc *Blockchain) State() *StateDB {
 	return bc.state
+}
+
+func (bc *Blockchain) ChainID() uint64 {
+	return bc.chainID
 }
 
 // DB returns the storage interface
