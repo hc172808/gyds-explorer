@@ -20,6 +20,20 @@ SERVICE="${SERVICE:-gyds-node}"
 GENESIS_FILE="${GENESIS_FILE:-}"
 CHECK_HOST="${CHECK_HOST:-yes}"
 
+rpc_target() {
+  local target="$1"
+  case "$target" in
+    *://*) target="${target#*://}" ;;
+    *) printf '%s' "configured endpoint"; return ;;
+  esac
+  target="${target%%/*}"
+  target="${target%%\?*}"
+  target="${target%%\#*}"
+  target="${target##*@}"
+  printf '%s' "$target"
+}
+RPC_TARGET="$(rpc_target "$RPC_URL")"
+
 FAILURES=0
 fail() { printf 'ERROR: %s\n' "$1" >&2; FAILURES=$((FAILURES + 1)); }
 warn() { printf 'WARN:  %s\n' "$1" >&2; }
@@ -43,7 +57,7 @@ rpc() {
 }
 
 # ---------- Chain identity ----------
-CHAIN_HEX="$(rpc eth_chainId | jq -er '.result')" || hard "RPC not reachable at ${RPC_URL}"
+CHAIN_HEX="$(rpc eth_chainId | jq -er '.result')" || hard "RPC not reachable at ${RPC_TARGET}"
 NETWORK_ID="$(rpc net_version | jq -er '.result')"
 BLOCK_NUMBER="$(rpc eth_blockNumber | jq -er '.result')"
 PEERS_HEX="$(rpc net_peerCount | jq -r '.result // "0x0"')"
@@ -118,7 +132,7 @@ if [ -n "$GENESIS_FILE" ]; then
   fi
 fi
 
-printf 'rpc=%s\n' "$RPC_URL"
+printf 'rpc_host=%s\n' "$RPC_TARGET"
 printf 'chain_id=%s (%s)\n' "$EXPECTED_CHAIN_ID" "$CHAIN_HEX"
 printf 'network_id=%s\n' "$NETWORK_ID"
 printf 'declared_native_decimals=%s\n' "$EXPECTED_NATIVE_DECIMALS"

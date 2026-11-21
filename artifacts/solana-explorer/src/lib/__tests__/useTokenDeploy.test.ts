@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { formatDeployError } from "../useTokenDeploy";
+import { formatDeployError, getTokenDeploymentNetworkError } from "../useTokenDeploy";
+
+describe("getTokenDeploymentNetworkError", () => {
+  it("keeps GYD on Mainnet even when deployment is invoked outside the admin form", () => {
+    expect(getTokenDeploymentNetworkError("GYD", "testnet", 198281))
+      .toBe("GYD can only be deployed on GYDS Mainnet.");
+    expect(getTokenDeploymentNetworkError("GYD", "mainnet", 198282)).toBeNull();
+  });
+
+  it("keeps the test token on Testnet", () => {
+    expect(getTokenDeploymentNetworkError("TGYD", "mainnet", 198282))
+      .toBe("TGYD can only be deployed on GYDS Testnet.");
+    expect(getTokenDeploymentNetworkError("TGYD", "testnet", 198281)).toBeNull();
+  });
+
+  it("does not constrain unrelated token symbols", () => {
+    expect(getTokenDeploymentNetworkError("DEMO", "custom", null)).toBeNull();
+  });
+});
 
 describe("formatDeployError", () => {
   it("explains that insufficient funds means native gas funds are needed", () => {

@@ -4,7 +4,7 @@ import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
 import TGYD_TOKEN_ARTIFACT from "./tgyd-token-artifact.json";
 import { getEthereumProvider, getEthereumProviderForAccount } from "./ethereumProvider";
 import { getNativeCoinForNetwork } from "./coins";
-import type { NetworkType } from "./networkConfig";
+import { NETWORK_CHAIN_IDS, type NetworkType } from "./networkConfig";
 
 const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198282);
 export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198282);
@@ -32,6 +32,27 @@ export interface DeployParams {
   mintable: boolean;
   maxSupply?: string;
   expectedDeployer?: string;
+}
+
+export function getTokenDeploymentNetworkError(
+  symbol: string,
+  networkType: NetworkType,
+  selectedChainId: number | null,
+): string | null {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  if (normalizedSymbol === "GYD" && (
+    networkType !== "mainnet" ||
+    selectedChainId !== NETWORK_CHAIN_IDS.mainnet
+  )) {
+    return "GYD can only be deployed on GYDS Mainnet.";
+  }
+  if (normalizedSymbol === "TGYD" && (
+    networkType !== "testnet" ||
+    selectedChainId !== NETWORK_CHAIN_IDS.testnet
+  )) {
+    return "TGYD can only be deployed on GYDS Testnet.";
+  }
+  return null;
 }
 
 export function formatDeployError(
@@ -89,9 +110,12 @@ export function useTokenDeploy(
       setContractAddress(null);
 
       const isTgyd = params.symbol.trim().toUpperCase() === "TGYD";
-      if (isTgyd && (selectedNetworkType !== "testnet" || selectedChainId !== 198281)) {
-        throw new Error("TGYD can only be deployed on GYDS Testnet.");
-      }
+      const networkError = getTokenDeploymentNetworkError(
+        params.symbol,
+        selectedNetworkType,
+        selectedChainId,
+      );
+      if (networkError) throw new Error(networkError);
       if (isTgyd && (!params.maxSupply || BigInt(params.initialSupply) > BigInt(params.maxSupply))) {
         throw new Error("TGYD requires a valid supply cap at least as large as its initial supply.");
       }

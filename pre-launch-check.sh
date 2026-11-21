@@ -59,14 +59,28 @@ METRICS_PORT="${METRICS_PORT:-6060}"
 PUBLIC_RPC="${PUBLIC_RPC:-no}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:${RPC_PORT}}"
 
+rpc_target() {
+  local target="$1"
+  case "$target" in
+    *://*) target="${target#*://}" ;;
+    *) printf '%s' "configured endpoint"; return ;;
+  esac
+  target="${target%%/*}"
+  target="${target%%\?*}"
+  target="${target%%\#*}"
+  target="${target##*@}"
+  printf '%s' "$target"
+}
+RPC_TARGET="$(rpc_target "$RPC_URL")"
+
 for var in NODE_TYPE CHAIN_ID NETWORK_ID NATIVE_DECIMALS; do
   if [ -z "${!var}" ]; then fail "$var is not set"; else pass "$var=${!var}"; fi
 done
 
 case "$NODE_TYPE" in
-  main|full|rpc|lite|validator) ;;
+  main|full|rpc|lite|boost|validator) ;;
   "") ;;
-  *) fail "NODE_TYPE=$NODE_TYPE is not one of main|full|rpc|lite|validator" ;;
+  *) fail "NODE_TYPE=$NODE_TYPE is not one of main|full|rpc|lite|boost|validator" ;;
 esac
 
 # GYDS precision is a hard launch gate.
@@ -177,7 +191,7 @@ rpc() {
 }
 
 if ! RESP="$(rpc eth_chainId)"; then
-  fail "RPC not reachable at $RPC_URL — remaining chain checks skipped"
+  fail "RPC not reachable at $RPC_TARGET — remaining chain checks skipped"
   RPC_OK=no
 else
   RPC_OK=yes
@@ -244,7 +258,7 @@ fi
 # ------------------------------------------------------------------- verdict
 printf '\n== Verdict ==\n'
 printf 'node_type=%s chain_id=%s decimals=%s rpc=%s public_rpc=%s\n' \
-  "${NODE_TYPE:-?}" "${CHAIN_ID:-?}" "${NATIVE_DECIMALS:-?}" "$RPC_URL" "$PUBLIC_RPC"
+  "${NODE_TYPE:-?}" "${CHAIN_ID:-?}" "${NATIVE_DECIMALS:-?}" "$RPC_TARGET" "$PUBLIC_RPC"
 printf 'failures=%s warnings=%s\n' "$FAILURES" "$WARNINGS"
 if [ "$FAILURES" -gt 0 ]; then
   printf 'status=NOT READY — fix the [FAIL] items above before promoting to production\n'

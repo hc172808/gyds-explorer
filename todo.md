@@ -22,49 +22,77 @@ production node implementation. Do not inspect or copy private keys or secrets.
 
 ### Coverage map
 
-- [ ] **Chain identity and denominations** — `chain-spec.json`,
+- [x] **Chain identity and denominations** — `chain-spec.json`,
       `node.env.example`, `node.testnet.env.example`,
       `scripts/check-decimals.mjs`, and the Go chain/network configuration.
-- [ ] **Node setup and operations** — `node-setup.sh`, `node-verify.sh`,
+- [x] **Node setup and operations** — `node-setup.sh`, `node-verify.sh`,
       `pre-launch-check.sh`, `fix-gyds-node-tools.sh`, `deploy.sh`, `update.sh`,
       `scripts/replit-node.sh`, `scripts/replit-test-node.mjs`,
       `scripts/src/local-node.mjs`, `scripts/fix-gyds-enode.sh`,
       `scripts/gyds-enode`, and the node-health/update helper scripts.
-- [ ] **API, RPC, and node catalog** — `artifacts/api-server/src/routes/rpc.ts`,
+- [x] **API, RPC, and node catalog** — `artifacts/api-server/src/routes/rpc.ts`,
       `artifacts/api-server/src/routes/nodes.ts`,
       `artifacts/api-server/src/routes/faucet.ts`, and related network/faucet
       database schemas and API contracts.
-- [ ] **Explorer and wallets** — `artifacts/solana-explorer/src/lib/` network,
+- [x] **Explorer and wallets** — `artifacts/solana-explorer/src/lib/` network,
       RPC, wallet-provider, token-deployment, and contract artifact files;
       block/transaction/wallet pages; and RPC/network/wallet UI components.
-- [ ] **Contracts and token assets** — `token-contract.sol`,
+- [x] **Contracts and token assets** — `token-contract.sol`,
       `contracts/GYDSDexTestnet.sol`,
       `artifacts/solana-explorer/src/lib/TGYDTestToken.sol`, and their compiled
-      contract artifacts.
-- [ ] **Block indexer** — `indexer/indexer.js`, `indexer/helpers.js`, its
+      contract artifacts (source/ABI reviewed; bytecode recompilation is
+      blocked because the declared `solc` dependency is not installed here).
+- [x] **Block indexer** — `indexer/indexer.js`, `indexer/helpers.js`, its
       package manifest, and tests.
-- [ ] **Archived Go prototype** — all tracked code and tests under
+- [x] **Archived Go prototype** — all tracked code and tests under
       `.migration-backup/blockchain-go/`, including chain/state/transaction
       rules, consensus, networking, crypto, storage, node entry points, and
       deployment helpers.
 
 ### Review and verification
 
-- [ ] Record which files are active production code, local-only test support,
+- [x] Record which files are active production code, local-only test support,
       generated artifacts, or archived prototypes.
-- [ ] Check chain IDs, genesis/network settings, coin units, block/transaction
+- [x] Check chain IDs, genesis/network settings, coin units, block/transaction
       validation, rewards, signature checks, RPC exposure, and wallet routing
       agree across the active components.
-- [ ] Check operational scripts for safe defaults, explicit network selection,
+- [x] Check operational scripts for safe defaults, explicit network selection,
       reliable failure handling, and protection of persistent node state.
-- [ ] Add or update focused tests for confirmed correctness issues; do not
+- [x] Add or update focused tests for confirmed correctness issues; do not
       change production behavior solely to make a test pass.
-- [ ] Run applicable Go tests/race checks, explorer and API tests, indexer
+- [!] Run applicable Go tests/race checks, explorer and API tests, indexer
       tests, type checks, decimal validation, and clean production builds.
-- [ ] Fix confirmed issues in small subsystem-sized changes and update this
+- [x] Fix confirmed issues in small subsystem-sized changes and update this
       checklist with results and any dependency or live-node blockers.
-- [ ] Keep public live-network connection and production deployment work in
+- [x] Keep public live-network connection and production deployment work in
       their separate approval steps.
+
+### Audit results — 2026-11-20
+
+- [x] Active production is the Geth-based node, Express API, React explorer,
+      PostgreSQL node catalog, and PostgreSQL-backed block indexer.
+- [x] Replit disposable RPC simulators and launcher scripts are development
+      support only; generated Solidity JSON files are build outputs; the Go
+      implementation under `.migration-backup/` is an archived prototype.
+- [x] Made block, transaction, and address index writes atomic per block so a
+      partial database failure cannot leave a block cursor ahead of its rows.
+- [x] Enforced Mainnet-only GYD deployment and minting in the shared deployment
+      path and admin mint panel; minting now resolves the authenticated wallet.
+- [x] Queued the Testnet reset marker before clearing faucet cooldown records,
+      preventing a missing or unwritable marker directory from clearing claims.
+- [x] Redacted RPC URL credentials from node verification output and allowed
+      `boost` nodes through pre-launch validation.
+- [x] Corrected the Mainnet token helper's constructor arguments and whole-token
+      supply handling; it now needs only a public deployer address, not a key.
+- [x] Updated the archived Go pending-transaction path to validate against its
+      configured chain ID.
+- [!] Full archived Go tests need dependencies blocked in this Replit
+      environment (`goleveldb` and `x/crypto`); dependency-free network and
+      consensus tests pass.
+- [!] The Solidity compiler is declared but absent from installed modules, so
+      compiled bytecode could not be regenerated for artifact comparison.
+- [!] No reachable GYDS Mainnet RPC is configured in this workspace; live-chain
+      verification and publishing remain separate approved work.
 
 ## Target production environment
 

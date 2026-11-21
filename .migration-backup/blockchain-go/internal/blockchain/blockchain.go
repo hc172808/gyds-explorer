@@ -369,7 +369,7 @@ func (bc *Blockchain) saveBlock(block *Block) error {
 
 // AddPendingTx adds a transaction to the pending pool
 func (bc *Blockchain) AddPendingTx(tx *Transaction) error {
-	if err := ValidateTransaction(tx, bc.state); err != nil {
+	if err := ValidateTransaction(tx, bc.state, bc.chainID); err != nil {
 		return err
 	}
 	bc.pendingMu.Lock()

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // ============================================================
-// GYDS Token Deployer
+// GYDS Token Deployment Helper
 // ============================================================
-// Deploys a standard ERC-20 token to the GYDS network via RPC.
+// Checks a Mainnet RPC and prints matching Geth-console deployment instructions.
+// It does not sign or broadcast a transaction.
 //
 // Requirements:
 //   npm install ethers dotenv
@@ -14,10 +15,10 @@
 //     --symbol MTK \
 //     --supply 1000000 \
 //     --decimals 18 \
-//     --private-key 0xYOUR_PRIVATE_KEY
+//     --deployer-address 0xYOUR_PUBLIC_WALLET_ADDRESS
 //
 // Or use .env / environment variables:
-//   TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_DECIMALS, DEPLOYER_PRIVATE_KEY
+//   TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_DECIMALS, DEPLOYER_ADDRESS
 //
 // The deployer account must have GYDS (native coin) to pay gas.
 // ============================================================
@@ -37,10 +38,11 @@ const TOKEN_NAME      = getArg("--name",        "TOKEN_NAME",          "");
 const TOKEN_SYMBOL    = getArg("--symbol",       "TOKEN_SYMBOL",        "");
 const TOKEN_SUPPLY    = getArg("--supply",       "TOKEN_SUPPLY",        "1000000");
 const TOKEN_DECIMALS  = getArg("--decimals",     "TOKEN_DECIMALS",      "18");
-const PRIVATE_KEY     = getArg("--private-key",  "DEPLOYER_PRIVATE_KEY","");
+const DEPLOYER_ADDRESS = getArg("--deployer-address", "DEPLOYER_ADDRESS", "");
 const RPC_URL         = getArg("--rpc",          "GYDS_REMOTE_RPC_URL", "");
 const EXPECTED_CHAIN_ID = 198282n;
-const MINTABLE        = getArg("--mintable",     "TOKEN_MINTABLE",      "false") === "true";
+const MINTABLE_VALUE  = getArg("--mintable",     "TOKEN_MINTABLE",      "false").toLowerCase();
+const MINTABLE        = MINTABLE_VALUE === "true";
 
 function getRpcHost(value) {
   const rpcUrl = new URL(value);
@@ -50,10 +52,29 @@ function getRpcHost(value) {
 // ---- Validate ----------------------------------------------
 if (!TOKEN_NAME)   { console.error("Error: --name is required.   Example: --name 'Gold Token'"); process.exit(1); }
 if (!TOKEN_SYMBOL) { console.error("Error: --symbol is required. Example: --symbol GLD"); process.exit(1); }
-if (!PRIVATE_KEY || PRIVATE_KEY === "0xYOUR_PRIVATE_KEY") {
-  console.error("Error: --private-key (or DEPLOYER_PRIVATE_KEY in .env) is required.");
-  console.error("This is the private key of the account that will deploy the contract.");
-  console.error("Make sure the account has enough GYDS to pay gas.");
+if (!/^0x[a-fA-F0-9]{40}$/.test(DEPLOYER_ADDRESS)) {
+  console.error("Error: --deployer-address (or DEPLOYER_ADDRESS in .env) must be a public EVM wallet address.");
+  process.exit(1);
+}
+if (!/^\d+$/.test(TOKEN_SUPPLY) || BigInt(TOKEN_SUPPLY) <= 0n) {
+  console.error("Error: --supply must be a positive whole-token amount.");
+  process.exit(1);
+}
+if (!/^\d+$/.test(TOKEN_DECIMALS) || Number(TOKEN_DECIMALS) > 18) {
+  console.error("Error: --decimals must be a whole number from 0 to 18.");
+  process.exit(1);
+}
+if (!["true", "false"].includes(MINTABLE_VALUE)) {
+  console.error("Error: --mintable must be true or false.");
+  process.exit(1);
+}
+if (TOKEN_SYMBOL.trim().toUpperCase() === "TGYD") {
+  console.error("Error: TGYD is Testnet-only; this helper targets GYDS Mainnet.");
+  process.exit(1);
+}
+if (TOKEN_SYMBOL.trim().toUpperCase() === "GYD" &&
+    (Number(TOKEN_DECIMALS) !== 6 || !MINTABLE)) {
+  console.error("Error: GYD must use 6 decimals and owner-controlled minting.");
   process.exit(1);
 }
 if (!RPC_URL) {
@@ -68,12 +89,9 @@ try {
   process.exit(1);
 }
 
-// ---- Contract bytecode & ABI --------------------------------
-// Standard ERC-20 (Solidity ^0.8.20) compiled with solc 0.8.24 --optimize
-// Source: see token-contract.sol in the same directory.
-// ABI definition
+// The generated console factory needs the constructor ABI from token-contract.sol.
 const ERC20_ABI = [
-  "constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupply, address owner)",
+  "constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupply, bool mintable_)",
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
@@ -87,19 +105,6 @@ const ERC20_ABI = [
   "event Approval(address indexed owner, address indexed spender, uint256 value)",
 ];
 
-// Compiled bytecode for the standard ERC-20 below.
-// To recompile: solc --optimize --bin token-contract.sol
-// This bytecode includes the constructor parameters encoded at deploy time by ethers.js.
-const ERC20_BYTECODE =
-  "0x608060405234801561001057600080fd5b5060405161" +
-  // NOTE: This is a placeholder. See instructions below to compile with solc.
-  // Run: node deploy-token.js --compile  to generate and cache the real bytecode.
-  "PLACEHOLDER_SEE_COMPILE_INSTRUCTIONS";
-
-// ---- Inline compile via geth RPC ---------------------------
-// We use eth_sendTransaction with compiled bytecode. Since we can't run solc here,
-// we generate a geth console script instead when bytecode is unavailable.
-
 async function deployViaRpc() {
   // Dynamically require ethers
   let ethers;
@@ -107,30 +112,34 @@ async function deployViaRpc() {
     ethers = require("ethers");
   } catch {
     console.error("ethers not found. Run: npm install ethers");
-    console.error("Or: cd /var/www/gyds-explorer && npm install ethers");
     process.exit(1);
   }
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
-  const wallet   = new ethers.Wallet(PRIVATE_KEY, provider);
+  const deployerAddress = ethers.getAddress(DEPLOYER_ADDRESS);
+  const initialSupply = BigInt(TOKEN_SUPPLY);
+  const rawSupply = initialSupply * (10n ** BigInt(TOKEN_DECIMALS));
+  if (rawSupply >= (1n << 256n)) {
+    throw new Error("Initial supply exceeds the token contract's uint256 limit.");
+  }
 
   console.log("");
   console.log("╔══════════════════════════════════════════════════════╗");
-  console.log("║   GYDS Token Deployer                                ║");
+  console.log("║   GYDS Token Deployment Helper                       ║");
   console.log("╠══════════════════════════════════════════════════════╣");
   console.log(`║   Name:     ${TOKEN_NAME.padEnd(41)}║`);
   console.log(`║   Symbol:   ${TOKEN_SYMBOL.padEnd(41)}║`);
   console.log(`║   Supply:   ${TOKEN_SUPPLY.padEnd(41)}║`);
   console.log(`║   Decimals: ${TOKEN_DECIMALS.padEnd(41)}║`);
-  console.log(`║   Deployer: ${wallet.address.padEnd(41)}║`);
+  console.log(`║   Deployer: ${deployerAddress.padEnd(41)}║`);
   console.log(`║   RPC host: ${getRpcHost(RPC_URL).padEnd(41)}║`);
   console.log("╚══════════════════════════════════════════════════════╝");
   console.log("");
 
   // Check balance
-  const balance = await provider.getBalance(wallet.address);
-  const ethBalance = ethers.formatEther(balance);
-  console.log(`Deployer balance: ${ethBalance} GYDS`);
+  const balance = await provider.getBalance(deployerAddress);
+  const gydsBalance = ethers.formatEther(balance);
+  console.log(`Deployer balance: ${gydsBalance} GYDS`);
   if (balance === 0n) {
     console.error("Error: Deployer account has 0 GYDS. Fund the account before deploying.");
     process.exit(1);
@@ -143,18 +152,11 @@ async function deployViaRpc() {
   }
   console.log(`Chain ID: ${network.chainId}`);
 
-  // Encode constructor arguments for the geth script approach
-  const supply = BigInt(TOKEN_SUPPLY) * (10n ** BigInt(TOKEN_DECIMALS));
-  console.log(`Total supply (raw): ${supply.toString()}`);
-
-  // Since we can't compile Solidity in Node without solc, we generate a geth JS script
-  generateGethScript(wallet.address, supply);
+  console.log(`Initial supply base units: ${rawSupply.toString()}`);
+  generateGethScript(deployerAddress, rawSupply);
 }
 
-function generateGethScript(deployerAddress, supply) {
-  const supplyHex = "0x" + supply.toString(16);
-  const decimalsHex = "0x" + parseInt(TOKEN_DECIMALS).toString(16);
-
+function generateGethScript(deployerAddress, rawSupply) {
   console.log("");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("  Geth Console Deployment Script");
@@ -165,6 +167,7 @@ function generateGethScript(deployerAddress, supply) {
   console.log("");
   console.log("Then paste this into the geth console:");
   console.log("");
+  console.log("// This helper only prints instructions; it does not sign or send a transaction.");
   console.log(`// ── Deploy ${TOKEN_NAME} (${TOKEN_SYMBOL}) ──────────────────────────`);
   console.log(`var tokenABI = ${JSON.stringify(ERC20_ABI, null, 2)};`);
   console.log("");
@@ -176,13 +179,14 @@ function generateGethScript(deployerAddress, supply) {
   console.log("");
   console.log(`var factory = eth.contract(tokenABI);`);
   console.log(`var token = factory.new(`);
-  console.log(`  "${TOKEN_NAME}",       // name`);
-  console.log(`  "${TOKEN_SYMBOL}",     // symbol`);
+  console.log(`  ${JSON.stringify(TOKEN_NAME)},       // name`);
+  console.log(`  ${JSON.stringify(TOKEN_SYMBOL)},     // symbol`);
   console.log(`  ${TOKEN_DECIMALS},     // decimals`);
-  console.log(`  "${supply.toString()}", // initial supply (raw)`);
-  console.log(`  "${deployerAddress}",   // owner`);
+  console.log(`  "${TOKEN_SUPPLY}", // initial supply (whole tokens)`);
+  console.log(`  ${MINTABLE}, // mintable`);
   console.log(`  { from: "${deployerAddress}", data: bytecode, gas: 3000000 }`);
   console.log(`);`);
+  console.log(`// Constructor supply in base units: ${rawSupply.toString()}`);
   console.log(`// Wait for mining, then:`);
   console.log(`token.address  // contract address`);
   console.log("");

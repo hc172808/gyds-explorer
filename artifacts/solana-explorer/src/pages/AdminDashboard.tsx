@@ -41,7 +41,8 @@ import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, isAddress, par
 import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "@/lib/useTokenDeploy";
 import TGYD_TEST_TOKEN_SOURCE from "@/lib/TGYDTestToken.sol?raw";
 import { getNativeCoinForNetwork } from "@/lib/coins";
-import { localTokenStorageKey, TESTNET_ADMIN_WALLET } from "@/lib/networkConfig";
+import { getEthereumProviderForAccount } from "@/lib/wallet";
+import { localTokenStorageKey, NETWORK_CHAIN_IDS, TESTNET_ADMIN_WALLET } from "@/lib/networkConfig";
 
 const API_BASE = API_BASE_URL;
 
@@ -922,6 +923,7 @@ interface GydContractInfo {
 }
 
 function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: number }) {
+  const { network, networkType } = useNetwork();
   const [contractAddress, setContractAddress] = useState("");
   const [contractInfo, setContractInfo] = useState<GydContractInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -942,6 +944,11 @@ function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: numb
     setLoading(true);
     setLoadError("");
     try {
+      if (networkType !== "mainnet" || network.chainId !== NETWORK_CHAIN_IDS.mainnet) {
+        setContractInfo(null);
+        setLoadError("GYD minting is available only on GYDS Mainnet.");
+        return;
+      }
       const settings = await fetchCoinSettings();
       const setting = settings.find((coin) => coin.symbol.toUpperCase() === "GYD");
       const address = setting?.contractAddress?.trim() || "";
@@ -983,11 +990,15 @@ function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: numb
     } finally {
       setLoading(false);
     }
-  }, [rpcUrl]);
+  }, [network.chainId, networkType, rpcUrl]);
 
   useEffect(() => { void loadContract(); }, [loadContract, refreshKey]);
 
   const handleMint = async () => {
+    if (networkType !== "mainnet" || network.chainId !== NETWORK_CHAIN_IDS.mainnet) {
+      toast.error("GYD minting is available only on GYDS Mainnet.");
+      return;
+    }
     const currentSession = getStoredSession();
     if (!currentSession || !isPrivilegedSession(currentSession)) {
       toast.error("Sign in with an authorized admin wallet before minting.");
@@ -1035,9 +1046,9 @@ function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: numb
       return;
     }
 
-    const ethereum = (window as any).ethereum;
+    const ethereum = await getEthereumProviderForAccount(currentSession.walletAddress);
     if (!ethereum) {
-      toast.error("MetaMask or another browser wallet is required to mint.");
+      toast.error("Unlock the authorized admin wallet used for this session before minting.");
       return;
     }
 

@@ -62,12 +62,12 @@ async function queueTestnetReset(reason: "native-reserve-exhausted" | "tgyd-supp
 
   resetRequestInProgress = true;
   try {
-    await db.delete(faucetClaimsTable).where(eq(faucetClaimsTable.network, "testnet"));
     await writeFile(
       RESET_REQUEST_FILE,
       `requestedAt=${new Date().toISOString()}\nreason=${reason}\n`,
       { encoding: "utf8", flag: "wx", mode: 0o660 },
     );
+    await db.delete(faucetClaimsTable).where(eq(faucetClaimsTable.network, "testnet"));
     return true;
   } catch (error) {
     if ((error as { code?: string })?.code === "EEXIST") return true;

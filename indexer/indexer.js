@@ -24,6 +24,7 @@ const {
   normalizeRpcUrl,
   assertExpectedChainId,
   advanceIndexedBlock,
+  withTransaction,
 } = require("./helpers");
 
 // ---- Config -----------------------------------------------
@@ -179,8 +180,8 @@ async function getLastIndexedBlock() {
   }
 }
 
-async function upsertBlock(b) {
-  await pool.query(
+async function upsertBlock(b, queryable = pool) {
+  await queryable.query(
     `INSERT INTO blocks
        (number, hash, parent_hash, timestamp, miner, gas_used, gas_limit, transaction_count, size, extra_data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -209,8 +210,8 @@ async function upsertBlock(b) {
   );
 }
 
-async function upsertTransaction(tx, blockNumber) {
-  await pool.query(
+async function upsertTransaction(tx, blockNumber, queryable = pool) {
+  await queryable.query(
     `INSERT INTO transactions
        (hash, block_number, from_address, to_address, value, gas, gas_price, input, nonce, transaction_index, status)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -239,10 +240,10 @@ async function upsertTransaction(tx, blockNumber) {
   );
 }
 
-async function upsertAddress(address, tx) {
+async function upsertAddress(address, queryable = pool) {
   if (!address) return;
   const addr = address.toLowerCase();
-  await pool.query(
+  await queryable.query(
     `INSERT INTO addresses (address, last_seen, updated_at)
      VALUES ($1, NOW(), NOW())
      ON CONFLICT (address) DO UPDATE SET
@@ -270,16 +271,17 @@ async function indexBlock(blockNumber) {
     throw new Error(`Block ${blockNumber} was not returned by the RPC.`);
   }
 
-  await upsertBlock(block);
-
   const txs = Array.isArray(block.transactions) ? block.transactions : [];
-  for (const tx of txs) {
-    if (typeof tx === "string") continue; // hash-only mode
-    const num = hexToNumber(block.number);
-    await upsertTransaction(tx, num);
-    await upsertAddress(tx.from, tx);
-    if (tx.to) await upsertAddress(tx.to, tx);
-  }
+  const num = hexToNumber(block.number);
+  await withTransaction(pool, async (client) => {
+    for (const tx of txs) {
+      if (typeof tx === "string") continue; // hash-only mode
+      await upsertTransaction(tx, num, client);
+      await upsertAddress(tx.from, client);
+      if (tx.to) await upsertAddress(tx.to, client);
+    }
+    await upsertBlock(block, client);
+  });
 }
 
 // ---- Main poll loop ----------------------------------------
