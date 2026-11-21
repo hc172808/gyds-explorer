@@ -107,6 +107,8 @@ for (const setting of [
   "SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}",
   "DB_PASSWORD=${DB_PASSWORD}",
   "DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}",
+  'env -u DATABASE_URL node --env-file="${APP_DIR}/.env"',
+  "export DATABASE_URL",
 ]) {
   if (!deployScript.includes(setting)) {
     errors.push(`deploy.sh: generated environment is missing ${setting.split("=")[0]}`);

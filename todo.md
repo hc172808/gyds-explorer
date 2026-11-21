@@ -1592,6 +1592,8 @@ protocol balances have been erased.
 
 ## Recent verified changes
 
+- [x] Ensure `deploy.sh` exports the database URL it just wrote to `.env` so
+      the Drizzle schema push can connect; shell and dotenv handoff checks pass.
 - [x] Run the app's Git updater on the 10th of each month at 03:00
       America/Guyana time; the Admin switch still controls whether updates run.
 - [x] Pull the full Git branch, install application dependencies, build the

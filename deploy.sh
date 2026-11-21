@@ -693,7 +693,21 @@ API_AUTH_RATE_LIMIT=20
 EOF
 
 chmod 600 "${APP_DIR}/.env"
+[ -s "${APP_DIR}/.env" ] || err "Environment file was not created at ${APP_DIR}/.env."
+
+# Drizzle reads DATABASE_URL from the process environment; unlike the API's
+# Node --env-file startup, `npm run push` does not automatically load .env.
+# Load only this required value so shell parsing cannot break on spaces or
+# other valid dotenv values. Ignore any inherited DATABASE_URL so this install
+# uses the database credentials it just provisioned, and never print the value.
+if ! DATABASE_URL="$(env -u DATABASE_URL node --env-file="${APP_DIR}/.env" -e 'process.stdout.write(process.env.DATABASE_URL || "")')"; then
+  err "Could not read DATABASE_URL from the generated environment file."
+fi
+[ -n "${DATABASE_URL}" ] || err "Generated environment file is missing DATABASE_URL."
+export DATABASE_URL
+
 info ".env file generated with secure credentials."
+info "Database connection configured for the schema setup."
 info "Database password saved in ${APP_DIR}/.env"
 
 # ============================================================
