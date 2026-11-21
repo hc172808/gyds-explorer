@@ -1563,9 +1563,10 @@ protocol balances have been erased.
       validates both and writes the selected chain ID to genesis.
 - [x] Confirm the archived Go backup already uses GYDS=18 decimals and
       GYD=6 decimals.
-- [!] Decide whether to add network identity to the archived Go prototype. It
-      has no chain ID in genesis, block headers, or its P2P handshake; adding
-      one changes network compatibility and needs an explicit activation plan.
+- [ ] Make the archived Go prototype network-aware after task approval: bind
+      transactions and peers to the selected chain ID and verify signatures.
+- [ ] Fix the wallet's Add Network action in Wallet Setup and shared wallet
+      flows; the click currently does not successfully add the selected network.
 - [!] Verify a live Mainnet `eth_chainId` after configuring a reachable RPC;
       the Replit preview's Mainnet RPC currently returns 502.
 - [!] Run the full archived Go test suite when its Go dependencies are
