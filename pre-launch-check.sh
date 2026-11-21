@@ -2,7 +2,7 @@
 # GYDS pre-launch verification.
 #
 # Run this on a node BEFORE promoting it to production. It checks:
-#   1. environment sanity (chain/network id, GYDS 9 decimals, required vars)
+#   1. environment sanity (chain/network id, GYDS 18 decimals, required vars)
 #   2. required ports are listening on the expected interfaces
 #   3. RPC / WS / metrics endpoints respond
 #   4. the node has reached the expected sync state (synced, peers, progress)
@@ -70,10 +70,10 @@ case "$NODE_TYPE" in
 esac
 
 # GYDS precision is a hard launch gate.
-if [ "$NATIVE_DECIMALS" != "9" ]; then
-  fail "NATIVE_DECIMALS=$NATIVE_DECIMALS — GYDS must be 9 decimals"
+if [ "$NATIVE_DECIMALS" != "18" ]; then
+  fail "NATIVE_DECIMALS=$NATIVE_DECIMALS — GYDS must be 18 decimals"
 else
-  pass "GYDS native decimals = 9"
+  pass "GYDS native decimals = 18"
 fi
 
 # Cross-check against the repo chain spec when present.
@@ -81,9 +81,9 @@ SPEC="$(dirname "$0")/chain-spec.json"
 if [ -f "$SPEC" ]; then
   SPEC_DEC="$(jq -r '.coins.GYDS.decimals // empty' "$SPEC")"
   SPEC_GYD="$(jq -r '.coins.GYD.decimals // empty' "$SPEC")"
-  [ "$SPEC_DEC" = "9" ] || fail "chain-spec.json says GYDS decimals=$SPEC_DEC (expected 9)"
+  [ "$SPEC_DEC" = "18" ] || fail "chain-spec.json says GYDS decimals=$SPEC_DEC (expected 18)"
   [ "$SPEC_GYD" = "6" ]  || fail "chain-spec.json says GYD decimals=$SPEC_GYD (expected 6)"
-  [ "$SPEC_DEC" = "9" ] && [ "$SPEC_GYD" = "6" ] && pass "chain-spec.json matches (GYDS 9 / GYD 6)"
+  [ "$SPEC_DEC" = "18" ] && [ "$SPEC_GYD" = "6" ] && pass "chain-spec.json matches (GYDS 18 / GYD 6)"
 fi
 
 if [ "$CHAIN_ID" != "$NETWORK_ID" ]; then

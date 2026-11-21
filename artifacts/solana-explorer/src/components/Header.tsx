@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useEffect } from "react";
 import { useNetwork, NetworkType } from "@/contexts/NetworkContext";
 import WalletAuthButton from "@/components/WalletAuthButton";
+import { NETWORK_CHAIN_IDS } from "@/lib/networkConfig";
 import {
   getStoredSession,
   isPrivilegedSession,
@@ -12,14 +13,8 @@ import {
 } from "@/lib/session";
 
 const NETWORK_OPTIONS: { label: string; value: NetworkType; color: string }[] = [
-  ...(!import.meta.env.DEV
-    ? [{ label: "Mainnet", value: "mainnet" as const, color: "bg-primary" }]
-    : []),
-  {
-    label: import.meta.env.DEV ? "Local Testnet" : "Testnet",
-    value: "testnet",
-    color: "bg-amber",
-  },
+  { label: "Mainnet", value: "mainnet", color: "bg-primary" },
+  { label: "Testnet", value: "testnet", color: "bg-amber" },
   { label: "Custom RPC", value: "custom", color: "bg-muted-foreground" },
 ];
 
@@ -43,7 +38,11 @@ const Header = () => {
   const { networkType, setNetworkType, customRpcUrl, setCustomRpcUrl } = useNetwork();
 
   const currentNetwork = NETWORK_OPTIONS.find((n) => n.value === networkType)!;
-  const showFeatureGates = session !== null && isPrivilegedSession(session);
+  const showPrivilegedControls = session !== null && isPrivilegedSession(session);
+  const visibleNetworkOptions = showPrivilegedControls
+    ? NETWORK_OPTIONS
+    : NETWORK_OPTIONS.filter((option) => option.value !== "custom");
+  const showFeatureGates = showPrivilegedControls;
 
   useEffect(() => {
     const syncSession = () => setSession(getStoredSession());
@@ -51,6 +50,12 @@ const Header = () => {
     window.addEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
     return () => window.removeEventListener(SESSION_CHANGE_EVENT_NAME, syncSession);
   }, []);
+
+  useEffect(() => {
+    if (showPrivilegedControls || networkType !== "custom") return;
+    setCustomRpcUrl("");
+    setNetworkType("mainnet");
+  }, [networkType, setCustomRpcUrl, setNetworkType, showPrivilegedControls]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +102,7 @@ const Header = () => {
             <button
               onClick={() => setNetworkOpen(!networkOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary text-xs hover:bg-secondary/80 transition-colors"
+              aria-label={`Current network: ${currentNetwork.label}`}
             >
               <span className={`w-2 h-2 rounded-full ${currentNetwork.color} animate-pulse-neon`} />
               <span className="text-foreground hidden sm:inline">{currentNetwork.label}</span>
@@ -106,8 +112,8 @@ const Header = () => {
             {networkOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setNetworkOpen(false)} />
-                <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
-                  {NETWORK_OPTIONS.map((opt) => (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                  {visibleNetworkOptions.map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => {
@@ -119,17 +125,26 @@ const Header = () => {
                       }`}
                     >
                       <span className={`w-2 h-2 rounded-full ${opt.color}`} />
-                      {opt.label}
+                        <span className="flex-1 text-left">{opt.label}</span>
+                        {opt.value !== "custom" && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {NETWORK_CHAIN_IDS[opt.value]}
+                          </span>
+                        )}
                     </button>
                   ))}
-                  {networkType === "custom" && (
+                  {networkType === "custom" && showPrivilegedControls && (
                     <div className="px-4 py-3 border-t border-border">
                       <input
                         value={customRpcUrl}
                         onChange={(e) => setCustomRpcUrl(e.target.value)}
+                        type="url"
                         placeholder="https://your-rpc-url.com"
                         className="w-full px-3 py-1.5 rounded-md bg-secondary border border-border text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       />
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Chain ID is read from your RPC endpoint.
+                      </p>
                     </div>
                   )}
                 </div>

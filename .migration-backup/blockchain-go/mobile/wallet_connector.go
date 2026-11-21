@@ -24,11 +24,13 @@ func NewWalletConnector(nodeURL string) *WalletConnector {
 
 // AccountBalance represents dual-coin balances
 type AccountBalance struct {
-	Address     string `json:"address"`
-	GYDSBalance string `json:"gydsBalance"` // 18 decimals
-	GYDBalance  string `json:"gydBalance"`  // 6 decimals
-	StakeAmount string `json:"stakeAmount"`
-	Nonce       uint64 `json:"nonce"`
+	Address      string `json:"address"`
+	GYDSBalance  string `json:"gydsBalance"` // Integer base units, divide by 10^18 to display GYDS
+	GYDBalance   string `json:"gydBalance"`  // Integer base units, divide by 10^6 to display GYD
+	GYDSDecimals int    `json:"gydsDecimals"`
+	GYDDecimals  int    `json:"gydDecimals"`
+	StakeAmount  string `json:"stakeAmount"` // Integer GYDS base units (18 decimals)
+	Nonce        uint64 `json:"nonce"`
 }
 
 // GetBalance retrieves the balance of a GYDS address
@@ -59,7 +61,7 @@ func (wc *WalletConnector) GetBalance(address string) (*AccountBalance, error) {
 type TransactionRequest struct {
 	From      string `json:"from"`
 	To        string `json:"to"`
-	Value     string `json:"value"`
+	Value     string `json:"value"`    // Integer base units: GYDS 10^18, GYD 10^6
 	CoinType  string `json:"coinType"` // "GYDS" or "GYD"
 	GasPrice  uint64 `json:"gasPrice"`
 	GasLimit  uint64 `json:"gasLimit"`

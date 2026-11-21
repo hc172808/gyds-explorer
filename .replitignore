@@ -3,3 +3,6 @@
 
 # No package-manager cache needs to be stored in the project.
 .local
+
+# Local Geth binaries, keys, and private testnet chain state are runtime data.
+.replit-node

@@ -1,13 +1,75 @@
-# GYDS Explorer production deployment TODO
+# GYDS Explorer and Blockchain TODO
 
-Use this checklist to prepare and verify the GYDS Explorer for deployment on a
-standalone Ubuntu 22.04 server. Keep the existing application architecture and
-use **npm only**. This document records the requested work; it is not a claim
-that the work has already been completed.
+Use this checklist to track blockchain code review and production deployment.
+Keep the existing application architecture and use **npm only**. This document
+records planned work; unchecked items are not claims that work is complete.
+
+## Progress tracking
+
+- Read this file before development and resume from the first applicable
+  unfinished item.
+- Mark verified completions `[x]`, leave unfinished work `[ ]`, and mark
+  blocked work `[!]` with the reason and what is needed to unblock it.
+- Update this file after each development task while preserving earlier
+  project history.
+
+## Blockchain codebase review — added 2026-11-20
+
+Review every maintained blockchain subsystem before changing it. Keep the
+production Geth node path separate from Replit's disposable test RPC nodes.
+Treat `.migration-backup/blockchain-go/` as an archived prototype, not the
+production node implementation. Do not inspect or copy private keys or secrets.
+
+### Coverage map
+
+- [ ] **Chain identity and denominations** — `chain-spec.json`,
+      `node.env.example`, `node.testnet.env.example`,
+      `scripts/check-decimals.mjs`, and the Go chain/network configuration.
+- [ ] **Node setup and operations** — `node-setup.sh`, `node-verify.sh`,
+      `pre-launch-check.sh`, `fix-gyds-node-tools.sh`, `deploy.sh`, `update.sh`,
+      `scripts/replit-node.sh`, `scripts/replit-test-node.mjs`,
+      `scripts/src/local-node.mjs`, `scripts/fix-gyds-enode.sh`,
+      `scripts/gyds-enode`, and the node-health/update helper scripts.
+- [ ] **API, RPC, and node catalog** — `artifacts/api-server/src/routes/rpc.ts`,
+      `artifacts/api-server/src/routes/nodes.ts`,
+      `artifacts/api-server/src/routes/faucet.ts`, and related network/faucet
+      database schemas and API contracts.
+- [ ] **Explorer and wallets** — `artifacts/solana-explorer/src/lib/` network,
+      RPC, wallet-provider, token-deployment, and contract artifact files;
+      block/transaction/wallet pages; and RPC/network/wallet UI components.
+- [ ] **Contracts and token assets** — `token-contract.sol`,
+      `contracts/GYDSDexTestnet.sol`,
+      `artifacts/solana-explorer/src/lib/TGYDTestToken.sol`, and their compiled
+      contract artifacts.
+- [ ] **Block indexer** — `indexer/indexer.js`, `indexer/helpers.js`, its
+      package manifest, and tests.
+- [ ] **Archived Go prototype** — all tracked code and tests under
+      `.migration-backup/blockchain-go/`, including chain/state/transaction
+      rules, consensus, networking, crypto, storage, node entry points, and
+      deployment helpers.
+
+### Review and verification
+
+- [ ] Record which files are active production code, local-only test support,
+      generated artifacts, or archived prototypes.
+- [ ] Check chain IDs, genesis/network settings, coin units, block/transaction
+      validation, rewards, signature checks, RPC exposure, and wallet routing
+      agree across the active components.
+- [ ] Check operational scripts for safe defaults, explicit network selection,
+      reliable failure handling, and protection of persistent node state.
+- [ ] Add or update focused tests for confirmed correctness issues; do not
+      change production behavior solely to make a test pass.
+- [ ] Run applicable Go tests/race checks, explorer and API tests, indexer
+      tests, type checks, decimal validation, and clean production builds.
+- [ ] Fix confirmed issues in small subsystem-sized changes and update this
+      checklist with results and any dependency or live-node blockers.
+- [ ] Keep public live-network connection and production deployment work in
+      their separate approval steps.
 
 ## Target production environment
 
-- [ ] Ubuntu 22.04
+- [!] Ubuntu 22.04 — blocked because this workspace cannot inspect the separate
+      production host; need `lsb_release -a` output from that server.
 - [ ] Node.js `22.18.0` or newer
 - [ ] npm as the package manager
 - [ ] PostgreSQL
@@ -300,7 +362,7 @@ verified before a production deployment.
   - Full name: `GYDSChain`
   - Symbol: `GYDS`
   - Requested initial/max supply: `1,000,000,000 GYDS`
-  - Native decimals: `9` (must be verified against the chain protocol and
+  - Native decimals: `18` (must be verified against the chain protocol and
     genesis configuration).
 - [ ] Treat **GYD** as a separate token deployed on GYDSChain:
   - Token name: `GYD` or the final approved full name
@@ -318,7 +380,7 @@ verified before a production deployment.
   - GYD: fixed `10B` cap, or controlled minting against verified reserves.
 - [ ] Record the smallest unit and display precision for both assets, and use
       integer base units for all balances and supply calculations:
-  - GYDS: 9 decimals (`1 GYDS = 1,000,000,000` base units).
+  - GYDS: 18 decimals (`1 GYDS = 1,000,000,000,000,000,000` base units).
   - GYD: 6 decimals (`1 GYD = 1,000,000` base units).
 
 ## 14. Add coin logo and project information
@@ -356,7 +418,7 @@ verified before a production deployment.
 
       VITE_NATIVE_COIN_NAME=GYDSChain
       VITE_NATIVE_COIN_SYMBOL=GYDS
-       VITE_NATIVE_COIN_DECIMALS=9
+       VITE_NATIVE_COIN_DECIMALS=18
       VITE_NATIVE_COIN_SUPPLY=1000000000
        VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
       VITE_NATIVE_COIN_DESCRIPTION=
@@ -412,7 +474,7 @@ verified before a production deployment.
 - [ ] Confirm the production consensus and execution stack:
   - Geth/EVM version and supported hardfork.
   - Consensus mode, validator authority, block time, gas limit, and chain ID.
-  - Native GYDS uses a `9`-decimal base-unit/display convention. EVM does not
+  - Native GYDS uses an `18`-decimal base-unit/display convention. EVM does not
     store native-currency decimal metadata, so every wallet, RPC integration,
     and gas display must implement the convention consistently.
   - Genesis file, alloc accounts, premines, validator set, and bootnodes.
@@ -471,9 +533,9 @@ are produced.
   copy the main genesis, but the setup does not enforce one expected genesis
   hash across the network. Archive the exact reviewed genesis and verify the
   same hash on every node before joining it.
-- `NATIVE_DECIMALS=9` is enforced by the setup script, and genesis allocations
-  multiply whole GYDS by `10^9`. The project decimals checker passes for GYDS
-  `9` and GYD `6`; that verifies repository consistency, not compatibility with
+- `NATIVE_DECIMALS=18` is enforced by the setup script, and genesis allocations
+  multiply whole GYDS by `10^18`. The project decimals checker passes for GYDS
+  `18` and GYD `6`; that verifies repository consistency, not compatibility with
   generic wallets or external RPC clients.
 - RPC and boost roles default to public RPC. They bind HTTP/WS to all interfaces
   and allow wildcard host/origin settings; the setup warns operators to put
@@ -530,19 +592,20 @@ and a user-supplied Custom RPC, while Mainnet and Testnet run simultaneously on
 one server with separate services, data directories, and ports. Keep staging
 (`198283`) independent.
 
-- [ ] Provide distinct production network targets in the explorer:
+- [x] Provide distinct production network targets in the explorer:
   - Mainnet: chain ID `198282`.
   - Testnet: chain ID `198281`.
   - Custom RPC: use the URL entered by the user.
   Switching targets must change the RPC endpoint and expected chain identity,
   not only the displayed label.
-- [ ] Support running Mainnet and Testnet simultaneously on the same server:
+- [x] Configure Mainnet and Testnet to run independently on one server:
   - Use separate node processes/service units, data directories, genesis
-    configurations, logs, and backups.
+    configurations, logs, and backups. Mainnet uses HTTP/WS/P2P/metrics ports
+    `8545/8546/30303/6060`; Testnet uses `9545/9546/30304/6061`.
   - Assign and document nonconflicting ports for HTTP RPC, WebSocket RPC, P2P,
     and metrics/health endpoints. Set the exact port numbers in the deployment
     configuration and matching firewall rules.
-- [ ] Configure separate Mainnet and Testnet RPC endpoints and expected chain
+- [x] Configure separate Mainnet and Testnet RPC endpoints and expected chain
   IDs in the explorer and API. Validate each endpoint's `eth_chainId` before
   serving it for the selected network.
 - [ ] Ensure Custom RPC selection routes explorer requests to the entered URL
@@ -552,6 +615,20 @@ one server with separate services, data directories, and ports. Keep staging
   ports as well.
 - [ ] Verify both nodes run concurrently on one host, their ports do not
   collide, and the explorer displays data from the selected chain.
+
+- [x] Configure Testnet native coin `TGYDS` with a 1,000,000-token genesis
+  supply and 5,000 TGYDS allocated to the configured admin wallet.
+- [x] Add the Testnet-only `TGYD` token with 5,000 initial tokens for the admin
+  wallet and an immutable 1,000,000-token maximum supply.
+- [x] Add a Testnet faucet button for 100 TGYDS and 100 TGYD per wallet every
+  24 hours, with persistent API rate limits and an on-chain TGYD cooldown.
+- [x] Set the exhaustion policy to reset the whole Testnet when faucet reserves
+  are exhausted. This erases Testnet balances, history, and the TGYD contract.
+- [ ] Add a guarded Testnet-only reset service and define how TGYD is redeployed
+  after each reset; Mainnet state must never be touched.
+- [ ] Initialize the Testnet node and deploy TGYD from the authorized admin
+  wallet; configure the private faucet RPC and deployed token address on the
+  server. This requires a wallet-signed deployment transaction.
 
 - Reference: [Clique consensus specification (EIP-225)](https://eips.ethereum.org/EIPS/eip-225)
   and [Geth private-network documentation](https://geth.ethereum.org/docs/fundamentals/private-network).
@@ -582,7 +659,7 @@ one server with separate services, data directories, and ports. Keep staging
   - Separate authenticated internal RPC for operations.
 - [ ] Configure transaction and gas policy:
   - Minimum gas price, base-fee rules, gas limit, and fee recipient/burn rules.
-  - Verify how 9-decimal GYDS interacts with EVM wallet display and gas math.
+  - Verify how 18-decimal GYDS interacts with EVM wallet display and gas math.
   - Document whether users need GYDS for gas before they can send tokens.
 - [ ] Run health checks for block height, peer count, consensus progress, RPC
       latency, chain ID, genesis hash, disk space, memory, CPU, and clock drift.
@@ -1308,7 +1385,7 @@ protocol balances have been erased.
 
 - [ ] **Staging end-to-end smoke test** that hits `rpc.netlifegy.com` and
       `rpc2.netlifegy.com` from a staging environment and verifies chain id,
-      latest block, and a sample transfer render correctly with 9 decimals
+      latest block, and a sample transfer render correctly with 18 decimals
       (run in CI against staging, not the sandbox).
 - [ ] **UI decimals guard**: detect when fetched/assumed GYDS decimals differ
       from `chain-spec.json` and show a clear warning banner stating the
@@ -1362,8 +1439,8 @@ protocol balances have been erased.
       PUBLIC_RPC, RPC_ALLOWED_METHODS, RPC_RATE_LIMIT, MAIN_NODE_IP,
       MAIN_NODE_ENODE, FULL_NODE_IPS, VALIDATOR_ADDRESS, ADMIN_WALLET,
       ADMIN_WALLET_LABEL, ADMIN_SUPPLY, EXPLORER_API_URL) with safe defaults,
-      and set `NATIVE_DECIMALS=9`.
-- [x] **GYDS = 9 decimals everywhere**: align explorer formatting, wallet
+      and set `NATIVE_DECIMALS=18`.
+- [x] **GYDS = 18 decimals everywhere**: align explorer formatting, wallet
       transactions, node scripts, genesis allocation metadata and the decimal
       guard with `chain-spec.json`; keep GYD at 6.
 - [ ] **Refresh `check-services.sh`**: match current unit names
@@ -1465,7 +1542,7 @@ protocol balances have been erased.
 
 - [x] **`pre-launch-check.sh`**: single go/no-go script run on a node before it is
       promoted to production. Verifies env sanity (required vars, node type,
-      GYDS `NATIVE_DECIMALS=9` cross-checked against `chain-spec.json`, GYD 6,
+      GYDS `NATIVE_DECIMALS=18` cross-checked against `chain-spec.json`, GYD 6,
       no secrets in `node.env`, keystore mode 700, free disk), service active +
       enabled at boot, NTP sync, required ports listening (RPC/WS localhost-only
       unless `PUBLIC_RPC=yes`, P2P open, metrics localhost-only), RPC/metrics
@@ -1486,18 +1563,19 @@ protocol balances have been erased.
 
 ### H. Single chain, two environments (mainnet + testnet) — added 2026-09-08
 
-- [ ] **One blockchain, different ports**: testnet and mainnet run the same
+- [x] **One blockchain, different ports**: testnet and mainnet run the same
       Guardian Chain codebase/genesis rules on one host, separated only by port
-      and data dir — not by a forked build. Testnet identifier/port: **198283**
+      and data dir — not by a forked build. Testnet identifier: **198281**
       (mainnet stays 198282).
-- [ ] **Port map**: document and script mainnet vs testnet ports (P2P, RPC, WS,
-      metrics) so both can run side by side without collisions; testnet base
-      offset derived from 198283.
-- [ ] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
+- [x] **Port map**: Mainnet RPC/WS/P2P/metrics `8545/8546/30303/6060`;
+      Testnet `9545/9546/30304/6061`.
+- [x] **`node-setup.sh` `NETWORK_ENV=mainnet|testnet` flag** that selects chain
       id/port set, data dir (`/var/lib/gyds` vs `/var/lib/gyds-testnet`),
       service name (`gyds-node` vs `gyds-node-testnet`) and firewall rules.
-- [ ] **Explorer network switch** points Testnet at the 198283 endpoints and
-      shows a clear testnet banner; faucet-style test coins optional.
+- [x] **Explorer network switch** points Testnet at the 198281 endpoint and
+      shows a clear testnet banner; daily 100 TGYDS + 100 TGYD faucet claims are
+      implemented. Automatic reset is requested but not installed until the
+      post-reset TGYD deployment path is defined.
 - [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
       filtering, so nodes of both environments are managed in one place.
 - [ ] **Pre-launch + verify scripts**: accept the environment flag and check the
@@ -1511,3 +1589,37 @@ protocol balances have been erased.
       admins to `/admin`.
 - [x] Admin dashboard can edit each coin's logo URL, name and about text
       (Coin Settings tab, saved server-side).
+
+## Recent verified changes
+
+- [x] Run the app's Git updater on the 10th of each month at 03:00
+      America/Guyana time; the Admin switch still controls whether updates run.
+- [x] Pull the full Git branch, install application dependencies, build the
+      web/API apps, restart configured services, and check health monthly.
+- [x] Add Ubuntu package-list refresh and non-removing package upgrades to
+      scheduled runs; report reboot-required state without rebooting.
+- [x] Align the Admin display, API responses, setup guide and systemd timer
+      with the 10th-of-month schedule; scheduled runs refresh an old timer.
+- [x] Check saved RPC nodes server-side every five seconds and show their
+      connection status only in Admin settings.
+- [x] Use GYDS=18 decimals and GYD=6 in the chain spec, node setup defaults,
+      API, and explorer formatting.
+- [!] Apply and verify the changed timer on the Ubuntu host; this workspace
+      cannot access that server's systemd state. Run `sudo ./update.sh`, then
+      check `systemctl list-timers gyds-explorer-auto-update.timer`.
+
+## Blockchain Go and chain identity review
+
+- [x] Verify active Geth configuration: Mainnet uses chain/network ID `198282`
+      (`0x3068a`), Testnet uses `198281` (`0x30689`), and `node-setup.sh`
+      validates both and writes the selected chain ID to genesis.
+- [x] Confirm the archived Go backup already uses GYDS=18 decimals and
+      GYD=6 decimals.
+- [ ] Make the archived Go prototype network-aware after task approval: bind
+      transactions and peers to the selected chain ID and verify signatures.
+- [ ] Fix the wallet's Add Network action in Wallet Setup and shared wallet
+      flows; the click currently does not successfully add the selected network.
+- [!] Verify a live Mainnet `eth_chainId` after configuring a reachable RPC;
+      the Replit preview's Mainnet RPC currently returns 502.
+- [!] Run the full archived Go test suite when its Go dependencies are
+      available; the offline test could not resolve uncached module downloads.

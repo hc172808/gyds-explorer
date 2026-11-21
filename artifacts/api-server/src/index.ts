@@ -1,5 +1,17 @@
+import { createRequire } from "node:module";
+import { pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
+
+const { startNodeHealthMonitor } = createRequire(import.meta.url)(
+  "../../../scripts/node-health-monitor.cjs",
+) as {
+  startNodeHealthMonitor: (options: {
+    pool: typeof pool;
+    logger: typeof logger;
+    intervalMs?: number;
+  }) => () => void;
+};
 
 if (!process.env.API_SECRET_KEY && !process.env.JWT_SECRET_KEY && !process.env.JWT_SECRET && !process.env.SESSION_SECRET) {
   logger.error("API_SECRET_KEY, JWT_SECRET_KEY, JWT_SECRET, or SESSION_SECRET environment variable is required. Set one in your Replit secrets.");
@@ -15,16 +27,18 @@ if (!rawPort) {
 }
 
 const port = Number(rawPort);
+const host = process.env.API_HOST || "0.0.0.0";
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+app.listen(port, host, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
-  logger.info({ port }, "Server listening");
+  startNodeHealthMonitor({ pool, logger });
+  logger.info({ port, host }, "Server listening");
 });

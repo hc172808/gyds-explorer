@@ -6,12 +6,10 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
 const NODE_TYPES = ["main", "full", "lite", "rpc", "boost", "validator", "boot"] as const;
-const NODE_STATUSES = ["connected", "disconnected"] as const;
 const PUBLIC_NODE_FIELDS = {
   id: networkNodesTable.id,
   name: networkNodesTable.name,
   type: networkNodesTable.type,
-  rpcUrl: networkNodesTable.rpcUrl,
   status: networkNodesTable.status,
   isActive: networkNodesTable.isActive,
 } as const;
@@ -26,7 +24,7 @@ function validUrl(value: unknown): value is string {
   if (typeof value !== "string" || !value.trim()) return false;
   try {
     const url = new URL(value);
-    return ["http:", "https:", "ws:", "wss:"].includes(url.protocol);
+    return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
   }
@@ -35,6 +33,10 @@ function validUrl(value: unknown): value is string {
 function validHttpUrl(value: unknown): value is string {
   if (!validUrl(value)) return false;
   return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function firstHttpUrl(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && /^https?:\/\//i.test(value));
 }
 
 function validEnode(value: unknown): value is string {
@@ -120,12 +122,6 @@ function nodeValues(body: Record<string, unknown>, partial = false) {
     }
     values.enode = enode || null;
   }
-  if ("status" in body) {
-    if (typeof body.status !== "string" || !NODE_STATUSES.includes(body.status as typeof NODE_STATUSES[number])) {
-      return { error: "status must be one of: connected, disconnected" };
-    }
-    values.status = body.status;
-  }
   if ("isActive" in body) {
     if (typeof body.isActive !== "boolean") return { error: "isActive must be a boolean" };
     values.isActive = body.isActive;
@@ -160,6 +156,7 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
     res.status(400).json({ ok: false, error: "rpcUrl must be a valid HTTP(S) URL" });
     return;
   }
+  const started = Date.now();
   try {
     const request = (method: string) => fetch(rpcUrl, {
       method: "POST",
@@ -181,11 +178,31 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
       res.json({ ok: false, error: "RPC returned no chain ID" });
       return;
     }
+    const configuredChainId = Number(
+      process.env.GYDS_CHAIN_ID ||
+      process.env.CHAIN_ID ||
+      process.env.REPLIT_CHAIN_ID ||
+      (process.env.NODE_ENV === "production" ? 198282 : 198281),
+    );
+    const expectedChainId = Number.isSafeInteger(configuredChainId) && configuredChainId > 0
+      ? configuredChainId
+      : process.env.NODE_ENV === "production" ? 198282 : 198281;
+    const blockNumber = block.result ? Number.parseInt(block.result, 16) : undefined;
+    if (chainId !== expectedChainId) {
+      res.json({
+        ok: false,
+        chainId,
+        blockNumber,
+        latencyMs: Date.now() - started,
+        error: `Wrong chain ID: expected ${expectedChainId}, received ${chainId}`,
+      });
+      return;
+    }
     res.json({
       ok: true,
       chainId,
-      blockNumber: block.result ? Number.parseInt(block.result, 16) : undefined,
-      latencyMs: undefined,
+      blockNumber,
+      latencyMs: Date.now() - started,
     });
   } catch (err) {
     res.json({ ok: false, error: err instanceof Error ? err.message : "RPC unreachable" });
@@ -194,6 +211,44 @@ router.post("/ping", requireAdmin, async (req: AdminRequest, res) => {
 
 // Persist the two explorer RPC endpoints and bootnode setting in the same
 // server-side node catalog used by the public RPC proxy.
+router.get("/runtime-settings", requireAdmin, (_req, res) => {
+  const configuredMode = (
+    process.env.GYDS_RPC_MODE ||
+    process.env.NODE_CONNECTION_MODE ||
+    "auto"
+  ).trim().toLowerCase();
+  const connectionMode = configuredMode === "local"
+    ? "server"
+    : configuredMode === "remote"
+      ? "remote"
+      : "auto";
+  const localRpc = firstHttpUrl(
+    process.env.GYDS_LOCAL_RPC_URL,
+    process.env.REPLIT_RPC_URL,
+    process.env.LOCAL_RPC_URL,
+    process.env.RPC_LOCAL_URL,
+  ) || "http://127.0.0.1:8545";
+  const remotePrimary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL,
+    process.env.RPC_URL,
+    process.env.VITE_RPC_URL,
+  ) || "";
+  const remoteSecondary = firstHttpUrl(
+    process.env.GYDS_REMOTE_RPC_URL_2,
+    process.env.RPC_URL_2,
+    process.env.BOOSTNODE_RPC_URL,
+    process.env.VITE_BOOSTNODE_RPC_URL,
+    process.env.VITE_RPC_URL_2,
+  ) || "";
+
+  res.json({
+    primaryRpc: connectionMode === "server" ? localRpc : remotePrimary,
+    boostnodeRpc: remoteSecondary,
+    bootnodeEnode: process.env.GYDS_BOOTNODE_ENODE || process.env.BOOTNODE_ENODE || "",
+    connectionMode,
+  });
+});
+
 router.put("/runtime-settings", requireAdmin, async (req: AdminRequest, res) => {
   const { primaryRpc, bootnodeEnode } = req.body ?? {};
   const boostnodeRpc = req.body?.boostnodeRpc ?? req.body?.secondaryRpc;
@@ -231,7 +286,7 @@ router.put("/runtime-settings", requireAdmin, async (req: AdminRequest, res) => 
       }
       if (existing) {
         await db.update(networkNodesTable)
-          .set({ ...setting, updatedAt: new Date() })
+          .set({ ...setting, status: "disconnected", updatedAt: new Date() })
           .where(eq(networkNodesTable.id, existing.id));
       } else {
         await db.insert(networkNodesTable).values(setting);
@@ -252,7 +307,7 @@ router.post("/", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: result.error });
       return;
     }
-    if (!result.values.enode) {
+    if (result.values.type === "boot" && !result.values.enode) {
       const discoveryError = await autoDiscoverEnode(result.values);
       if (discoveryError) {
         res.status(422).json({
@@ -285,6 +340,7 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
     const [existingNode] = await db.select({
       rpcUrl: networkNodesTable.rpcUrl,
       enode: networkNodesTable.enode,
+      type: networkNodesTable.type,
     }).from(networkNodesTable).where(eq(networkNodesTable.id, id));
     if (!existingNode) {
       res.status(404).json({ error: "Node not found" });
@@ -299,7 +355,14 @@ router.put("/:id", requireAdmin, async (req: AdminRequest, res) => {
       res.status(400).json({ error: "At least one node field must be provided" });
       return;
     }
-    if ("enode" in result.values && !result.values.enode) {
+    const effectiveType = typeof result.values.type === "string"
+      ? result.values.type
+      : existingNode.type;
+    if (
+      effectiveType === "boot" &&
+      !result.values.enode &&
+      ("enode" in result.values || !existingNode.enode)
+    ) {
       const rpcUrl = result.values.rpcUrl ?? existingNode.rpcUrl;
       result.values.rpcUrl = rpcUrl;
       const discoveryError = await autoDiscoverEnode(result.values);
@@ -343,7 +406,7 @@ router.put("/:id/toggle", requireAdmin, async (req: AdminRequest, res) => {
       return;
     }
     const [node] = await db.update(networkNodesTable)
-      .set({ isActive: req.body.isActive, updatedAt: new Date() })
+      .set({ isActive: req.body.isActive, status: "disconnected", updatedAt: new Date() })
       .where(eq(networkNodesTable.id, id))
       .returning();
     if (!node) {

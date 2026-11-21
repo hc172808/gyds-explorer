@@ -49,7 +49,9 @@ export default defineConfig({
     postcss: {
       plugins: [
         (await import("autoprefixer")).default(),
-        (await import("tailwindcss")).default(),
+        (await import("tailwindcss")).default({
+          config: path.resolve(import.meta.dirname, "tailwind.config.ts"),
+        }),
       ],
     },
   },
@@ -62,7 +64,8 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    // CI and production builds run from the workspace root and consume this directory.
+    outDir: path.resolve(import.meta.dirname, "../..", "dist"),
     emptyOutDir: true,
   },
   server: {
@@ -75,7 +78,7 @@ export default defineConfig({
         target:
           process.env.API_SERVER_URL ||
           process.env.API_PROXY_TARGET ||
-          "http://127.0.0.1:8080",
+          `http://127.0.0.1:${process.env.REPL_ID ? "8080" : "3001"}`,
         changeOrigin: true,
       },
     },

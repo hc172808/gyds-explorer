@@ -21,6 +21,7 @@ import TermsOfService from "./pages/TermsOfService";
 import TokenBalances from "./pages/TokenBalances";
 import WalletOnboarding from "./pages/WalletOnboarding";
 import MyWallet from "./pages/MyWallet";
+import Swap from "./pages/Swap";
 import Dashboard from "./pages/Dashboard";
 import AboutCoins from "./pages/AboutCoins";
 import SearchPage from "./pages/Search";
@@ -54,6 +55,7 @@ const App = () => (
                 <Route path="/tokens" element={<TokenBalances />} />
                 <Route path="/tokens/:address" element={<TokenBalances />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/swap" element={<Swap />} />
                 <Route path="/wallet" element={<MyWallet />} />
                 <Route path="/wallet/setup" element={<WalletOnboarding />} />
                 <Route path="/about-coins" element={<AboutCoins />} />

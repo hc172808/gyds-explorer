@@ -3,34 +3,48 @@ import { ArrowLeft, Coins, Loader2, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { fetchCoinSettings, type CoinSetting } from "@/lib/networkApi";
-import { GYDS_COIN, GYD_COIN } from "@/lib/coins";
 import { Button } from "@/components/ui/button";
+import { useNetwork } from "@/contexts/NetworkContext";
+import { getNativeCoinForNetwork, getTokenCoinForNetwork } from "@/lib/coins";
 
-const FALLBACK_COINS: CoinSetting[] = [
-  {
-    symbol: GYDS_COIN.symbol,
-    name: GYDS_COIN.name,
-    decimals: GYDS_COIN.decimals,
-    contractAddress: null,
-    logoUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",
-    description: GYDS_COIN.description,
-  },
-  {
-    symbol: GYD_COIN.symbol,
-    name: GYD_COIN.name,
-    decimals: GYD_COIN.decimals,
-    contractAddress: null,
-    logoUrl: import.meta.env.VITE_GYD_LOGO_URL || "/assets/gyd-logo.svg",
-    description: GYD_COIN.description,
-  },
-];
+function fallbackCoins(networkType: "mainnet" | "testnet" | "custom"): CoinSetting[] {
+  const native = getNativeCoinForNetwork(networkType);
+  const token = getTokenCoinForNetwork(networkType);
+  return [
+    {
+      symbol: native.symbol,
+      name: native.name,
+      decimals: native.decimals,
+      contractAddress: null,
+      logoUrl: import.meta.env.VITE_NATIVE_COIN_LOGO_URL || "/assets/gyds-logo.svg",
+      description: native.description,
+    },
+    ...(token ? [{
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      contractAddress: null,
+      logoUrl: import.meta.env.VITE_GYD_LOGO_URL || "/assets/gyd-logo.svg",
+      description: token.description,
+    }] : []),
+  ];
+}
 
 export default function AboutCoins() {
-  const [coins, setCoins] = useState<CoinSetting[]>(FALLBACK_COINS);
+  const { networkType } = useNetwork();
+  const nativeCoin = getNativeCoinForNetwork(networkType);
+  const tokenCoin = getTokenCoinForNetwork(networkType);
+  const [coins, setCoins] = useState<CoinSetting[]>(() => fallbackCoins(networkType));
   const [loading, setLoading] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(false);
 
   const loadCoins = useCallback(async () => {
+    if (networkType !== "mainnet") {
+      setCoins(fallbackCoins(networkType));
+      setApiAvailable(false);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const settings = await fetchCoinSettings();
@@ -43,7 +57,7 @@ export default function AboutCoins() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [networkType]);
 
   useEffect(() => {
     loadCoins();
@@ -63,7 +77,13 @@ export default function AboutCoins() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold">About the coins</h1>
-                <p className="text-sm text-muted-foreground mt-1">The native GYDS coin and the GYD stablecoin on GYDSChain.</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {networkType === "testnet"
+                    ? "TGYDS is the native test coin. TGYD is a capped test token with no USD peg or backing."
+                    : networkType === "custom"
+                      ? "Native coin information for the selected custom RPC."
+                      : `The native ${nativeCoin.symbol} coin and the ${tokenCoin?.symbol ?? "ERC-20"} token on GYDSChain.`}
+                </p>
               </div>
             </div>
           </div>
@@ -72,7 +92,7 @@ export default function AboutCoins() {
           </Button>
         </div>
 
-        {!apiAvailable && (
+        {networkType === "mainnet" && !apiAvailable && (
           <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
             Showing the built-in coin information. Admin-published descriptions will appear here when the API is connected.
           </div>

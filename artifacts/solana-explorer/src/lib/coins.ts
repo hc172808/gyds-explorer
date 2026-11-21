@@ -1,12 +1,14 @@
 /**
- * Native coin configuration for the GYDS network.
+ * Network-specific coin metadata for GYDS.
  *
- * GYDS - Primary native coin (9 decimals)
- * GYD  - Stablecoin (6 decimals)
+ * GYDS/TGYDS - Native coin (18 decimals)
+ * GYD         - Mainnet stablecoin (6 decimals)
+ * TGYD        - Testnet-only token (6 decimals; no peg or backing)
  *
  * All formatting here is BigInt-based: raw on-chain values are never converted
  * through JS `number`, so large balances keep full precision.
  */
+import type { NetworkType } from "./networkConfig";
 
 export interface NativeCoin {
   symbol: string;
@@ -19,7 +21,7 @@ export interface NativeCoin {
 export const GYDS_COIN: NativeCoin = {
   symbol: "GYDS",
   name: "GYDS",
-  decimals: 9,
+  decimals: 18,
   isStablecoin: false,
   description: "Native coin of the GYDS network",
 };
@@ -32,7 +34,43 @@ export const GYD_COIN: NativeCoin = {
   description: "Stablecoin of the GYDS network",
 };
 
+export const TGYDS_COIN: NativeCoin = {
+  symbol: "TGYDS",
+  name: "TGYDS",
+  decimals: 18,
+  isStablecoin: false,
+  description: "Testnet-only native coin of GYDS Testnet",
+};
+
+export const TGYD_COIN: NativeCoin = {
+  symbol: "TGYD",
+  name: "TGYD",
+  decimals: 6,
+  isStablecoin: false,
+  description: "Testnet-only ERC-20 token. It has no USD peg or backing.",
+};
+
+export const CUSTOM_NATIVE_COIN: NativeCoin = {
+  symbol: "NATIVE",
+  name: "Native Coin",
+  decimals: 18,
+  isStablecoin: false,
+  description: "Native currency reported by the selected custom RPC.",
+};
+
 export const NATIVE_COINS = [GYDS_COIN, GYD_COIN] as const;
+
+export function getNativeCoinForNetwork(networkType: NetworkType): NativeCoin {
+  if (networkType === "testnet") return TGYDS_COIN;
+  if (networkType === "custom") return CUSTOM_NATIVE_COIN;
+  return GYDS_COIN;
+}
+
+export function getTokenCoinForNetwork(networkType: NetworkType): NativeCoin | null {
+  if (networkType === "testnet") return TGYD_COIN;
+  if (networkType === "mainnet") return GYD_COIN;
+  return null;
+}
 
 /** Parse hex ("0x..") or decimal strings / bigints into a BigInt. */
 export function toBigInt(rawValue: string | bigint | number): bigint {
@@ -122,7 +160,7 @@ export function parseCoinAmount(amount: string, coin: NativeCoin): bigint {
   return negative ? -raw : raw;
 }
 
-/** Format raw GYDS base units (9 decimals) to a GYDS amount. */
+/** Format raw GYDS base units (18 decimals) to a GYDS amount. */
 export function weiToGyds(wei: string | bigint, options?: FormatOptions): string {
   return formatCoinAmount(wei, GYDS_COIN, options);
 }
@@ -132,7 +170,7 @@ export function rawToGyd(raw: string | bigint, options?: FormatOptions): string 
   return formatCoinAmount(raw, GYD_COIN, options);
 }
 
-/** Parse a human GYDS amount into raw base units (9 decimals). */
+/** Parse a human GYDS amount into raw base units (18 decimals). */
 export function gydsToWei(amount: string): bigint {
   return parseCoinAmount(amount, GYDS_COIN);
 }

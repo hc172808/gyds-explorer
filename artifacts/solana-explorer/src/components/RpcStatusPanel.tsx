@@ -1,21 +1,32 @@
 import { useQuery } from "@tanstack/react-query";
 import { Activity, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { checkRpcEndpoint, getRpcEndpoints, getSyncStatus } from "@/lib/rpc";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const RpcStatusPanel = () => {
+  const { network, networkType } = useNetwork();
   const endpoints = getRpcEndpoints();
 
   const { data: health, isFetching, refetch } = useQuery({
     queryKey: ["rpcHealth", endpoints],
     queryFn: () => Promise.all(endpoints.map(checkRpcEndpoint)),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 
-  const { data: sync } = useQuery({
-    queryKey: ["syncStatus"],
+  const { data: sync, isError: syncUnavailable } = useQuery({
+    queryKey: ["syncStatus", endpoints],
     queryFn: getSyncStatus,
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
+  const syncLabel = health === undefined
+    ? "checking"
+    : !health.some((endpoint) => endpoint.online) || syncUnavailable
+      ? "unavailable"
+      : !sync
+        ? "checking"
+        : sync.syncing
+          ? `syncing ${sync.currentBlock?.toLocaleString()} / ${sync.highestBlock?.toLocaleString()}`
+          : "fully synced";
 
   return (
     <section className="rounded-xl border border-border bg-card p-4">
@@ -37,9 +48,9 @@ const RpcStatusPanel = () => {
             key={h.url}
             className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-secondary/40 px-3 py-2"
           >
-             <span className="font-mono text-xs break-all">
-               {h.url === "/api/rpc" ? "Same-origin RPC proxy" : h.url}
-             </span>
+              <span className="font-mono text-xs break-all">
+              {networkType === "custom" ? "Custom RPC" : `${network.name} RPC service`}
+              </span>
             <span className="flex items-center gap-3 text-xs text-muted-foreground">
               {"blockNumber" in h && h.blockNumber !== undefined && (
                 <span>#{h.blockNumber.toLocaleString()}</span>
@@ -61,10 +72,7 @@ const RpcStatusPanel = () => {
       </ul>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Sync status:{" "}
-        {sync?.syncing
-          ? `syncing ${sync.currentBlock?.toLocaleString()} / ${sync.highestBlock?.toLocaleString()}`
-          : "fully synced"}
+        Sync status: {syncLabel}
       </p>
     </section>
   );

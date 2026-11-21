@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/guardian-chain/blockchain-go/internal/blockchain"
 )
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -85,11 +87,13 @@ func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request) {
 	indexed, _ := s.indexer.GetAccount(addr)
 
 	response := map[string]interface{}{
-		"address":     addr,
-		"gydsBalance": account.GYDSBalance.String(),
-		"gydBalance":  account.GYDBalance.String(),
-		"stakeAmount": account.StakeAmount.String(),
-		"nonce":       account.Nonce,
+		"address":      addr,
+		"gydsBalance":  account.GYDSBalance.String(),
+		"gydBalance":   account.GYDBalance.String(),
+		"gydsDecimals": blockchain.GYDSDecimals,
+		"gydDecimals":  blockchain.GYDDecimals,
+		"stakeAmount":  account.StakeAmount.String(),
+		"nonce":        account.Nonce,
 	}
 
 	if indexed != nil {
@@ -123,9 +127,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	num, hash := s.chain.LatestBlock()
 	indexed := s.indexer.GetLastIndexedBlock()
 	s.writeJSON(w, 200, map[string]interface{}{
-		"chainHeight":       num,
-		"latestHash":        hash,
-		"indexedHeight":     indexed,
-		"pendingTxCount":    len(s.chain.PendingTxs()),
+		"chainHeight":    num,
+		"latestHash":     hash,
+		"indexedHeight":  indexed,
+		"pendingTxCount": len(s.chain.PendingTxs()),
+		"gydsDecimals":   blockchain.GYDSDecimals,
+		"gydDecimals":    blockchain.GYDDecimals,
 	})
 }

@@ -19,7 +19,7 @@ run = "npm run dev --workspace=@workspace/solana-explorer"
 
 [services.production]
 build = ["npm", "run", "build", "--workspace=@workspace/solana-explorer"]
-publicDir = "artifacts/solana-explorer/dist/public"
+publicDir = "dist"
 serve = "static"
 
 [[services.production.rewrites]]

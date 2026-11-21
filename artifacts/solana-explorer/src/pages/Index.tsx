@@ -1,26 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Blocks, Fuel, Link2, Users, ArrowRight } from "lucide-react";
+import { Blocks, Fuel, Users, ArrowRight } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import BlockList from "@/components/BlockList";
 import TransactionList from "@/components/TransactionList";
 import SearchBar from "@/components/SearchBar";
-import RpcStatusPanel from "@/components/RpcStatusPanel";
 import { getNetworkStats, getLatestBlocks, gweiFromWei, hexToNumber } from "@/lib/rpc";
 import { Transaction } from "@/lib/types";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 const Index = () => {
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["networkStats"],
+  const { networkType } = useNetwork();
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery({
+    queryKey: ["networkStats", networkType],
     queryFn: getNetworkStats,
-    refetchInterval: 3000,
+    retry: false,
+    refetchInterval: (query) => query.state.status === "error" ? 30_000 : 3000,
   });
 
-  const { data: blocks, isLoading: blocksLoading } = useQuery({
-    queryKey: ["latestBlocks"],
+  const { data: blocks, isLoading: blocksLoading, isError: blocksError } = useQuery({
+    queryKey: ["latestBlocks", networkType],
     queryFn: () => getLatestBlocks(10),
-    refetchInterval: 3000,
+    retry: false,
+    refetchInterval: (query) => query.state.status === "error" ? 30_000 : 3000,
   });
 
   // Extract transactions from blocks
@@ -31,6 +34,7 @@ const Index = () => {
         : []
     )
     .slice(0, 10);
+  const rpcUnavailable = statsError || blocksError;
 
   return (
     <div className="min-h-0">
@@ -53,7 +57,7 @@ const Index = () => {
           </motion.div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               label="Block Height"
               value={statsLoading ? "..." : (stats?.blockNumber.toLocaleString() ?? "—")}
@@ -65,25 +69,28 @@ const Index = () => {
               icon={Fuel}
             />
             <StatCard
-              label="Chain ID"
-              value={statsLoading ? "..." : (stats?.chainId ?? "—")}
-              icon={Link2}
-            />
-            <StatCard
               label="Peers"
               value={statsLoading ? "..." : (stats?.peerCount ?? 0)}
               icon={Users}
             />
-          </div>
-
-          <div className="mt-4">
-            <RpcStatusPanel />
           </div>
         </div>
       </section>
 
       {/* Content */}
       <section className="container mx-auto px-4 py-8">
+        {rpcUnavailable && (
+          <div
+            role="alert"
+            className="mb-6 rounded-xl border border-destructive/40 bg-destructive/5 px-5 py-4"
+          >
+            <h2 className="text-sm font-semibold text-destructive">Network data is unavailable</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The explorer cannot reach a configured Mainnet node. Add a reachable RPC with chain
+              ID 198282 in Admin → Nodes, or set GYDS_REMOTE_RPC_URL on the API server.
+            </p>
+          </div>
+        )}
         <div className="grid lg:grid-cols-2 gap-6">
           <div>
             <BlockList blocks={blocks ?? []} loading={blocksLoading} />

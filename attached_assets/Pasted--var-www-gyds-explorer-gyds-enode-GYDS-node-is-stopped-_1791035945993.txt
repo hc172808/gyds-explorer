@@ -1,0 +1,54 @@
+/var/www/gyds-explorer# gyds-enode
+GYDS node is stopped; starting gyds-node...
+GYDS node did not become ready; no IPC socket found at /var/lib/gyds/geth.ipc.
+Recent service logs:
+Oct 03 13:57:40 main-chain geth[1670]:           Minimum number of executable transaction slots guaranteed per account
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.globalqueue value          (default: 1024)                    ($GETH_TXPOOL_GLOBALQUEUE)
+Oct 03 13:57:40 main-chain geth[1670]:           Maximum number of non-executable transaction slots for all accounts
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.globalslots value          (default: 5120)                    ($GETH_TXPOOL_GLOBALSLOTS)
+Oct 03 13:57:40 main-chain geth[1670]:           Maximum number of executable transaction slots for all accounts
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.journal value              (default: "transactions.rlp")      ($GETH_TXPOOL_JOURNAL)
+Oct 03 13:57:40 main-chain geth[1670]:           Disk journal for local transaction to survive node restarts
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.lifetime value             (default: 3h0m0s)                  ($GETH_TXPOOL_LIFETIME)
+Oct 03 13:57:40 main-chain geth[1670]:           Maximum amount of time non-executable transaction are queued
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.locals value                                                  ($GETH_TXPOOL_LOCALS)
+Oct 03 13:57:40 main-chain geth[1670]:           Comma separated accounts to treat as locals (no flush, priority inclusion)
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.nolocals                   (default: false)                   ($GETH_TXPOOL_NOLOCALS)
+Oct 03 13:57:40 main-chain geth[1670]:           Disables price exemptions for locally submitted transactions
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.pricebump value            (default: 10)                      ($GETH_TXPOOL_PRICEBUMP)
+Oct 03 13:57:40 main-chain geth[1670]:           Price bump percentage to replace an already existing transaction
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.pricelimit value           (default: 1)                       ($GETH_TXPOOL_PRICELIMIT)
+Oct 03 13:57:40 main-chain geth[1670]:           Minimum gas price tip to enforce for acceptance into the pool
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --txpool.rejournal value            (default: 1h0m0s)                  ($GETH_TXPOOL_REJOURNAL)
+Oct 03 13:57:40 main-chain geth[1670]:           Time interval to regenerate the local transaction journal
+Oct 03 13:57:40 main-chain geth[1670]:    VIRTUAL MACHINE
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --stateless-self-validation         (default: false)                   ($GETH_STATELESS_SELF_VALIDATION)
+Oct 03 13:57:40 main-chain geth[1670]:           Generate execution witnesses and self-check against them (testing purpose)
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --vmdebug                           (default: false)                   ($GETH_VMDEBUG)
+Oct 03 13:57:40 main-chain geth[1670]:           Record information useful for VM and contract debugging
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --vmtrace value                                                        ($GETH_VMTRACE)
+Oct 03 13:57:40 main-chain geth[1670]:           Name of tracer which should record internal VM operations (costly)
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --vmtrace.jsonconfig value          (default: "{}")                    ($GETH_VMTRACE_JSONCONFIG)
+Oct 03 13:57:40 main-chain geth[1670]:           Tracer configuration (JSON)
+Oct 03 13:57:40 main-chain geth[1670]:    
+Oct 03 13:57:40 main-chain geth[1670]:     --vmwitnessstats                    (default: false)                   ($GETH_VMWITNESSSTATS)
+Oct 03 13:57:40 main-chain geth[1670]:           Enable collection of witness trie access statistics (automatically enables
+Oct 03 13:57:40 main-chain geth[1670]:           witness generation)
+Oct 03 13:57:40 main-chain geth[1670]: COPYRIGHT:
+Oct 03 13:57:40 main-chain geth[1670]:    Copyright 2013-2026 The go-ethereum Authors
+Oct 03 13:57:40 main-chain systemd[1]: gyds-node.service: Main process exited, code=exited, status=1/FAILURE
+Oct 03 13:57:40 main-chain geth[1670]: flag provided but not defined: -mine
+Oct 03 13:57:40 main-chain systemd[1]: gyds-node.service: Failed with result 'exit-code'.

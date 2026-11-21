@@ -1,17 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Shield, UserPlus, Trash2, Wallet, Loader2,
   CheckCircle, XCircle, RefreshCw, Settings, Network,
   Server, Wifi, WifiOff, Copy, RotateCcw, Save, Activity,
   Coins, Plus, ExternalLink, ChevronDown, ChevronUp, Zap, AlertCircle,
+  CalendarClock, Clock3,
 } from "lucide-react";
 import { useTokenDeploy, fetchTokenBalances, type DeployResult } from "@/lib/useTokenDeploy";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { getStoredToken } from "@/lib/featureGateApi";
+import { API_BASE_URL, getStoredToken } from "@/lib/featureGateApi";
 import { getStoredSession, isPrivilegedSession } from "@/lib/session";
 import WalletLoginDialog from "@/components/WalletLoginDialog";
 import { useNetwork } from "@/contexts/NetworkContext";
@@ -21,7 +22,9 @@ import {
   fetchAdminNetworkNodes,
   fetchCoinSettings,
   fetchNetworkNodes,
+  fetchRuntimeNodeSettings,
   pingNetworkNode,
+  proxyRpcUrl,
   saveRuntimeNodeSettings,
   toggleNetworkNode,
   updateNetworkNode,
@@ -31,21 +34,28 @@ import {
   type NetworkNodeType,
 } from "@/lib/networkApi";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { fetchAutoUpdateSettings, saveAutoUpdateSettings, type AutoUpdateSettings } from "@/lib/systemSettingsApi";
+import RpcStatusPanel from "@/components/RpcStatusPanel";
+import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, isAddress, parseUnits } from "ethers";
+import { GYDS_CHAIN_HEX, GYDS_CHAIN_ID } from "@/lib/useTokenDeploy";
+import TGYD_TEST_TOKEN_SOURCE from "@/lib/TGYDTestToken.sol?raw";
+import { getNativeCoinForNetwork } from "@/lib/coins";
+import { localTokenStorageKey, TESTNET_ADMIN_WALLET } from "@/lib/networkConfig";
 
-const RAW_BASE = (import.meta.env.VITE_FEATURE_GATE_URL as string | undefined)?.trim() || "/api";
-const API_BASE = RAW_BASE.replace(/\/+$/, "").replace(/\/api$/, "") + "/api";
+const API_BASE = API_BASE_URL;
 
-type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens";
+type Tab = "wallets" | "node" | "nodes" | "coins" | "tokens" | "updates";
 type RpcConnectionMode = "auto" | "server" | "remote";
 
 const RPC_CONNECTION_MODE_KEY = "gyds_rpc_connection_mode";
 
-function storedRpcConnectionMode(): RpcConnectionMode {
+function storedRpcConnectionMode(fallback: RpcConnectionMode = "auto"): RpcConnectionMode {
   try {
     const value = localStorage.getItem(RPC_CONNECTION_MODE_KEY);
-    return value === "server" || value === "remote" ? value : "auto";
+    return value === "server" || value === "remote" || value === "auto" ? value : fallback;
   } catch {
-    return "auto";
+    return fallback;
   }
 }
 
@@ -77,12 +87,18 @@ async function pingRpc(url: string): Promise<RpcStatus> {
 
 // ── Node Settings Tab ─────────────────────────────────────────────────────────
 function NodeSettingsTab() {
-  const { primaryRpc, secondaryRpc, bootnodeEnode, setPrimaryRpc, setSecondaryRpc, setBootnodeEnode, resetToDefaults } = useNetwork();
+  const { primaryRpc, secondaryRpc, bootnodeEnode, setBootnodeEnode, resetToDefaults } = useNetwork();
 
   const [rpc1,  setRpc1]  = useState(primaryRpc);
   const [rpc2,  setRpc2]  = useState(secondaryRpc);
   const [boot,  setBoot]  = useState(bootnodeEnode);
   const [connectionMode, setConnectionMode] = useState<RpcConnectionMode>(storedRpcConnectionMode);
+  const [savedSettings, setSavedSettings] = useState({
+    primaryRpc,
+    boostnodeRpc: secondaryRpc,
+    bootnodeEnode,
+    connectionMode: storedRpcConnectionMode(),
+  });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -93,16 +109,27 @@ function NodeSettingsTab() {
 
   const loadConfiguredNodes = useCallback(async () => {
     try {
-      const loaded = await fetchAdminNetworkNodes();
+      const [runtimeSettings, loaded] = await Promise.all([
+        fetchRuntimeNodeSettings(),
+        fetchAdminNetworkNodes(),
+      ]);
       setConfiguredNodes(loaded);
       const primary = loaded.find((node) => node.name === "Explorer Primary RPC");
       const secondary = loaded.find((node) => node.name === "Explorer Boost Node" || node.name === "Explorer Secondary RPC");
       const bootnode = loaded.find((node) => node.name === "Explorer Bootnode");
-      if (primary) setRpc1(primary.rpcUrl);
-      if (secondary) setRpc2(secondary.rpcUrl);
-      if (bootnode?.enode) setBoot(bootnode.enode);
+      const next = {
+        primaryRpc: primary?.rpcUrl || runtimeSettings.primaryRpc,
+        boostnodeRpc: secondary?.rpcUrl || runtimeSettings.boostnodeRpc,
+        bootnodeEnode: bootnode?.enode || runtimeSettings.bootnodeEnode,
+        connectionMode: storedRpcConnectionMode(runtimeSettings.connectionMode),
+      };
+      setRpc1(next.primaryRpc);
+      setRpc2(next.boostnodeRpc);
+      setBoot(next.bootnodeEnode);
+      setConnectionMode(next.connectionMode);
+      setSavedSettings(next);
     } catch {
-      // The form remains usable with the build-time .env defaults.
+      // Keep proxy-only defaults if authenticated settings are unavailable.
     }
   }, []);
 
@@ -111,12 +138,13 @@ function NodeSettingsTab() {
   const envConnectionMode = connectionMode === "server" ? "local" : connectionMode;
   const localRpcForEnv = connectionMode === "server" ? rpc1 : "http://127.0.0.1:8545";
   const remoteRpcForEnv = connectionMode === "server" ? rpc2 : rpc1;
+  const remoteFallbackForEnv = connectionMode === "server" ? "" : rpc2;
   const ENV_SNIPPET = `# ── GYDS Node / RPC Configuration ──────────────────
 GYDS_RPC_MODE=${envConnectionMode}
 GYDS_LOCAL_RPC_URL=${localRpcForEnv}
 GYDS_REMOTE_RPC_URL=${remoteRpcForEnv}
-GYDS_REMOTE_RPC_URL_2=${rpc2}
-VITE_RPC_URL=${rpc1}
+GYDS_REMOTE_RPC_URL_2=${remoteFallbackForEnv}
+VITE_RPC_URL=/api/rpc
 VITE_RPC_URL_2=/api/rpc
 VITE_BOOSTNODE_RPC_URL=/api/rpc${boot ? `
 
@@ -142,19 +170,17 @@ ${configuredNodes.map((node) => [
 
   useEffect(() => {
     setDirty(
-      rpc1 !== primaryRpc
-      || rpc2 !== secondaryRpc
-      || boot !== bootnodeEnode
-      || connectionMode !== storedRpcConnectionMode(),
+      rpc1 !== savedSettings.primaryRpc
+      || rpc2 !== savedSettings.boostnodeRpc
+      || boot !== savedSettings.bootnodeEnode
+      || connectionMode !== savedSettings.connectionMode,
     );
-  }, [rpc1, rpc2, boot, primaryRpc, secondaryRpc, bootnodeEnode, connectionMode]);
+  }, [rpc1, rpc2, boot, connectionMode, savedSettings]);
 
   const save = async () => {
     setSaving(true);
     try {
       await saveRuntimeNodeSettings({ primaryRpc: rpc1.trim(), boostnodeRpc: rpc2.trim(), bootnodeEnode: boot.trim() });
-      setPrimaryRpc(rpc1.trim());
-      setSecondaryRpc(rpc2.trim());
       setBootnodeEnode(boot.trim());
       try {
         localStorage.setItem(RPC_CONNECTION_MODE_KEY, connectionMode);
@@ -171,20 +197,23 @@ ${configuredNodes.map((node) => [
     }
   };
 
-  const reset = () => {
+  const reset = async () => {
     resetToDefaults();
-    const envRpc1 = import.meta.env.VITE_RPC_URL || "/api/rpc";
-    const envRpc2 = import.meta.env.VITE_RPC_URL_2 || import.meta.env.VITE_BOOSTNODE_RPC_URL || "/api/rpc";
-    setRpc1(envRpc1);
-    setRpc2(envRpc2);
-    setBoot("");
-    setConnectionMode("auto");
     try {
       localStorage.removeItem(RPC_CONNECTION_MODE_KEY);
     } catch {
       /* ignore */
     }
-    toast("Reset to defaults");
+    try {
+      const defaults = await fetchRuntimeNodeSettings();
+      setRpc1(defaults.primaryRpc);
+      setRpc2(defaults.boostnodeRpc);
+      setBoot(defaults.bootnodeEnode);
+      setConnectionMode(defaults.connectionMode);
+      toast("Loaded server environment defaults");
+    } catch {
+      toast.error("Could not load server defaults");
+    }
   };
 
   const testConnections = useCallback(async () => {
@@ -219,6 +248,7 @@ ${configuredNodes.map((node) => [
 
   return (
     <div className="space-y-5">
+      <RpcStatusPanel />
 
       {/* RPC Endpoints */}
       <div className="bg-card border border-border rounded-xl p-5">
@@ -246,6 +276,9 @@ ${configuredNodes.map((node) => [
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             The selected mode is included in the .env snippet below. Local mode is intended for a node installed on the same server as the API.
           </p>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            For a separately hosted web UI, build with <code>VITE_API_BASE_URL</code> set to this API server and allow the UI origin with <code>CORS_ALLOWED_ORIGINS</code> on the API server.
+          </p>
         </div>
 
         <div className="space-y-4">
@@ -254,9 +287,10 @@ ${configuredNodes.map((node) => [
               {connectionMode === "server" ? "Server-local RPC URL" : "Primary / remote RPC URL"}
             </label>
             <Input
+              aria-label="Primary RPC URL"
               value={rpc1}
               onChange={(e) => setRpc1(e.target.value)}
-              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"}
+              placeholder={connectionMode === "server" ? "http://127.0.0.1:8545" : "https://your-mainnet-rpc.example"}
               className="font-mono text-xs"
             />
             {status1 && <div className="mt-1.5"><RpcStatusBadge s={status1} /></div>}
@@ -264,9 +298,10 @@ ${configuredNodes.map((node) => [
           <div>
            <label className="text-xs text-muted-foreground mb-1.5 block">Remote fallback / boost RPC URL</label>
             <Input
+              aria-label="Fallback RPC URL"
               value={rpc2}
               onChange={(e) => setRpc2(e.target.value)}
-              placeholder="https://boost.netlifegy.com"
+              placeholder="https://your-fallback-rpc.example"
               className="font-mono text-xs"
             />
             {status2 && <div className="mt-1.5"><RpcStatusBadge s={status2} /></div>}
@@ -375,28 +410,40 @@ function NodesTab() {
   const [form, setForm] = useState({
     name: "",
     type: "full" as NetworkNodeType,
-    connectionMode: "server" as NodeConnectionMode,
+    connectionMode: "" as NodeConnectionMode | "",
     rpcUrl: "",
     enode: "",
-    status: "disconnected",
   });
-  const [pingStates, setPingStates] = useState<Record<number, RpcStatus>>({});
+  const nodesRequestInFlight = useRef(false);
 
-  const loadNodes = useCallback(async () => {
-    setLoading(true);
+  const loadNodes = useCallback(async (silent = false) => {
+    if (nodesRequestInFlight.current) return;
+    nodesRequestInFlight.current = true;
+    if (!silent) setLoading(true);
     try {
       setNodes(await fetchAdminNetworkNodes());
     } catch (error) {
-      toast.error("Could not load network nodes", { description: error instanceof Error ? error.message : "API unavailable" });
+      if (!silent) {
+        toast.error("Could not load network nodes", { description: error instanceof Error ? error.message : "API unavailable" });
+      }
     } finally {
-      setLoading(false);
+      nodesRequestInFlight.current = false;
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadNodes(); }, [loadNodes]);
+  useEffect(() => {
+    void loadNodes();
+    const interval = window.setInterval(() => { void loadNodes(true); }, 5000);
+    return () => window.clearInterval(interval);
+  }, [loadNodes]);
 
   const saveNode = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!form.connectionMode) {
+      toast.error("Choose whether this node runs on the API server or a remote server");
+      return;
+    }
     if (!form.name.trim() || !form.rpcUrl.trim()) {
       toast.error("Name and RPC URL are required");
       return;
@@ -408,18 +455,19 @@ function NodesTab() {
         type: form.type,
         rpcUrl: form.rpcUrl.trim(),
         enode: form.enode.trim() || null,
-        status: form.status as "connected" | "disconnected",
         isActive: editingId ? nodes.find((node) => node.id === editingId)?.isActive ?? true : true,
       };
       if (editingId) await updateNetworkNode(editingId, input);
-      else await createNetworkNode(input);
+      else await createNetworkNode({ ...input, status: "disconnected" });
       setEditingId(null);
-      setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" });
-       toast.success(editingId ? "Network node updated" : "Network node added", {
-         description: !form.enode.trim()
-           ? "The enode URL was automatically read from the node's admin RPC."
-           : "The supplied enode URL was saved.",
-       });
+      setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "" });
+      toast.success(editingId ? "Network node updated" : "Network node added", {
+        description: form.enode.trim()
+          ? "The supplied enode URL was saved."
+          : form.type === "boot"
+            ? "The boot node enode URL was discovered."
+            : "The RPC endpoint was saved; enode access is not needed for RPC queries.",
+      });
       loadNodes();
     } catch (error) {
       toast.error("Could not add node", { description: error instanceof Error ? error.message : "Request failed" });
@@ -436,7 +484,6 @@ function NodesTab() {
       connectionMode: isServerLocalRpc(node.rpcUrl) ? "server" : "remote",
       rpcUrl: node.rpcUrl,
       enode: node.enode || "",
-      status: node.status === "connected" ? "connected" : "disconnected",
     });
   };
 
@@ -461,12 +508,6 @@ function NodesTab() {
     }
   };
 
-  const ping = async (node: NetworkNode) => {
-    setPingStates((current) => ({ ...current, [node.id]: { ok: false, error: "Checking…" } }));
-    const result = await pingNetworkNode(node.rpcUrl);
-    setPingStates((current) => ({ ...current, [node.id]: result }));
-  };
-
   return (
     <div className="space-y-5">
       <form onSubmit={saveNode} className="rounded-xl border border-border bg-card p-5">
@@ -485,69 +526,77 @@ function NodesTab() {
             <option value="validator">Validator node</option>
             <option value="boot">Boot node</option>
           </select>
-          <select
-            value={form.connectionMode}
-            onChange={(event) => {
-              const connectionMode = event.target.value as NodeConnectionMode;
-              setForm({
-                ...form,
-                connectionMode,
-                rpcUrl: form.rpcUrl || (connectionMode === "server" ? "http://127.0.0.1:8545" : ""),
-              });
-            }}
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-          >
-            <option value="server">Connect to this server</option>
-            <option value="remote">Connect to a remote node</option>
-          </select>
           <div>
-            <Input value={form.rpcUrl} onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })} placeholder={form.connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"} className="font-mono text-xs" />
+            <label className="mb-1 block text-xs text-muted-foreground">Where is this node running?</label>
+            <select
+              required
+              value={form.connectionMode}
+              onChange={(event) => {
+                const connectionMode = event.target.value as NodeConnectionMode;
+                const currentUrlIsLocal = isServerLocalRpc(form.rpcUrl);
+                const rpcUrl = connectionMode === "server"
+                  ? currentUrlIsLocal ? form.rpcUrl : "http://127.0.0.1:8545"
+                  : currentUrlIsLocal ? "" : form.rpcUrl;
+                setForm({ ...form, connectionMode, rpcUrl });
+              }}
+              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              <option value="" disabled>Choose where the API server reaches this node</option>
+              <option value="server">Same server as the API (localhost)</option>
+              <option value="remote">Different server (remote RPC URL)</option>
+            </select>
+          </div>
+          <div>
+            <Input
+              value={form.rpcUrl}
+              onChange={(event) => setForm({ ...form, rpcUrl: event.target.value })}
+              placeholder={!form.connectionMode ? "Choose node location first" : form.connectionMode === "server" ? "http://127.0.0.1:8545" : "https://rpc.example.com"}
+              disabled={!form.connectionMode}
+              className="font-mono text-xs"
+            />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {form.connectionMode === "server" ? "Use localhost when geth is installed on this server." : "Use the remote node's reachable HTTP(S) RPC URL."}
+              {form.connectionMode === "server"
+                ? "Use localhost only when the node runs on the same machine as the API server."
+                : form.connectionMode === "remote"
+                  ? "Enter an HTTP(S) RPC URL reachable by the API server; the browser does not contact the node directly."
+                  : "Choose where the API server should connect to this node."}
             </p>
           </div>
            <div>
-             <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder="Leave blank to auto-detect enode" className="font-mono text-xs" />
-             <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to read it from <code className="rounded bg-secondary px-1">admin_nodeInfo</code>; paste one manually if admin RPC is private.</p>
+             <Input value={form.enode} onChange={(event) => setForm({ ...form, enode: event.target.value })} placeholder={form.type === "boot" ? "Leave blank to auto-detect enode" : "Optional enode URL"} className="font-mono text-xs" />
+             <p className="mt-1 text-[11px] text-muted-foreground">
+               Enode is optional for RPC access. Boot nodes require one; other nodes can be added when <code className="rounded bg-secondary px-1">admin_nodeInfo</code> is disabled.
+             </p>
            </div>
-          <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
-            <option value="connected">Connected</option>
-            <option value="disconnected">Disconnected</option>
-          </select>
           <div className="flex gap-2">
-            <Button type="submit" disabled={saving} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
-            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "server", rpcUrl: "", enode: "", status: "disconnected" }); }}>Cancel</Button>}
+            <Button type="submit" disabled={saving || !form.connectionMode} className="gap-2">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {editingId ? "Save node" : "Add node"}</Button>
+            {editingId && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setForm({ name: "", type: "full", connectionMode: "", rpcUrl: "", enode: "" }); }}>Cancel</Button>}
           </div>
         </div>
       </form>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
-          <div><h2 className="text-sm font-semibold">Configured nodes</h2><p className="text-xs text-muted-foreground">Connected nodes are available to the public wallet balance view.</p></div>
-          <Button variant="ghost" size="sm" onClick={loadNodes} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
+          <div><h2 className="text-sm font-semibold">Configured nodes</h2><p className="text-xs text-muted-foreground">The API checks active nodes every five seconds and retries disconnected nodes automatically.</p></div>
+          <Button variant="ghost" size="sm" onClick={() => { void loadNodes(); }} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></Button>
         </div>
         {loading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div> : nodes.length === 0 ? (
           <p className="px-5 py-12 text-center text-sm text-muted-foreground">No nodes configured yet.</p>
-        ) : nodes.map((node) => {
-          const pingStatus = pingStates[node.id];
-          return (
+        ) : nodes.map((node) => (
             <div key={node.id} className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4 last:border-0">
-              <span className={`h-2.5 w-2.5 rounded-full ${node.isActive ? "bg-primary animate-pulse" : "bg-muted-foreground"}`} />
+              <span className={`h-2.5 w-2.5 rounded-full ${node.isActive && node.status === "connected" ? "bg-primary" : node.isActive ? "bg-destructive" : "bg-muted-foreground"}`} />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{node.name}</p><span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] uppercase text-muted-foreground">{node.type}</span></div>
+                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{node.name}</p><span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] uppercase text-muted-foreground">{node.type}</span><span className={`rounded px-1.5 py-0.5 text-[11px] ${!node.isActive ? "bg-secondary text-muted-foreground" : node.status === "connected" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>{!node.isActive ? "Disabled" : node.status === "connected" ? "Connected" : "Disconnected"}</span></div>
                 <p className="break-all font-mono text-xs text-muted-foreground">{node.rpcUrl}</p>
                 {node.enode && <p className="break-all font-mono text-[11px] text-muted-foreground">{node.enode}</p>}
-                {pingStatus && <p className={`mt-1 text-xs ${pingStatus.ok ? "text-primary" : "text-destructive"}`}>{pingStatus.ok ? `Online · block ${pingStatus.blockNumber?.toLocaleString()} · ${pingStatus.latencyMs}ms` : pingStatus.error}</p>}
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" onClick={() => ping(node)} className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Ping</Button>
                 <Button variant="ghost" size="sm" onClick={() => beginEdit(node)} className="gap-1.5 text-xs"><Settings className="h-3.5 w-3.5" /> Edit</Button>
-                <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disconnect" : "Connect"}</Button>
+                <Button variant="ghost" size="sm" onClick={() => toggle(node)} className="text-xs">{node.isActive ? "Disable" : "Enable"}</Button>
                 <Button variant="ghost" size="sm" onClick={() => remove(node)} className="text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
-          );
-        })}
+          ))}
       </div>
     </div>
   );
@@ -782,6 +831,7 @@ contract ${name.replace(/\s+/g, "")}Token {
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Mint(address indexed to, uint256 amount);
 
     modifier onlyOwner() { require(msg.sender == owner, "Not owner"); _; }
 
@@ -815,10 +865,24 @@ contract ${name.replace(/\s+/g, "")}Token {
         return true;
     }${mintable ? `
     function mint(address to, uint256 amount) public onlyOwner {
+        require(mintable, "Token is not mintable");
         uint256 raw = amount * (10 ** uint256(decimals));
         totalSupply   += raw;
         balanceOf[to] += raw;
+        emit Mint(to, raw);
         emit Transfer(address(0), to, raw);
+    }
+    function mintRaw(address to, uint256 rawAmount) public onlyOwner {
+        require(mintable, "Token is not mintable");
+        require(to != address(0), "Mint to zero address");
+        require(rawAmount > 0, "Amount must be greater than zero");
+        totalSupply   += rawAmount;
+        balanceOf[to] += rawAmount;
+        emit Mint(to, rawAmount);
+        emit Transfer(address(0), to, rawAmount);
+    }
+    function supportsRawMint() public pure returns (bool) {
+        return true;
     }` : ""}
     function burn(uint256 amount) public {
         require(balanceOf[msg.sender] >= amount, "Insufficient balance");
@@ -837,9 +901,286 @@ interface DeployedToken {
   deployedAt: string;
 }
 
+const GYD_ADMIN_ABI = [
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
+  "function owner() view returns (address)",
+  "function mintable() view returns (bool)",
+  "function supportsRawMint() view returns (bool)",
+  "function mintRaw(address to, uint256 rawAmount)",
+  "function mint(address to, uint256 amount)",
+];
+
+interface GydContractInfo {
+  symbol: string;
+  decimals: number;
+  totalSupply: bigint;
+  owner: string;
+  mintable: boolean;
+  supportsRawMint: boolean;
+}
+
+function GydMintPanel({ rpcUrl, refreshKey }: { rpcUrl: string; refreshKey: number }) {
+  const [contractAddress, setContractAddress] = useState("");
+  const [contractInfo, setContractInfo] = useState<GydContractInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const [minting, setMinting] = useState(false);
+  const [txHash, setTxHash] = useState("");
+  const session = getStoredSession();
+  const isAuthorizedSession = Boolean(session && isPrivilegedSession(session));
+  const isOwnerSession = Boolean(
+    isAuthorizedSession &&
+    contractInfo &&
+    session?.walletAddress.toLowerCase() === contractInfo.owner.toLowerCase(),
+  );
+
+  const loadContract = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const settings = await fetchCoinSettings();
+      const setting = settings.find((coin) => coin.symbol.toUpperCase() === "GYD");
+      const address = setting?.contractAddress?.trim() || "";
+      setContractAddress(address);
+      if (!address) {
+        setContractInfo(null);
+        return;
+      }
+      if (!isAddress(address)) throw new Error("The GYD contract address in Admin → Coins is invalid.");
+
+      const contract = new Contract(address, GYD_ADMIN_ABI, new JsonRpcProvider(rpcUrl));
+      const [symbol, decimals, totalSupply, owner, mintable] = await Promise.all([
+        contract.symbol(),
+        contract.decimals(),
+        contract.totalSupply(),
+        contract.owner(),
+        contract.mintable(),
+      ]);
+      let supportsRawMint = false;
+      try {
+        supportsRawMint = Boolean(await contract.supportsRawMint());
+      } catch {
+        // Older deployments do not expose the raw-unit mint capability marker.
+      }
+      if (String(symbol).toUpperCase() !== "GYD" || Number(decimals) !== 6) {
+        throw new Error("The configured GYD contract must report symbol GYD and use 6 decimals.");
+      }
+      setContractInfo({
+        symbol: String(symbol),
+        decimals: Number(decimals),
+        totalSupply: BigInt(totalSupply),
+        owner: String(owner),
+        mintable: Boolean(mintable),
+        supportsRawMint,
+      });
+    } catch (error) {
+      setContractInfo(null);
+      setLoadError(error instanceof Error ? error.message : "Could not read the GYD contract.");
+    } finally {
+      setLoading(false);
+    }
+  }, [rpcUrl]);
+
+  useEffect(() => { void loadContract(); }, [loadContract, refreshKey]);
+
+  const handleMint = async () => {
+    const currentSession = getStoredSession();
+    if (!currentSession || !isPrivilegedSession(currentSession)) {
+      toast.error("Sign in with an authorized admin wallet before minting.");
+      return;
+    }
+    if (!contractAddress || !contractInfo) {
+      toast.error("Deploy and register the GYD contract before minting.");
+      return;
+    }
+    if (currentSession.walletAddress.toLowerCase() !== contractInfo.owner.toLowerCase()) {
+      toast.error("This admin wallet is not the on-chain GYD owner.");
+      return;
+    }
+    if (!contractInfo.mintable) {
+      toast.error("This GYD contract was deployed with minting disabled.");
+      return;
+    }
+    if (!isAddress(recipient) || recipient.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+      toast.error("Enter a valid, non-zero recipient wallet address.");
+      return;
+    }
+    if (!amount.trim()) {
+      toast.error("Enter the amount of GYD to mint.");
+      return;
+    }
+
+    let rawAmount: bigint;
+    try {
+      rawAmount = parseUnits(amount.trim(), contractInfo.decimals);
+    } catch {
+      toast.error(`Enter a valid amount with no more than ${contractInfo.decimals} decimal places.`);
+      return;
+    }
+    if (rawAmount <= 0n) {
+      toast.error("Mint amount must be greater than zero.");
+      return;
+    }
+    if (!contractInfo.supportsRawMint && !/^\d+$/.test(amount.trim())) {
+      toast.error("This older GYD contract only supports minting whole tokens.");
+      return;
+    }
+
+    const amountLabel = `${amount.trim()} GYD`;
+    if (!window.confirm(`Mint ${amountLabel} to ${recipient}? This action changes the token supply. It does not verify reserves or maintain the GYD peg.`)) {
+      return;
+    }
+
+    const ethereum = (window as any).ethereum;
+    if (!ethereum) {
+      toast.error("MetaMask or another browser wallet is required to mint.");
+      return;
+    }
+
+    setMinting(true);
+    setTxHash("");
+    try {
+      let browserProvider = new BrowserProvider(ethereum);
+      await browserProvider.send("eth_requestAccounts", []);
+      let signer = await browserProvider.getSigner();
+      let signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("Connect the same wallet used for this admin session.");
+      }
+
+      const network = await browserProvider.getNetwork();
+      if (network.chainId !== GYDS_CHAIN_ID) {
+        try {
+          await browserProvider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+        } catch (switchError: any) {
+          if (switchError?.code === 4902) {
+            await browserProvider.send("wallet_addEthereumChain", [{
+              chainId: GYDS_CHAIN_HEX,
+              chainName: "GYDS Network",
+              rpcUrls: [rpcUrl],
+              nativeCurrency: { name: "GYDS", symbol: "GYDS", decimals: 18 },
+            }]);
+            await browserProvider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+          } else {
+            throw switchError;
+          }
+        }
+        browserProvider = new BrowserProvider(ethereum);
+        signer = await browserProvider.getSigner();
+        signerAddress = await signer.getAddress();
+      }
+      if (signerAddress.toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("The connected wallet changed. Reconnect the authenticated admin wallet.");
+      }
+      if ((await browserProvider.getNetwork()).chainId !== GYDS_CHAIN_ID) {
+        throw new Error("Switch your wallet to GYDS Network (chain ID 198282).");
+      }
+
+      const contract = new Contract(contractAddress, GYD_ADMIN_ABI, signer);
+      const [owner, mintable, symbol, decimals] = await Promise.all([
+        contract.owner(),
+        contract.mintable(),
+        contract.symbol(),
+        contract.decimals(),
+      ]);
+      if (String(owner).toLowerCase() !== currentSession.walletAddress.toLowerCase()) {
+        throw new Error("The on-chain GYD owner does not match this admin wallet.");
+      }
+      if (!Boolean(mintable) || String(symbol).toUpperCase() !== "GYD" || Number(decimals) !== 6) {
+        throw new Error("The registered contract is no longer a mintable six-decimal GYD token.");
+      }
+
+      const tx = contractInfo.supportsRawMint
+        ? await contract.mintRaw(recipient, rawAmount)
+        : await contract.mint(recipient, BigInt(amount.trim()));
+      setTxHash(tx.hash);
+      await tx.wait();
+      toast.success("GYD mint confirmed", { description: `${amountLabel} sent to ${recipient}` });
+      setAmount("");
+      await loadContract();
+    } catch (error: any) {
+      toast.error("GYD mint failed", {
+        description: error?.shortMessage || error?.reason || error?.message || "Transaction was not completed.",
+      });
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-amber-500/30 bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-amber-500/20 bg-amber-500/5">
+        <Shield className="w-4 h-4 text-amber-500" />
+        <h2 className="font-semibold text-sm">Admin-approved GYD minting</h2>
+        <span className="ml-auto text-xs text-muted-foreground">Owner wallet required</span>
+      </div>
+      <div className="p-5 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          GYD uses 6 decimals. Minting creates new tokens and does not verify collateral, reserves, swaps, or the stablecoin peg.
+        </p>
+        {loading ? (
+          <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading GYD contract…</p>
+        ) : loadError ? (
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{loadError}</div>
+        ) : !contractAddress ? (
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 text-sm text-muted-foreground">
+            No GYD contract is registered yet. Use the GYD preset above to deploy a mintable six-decimal contract, then it will appear here.
+          </div>
+        ) : contractInfo ? (
+          <>
+            <div className="grid gap-2 sm:grid-cols-2 rounded-lg border border-border bg-secondary/20 p-3 text-xs">
+              <p><span className="text-muted-foreground">Contract:</span> <code className="break-all">{contractAddress}</code></p>
+              <p><span className="text-muted-foreground">Owner:</span> <code className="break-all">{contractInfo.owner}</code></p>
+              <p><span className="text-muted-foreground">Total supply:</span> {formatUnits(contractInfo.totalSupply, contractInfo.decimals)} GYD</p>
+              <p><span className="text-muted-foreground">Minting:</span> {contractInfo.mintable ? "Enabled" : "Disabled"}</p>
+            </div>
+            {!isAuthorizedSession ? (
+              <p className="text-sm text-destructive">An authorized admin session is required.</p>
+            ) : !isOwnerSession ? (
+              <p className="text-sm text-amber-600">The signed-in admin wallet is not the on-chain owner of this GYD contract.</p>
+            ) : !contractInfo.mintable ? (
+              <p className="text-sm text-destructive">Minting is disabled in this contract and cannot be enabled from this screen.</p>
+            ) : (
+              <div className="space-y-3">
+                {!contractInfo.supportsRawMint && (
+                  <p className="text-xs text-amber-600">Legacy contract detected: only whole-token mint amounts are supported.</p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Recipient wallet</label>
+                    <Input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="0x…" className="font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Amount in GYD</label>
+                    <Input type="number" min="0" step={contractInfo.supportsRawMint ? "0.000001" : "1"} value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={contractInfo.supportsRawMint ? "e.g. 125.50" : "Whole tokens only"} />
+                  </div>
+                </div>
+                <Button onClick={handleMint} disabled={minting || !isOwnerSession} className="gap-2">
+                  {minting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
+                  {minting ? "Minting…" : "Mint GYD"}
+                </Button>
+                <Button variant="outline" size="sm" disabled={loading || minting} onClick={() => void loadContract()} className="ml-2 gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh supply
+                </Button>
+                {txHash && <p className="text-xs text-muted-foreground break-all">Transaction: {txHash}</p>}
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function TokensTab() {
-  const { primaryRpc } = useNetwork();
-  const rpcUrl = primaryRpc || import.meta.env.VITE_RPC_URL || "https://rpc.netlifegy.com";
+  const { network, networkType } = useNetwork();
+  const rpcUrl = networkType === "custom"
+    ? network.rpcEndpoints[0] || ""
+    : proxyRpcUrl(undefined, networkType);
 
   // Form state
   const [tokenName,     setTokenName]     = useState("My GYDS Token");
@@ -849,25 +1190,59 @@ function TokensTab() {
   const [mintable,      setMintable]      = useState(false);
   const [showCode,      setShowCode]      = useState(false);
   const [showManual,    setShowManual]    = useState(false);
+  const [gydRefreshKey, setGydRefreshKey] = useState(0);
+
+  const applyGydPreset = () => {
+    setTokenName("GYD Stablecoin");
+    setTokenSymbol("GYD");
+    setTokenDecimals("6");
+    setTokenSupply("0");
+    setMintable(true);
+    toast.success("GYD stablecoin preset applied");
+  };
+  const applyTgydPreset = () => {
+    setTokenName("TGYD");
+    setTokenSymbol("TGYD");
+    setTokenDecimals("6");
+    setTokenSupply("5000");
+    setMintable(true);
+    toast.success("TGYD Testnet preset applied: 5,000 initial supply, 1,000,000 cap");
+  };
 
   // Deploy hook
-  const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(rpcUrl);
+  const { deploy, reset: resetDeploy, status: deployStatus, txHash, contractAddress, error: deployError } = useTokenDeploy(
+    rpcUrl,
+    network.chainId,
+    network.name,
+    networkType,
+  );
 
   // Deployed tokens registry (localStorage)
+  const tokenStorageKey = localTokenStorageKey();
   const [deployedTokens, setDeployedTokens] = useState<DeployedToken[]>(() => {
-    try { return JSON.parse(localStorage.getItem("gyds_deployed_tokens") || "[]"); }
+    try { return JSON.parse(localStorage.getItem(tokenStorageKey) || "[]"); }
     catch { return []; }
   });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(tokenStorageKey) || "[]");
+      setDeployedTokens(Array.isArray(saved) ? saved : []);
+    } catch {
+      setDeployedTokens([]);
+    }
+  }, [tokenStorageKey]);
   const [newTokenAddr,  setNewTokenAddr]  = useState("");
   const [newTokenLabel, setNewTokenLabel] = useState("");
 
-  const solidityCode = SOLIDITY_TEMPLATE(
-    tokenName || "MyToken",
-    tokenSymbol || "MTK",
-    parseInt(tokenDecimals) || 6,
-    tokenSupply || "1000000",
-    mintable,
-  );
+  const solidityCode = tokenSymbol.trim().toUpperCase() === "TGYD"
+    ? TGYD_TEST_TOKEN_SOURCE
+    : SOLIDITY_TEMPLATE(
+        tokenName || "MyToken",
+        tokenSymbol || "MTK",
+        parseInt(tokenDecimals) || 6,
+        tokenSupply || "1000000",
+        mintable,
+      );
 
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
@@ -884,7 +1259,7 @@ function TokensTab() {
     };
     const updated = [entry, ...deployedTokens.filter((t) => t.address !== result.contractAddress)];
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
   };
 
   const publishTokenSettings = async (result: DeployResult) => {
@@ -909,20 +1284,62 @@ function TokensTab() {
       toast.error("Token name and symbol are required.");
       return;
     }
-    if (!tokenSupply || Number(tokenSupply) <= 0) {
-      toast.error("Initial supply must be greater than 0.");
+    const isGyd = tokenSymbol.trim().toUpperCase() === "GYD";
+    const isTgyd = tokenSymbol.trim().toUpperCase() === "TGYD";
+    if (!/^\d+$/.test(tokenSupply) || Number(tokenSupply) < 0 || (!isGyd && Number(tokenSupply) === 0)) {
+      toast.error(isGyd ? "Initial supply must be a whole number of zero or more." : "Initial supply must be a positive whole number.");
+      return;
+    }
+    const decimals = Number(tokenDecimals);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      toast.error("Decimals must be a whole number from 0 to 18.");
+      return;
+    }
+    if (isGyd && (decimals !== 6 || !mintable)) {
+      toast.error("GYD must use 6 decimals with owner-controlled minting enabled.");
+      return;
+    }
+    if (isTgyd && (
+      networkType !== "testnet" ||
+      network.chainId !== 198281 ||
+      tokenName.trim() !== "TGYD" ||
+      decimals !== 6 ||
+      tokenSupply !== "5000" ||
+      !mintable
+    )) {
+      toast.error("Use the TGYD Testnet preset: 5,000 initial tokens, 6 decimals, and a hard 1,000,000-token cap.");
+      return;
+    }
+    const session = getStoredSession();
+    if (!session || !isPrivilegedSession(session)) {
+      toast.error("Sign in with an authorized admin wallet before deploying tokens.");
+      return;
+    }
+    if (isGyd && networkType !== "mainnet") {
+      toast.error("Deploy the GYD stablecoin on GYDS Mainnet, not Testnet or a custom network.");
+      return;
+    }
+    if (isTgyd && session.walletAddress.toLowerCase() !== TESTNET_ADMIN_WALLET) {
+      toast.error("Connect the configured Testnet admin wallet before deploying TGYD.");
       return;
     }
     const result = await deploy({
       name:          tokenName.trim(),
       symbol:        tokenSymbol.trim(),
-      decimals:      parseInt(tokenDecimals) || 6,
+      decimals,
       initialSupply: tokenSupply,
       mintable,
+      ...(isTgyd ? { maxSupply: "1000000" } : {}),
+      expectedDeployer: session.walletAddress,
     });
     if (result) {
       saveTokenToRegistry(result);
-      await publishTokenSettings(result);
+      if (isTgyd) {
+        toast.info("TGYD was saved to the Testnet-only token registry; Mainnet settings were not changed.");
+      } else {
+        await publishTokenSettings(result);
+      }
+      if (result.symbol.toUpperCase() === "GYD") setGydRefreshKey((key) => key + 1);
       toast.success(`${result.name} (${result.symbol}) deployed at ${result.contractAddress.slice(0, 10)}…`);
     }
   };
@@ -942,7 +1359,7 @@ function TokensTab() {
     };
     const updated = [entry, ...deployedTokens];
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
     setNewTokenAddr("");
     setNewTokenLabel("");
     toast.success("Token address saved.");
@@ -951,24 +1368,26 @@ function TokensTab() {
   const removeToken = (addr: string) => {
     const updated = deployedTokens.filter((t) => t.address !== addr);
     setDeployedTokens(updated);
-    localStorage.setItem("gyds_deployed_tokens", JSON.stringify(updated));
+    localStorage.setItem(tokenStorageKey, JSON.stringify(updated));
   };
 
   const isDeploying = ["connecting","switching","deploying","confirming"].includes(deployStatus);
 
   const deployStepLabels: Record<string, string> = {
     connecting:  "Connecting to MetaMask…",
-    switching:   "Switching to GYDS Network…",
+    switching:   `Switching to ${network.name}…`,
     deploying:   "Sending transaction…",
     confirming:  "Waiting for confirmation…",
     success:     "Deployed!",
     error:       "Deployment failed",
   };
 
-  const metaMaskSetup = `Network name:  GYDS Network
+  const nativeCoin = getNativeCoinForNetwork(networkType);
+  const walletNetworkName = networkType === "custom" ? "Custom Network" : `GYDS ${network.name}`;
+  const metaMaskSetup = `Network name:  ${walletNetworkName}
 RPC URL:       ${rpcUrl}
-Chain ID:      198282
-Currency:      GYDS`;
+Chain ID:      ${network.chainId ?? "Check the custom RPC"}
+Currency:      ${nativeCoin.symbol}`;
 
   return (
     <div className="space-y-6">
@@ -982,6 +1401,22 @@ Currency:      GYDS`;
           <p className="text-sm text-muted-foreground">
             Configure your token parameters, then deploy to the GYDS network using Remix IDE or the geth console.
           </p>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium">GYD stablecoin</p>
+              <p className="text-xs text-muted-foreground">Preset: 6 decimals, zero initial supply, and admin-controlled minting.</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={applyGydPreset}>Use GYD preset</Button>
+          </div>
+          {networkType === "testnet" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <div className="flex-1">
+                <p className="text-sm font-medium">TGYD Testnet token</p>
+                <p className="text-xs text-muted-foreground">5,000 initial TGYD to the configured admin wallet; immutable 1,000,000 TGYD maximum supply.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={applyTgydPreset}>Use TGYD preset</Button>
+            </div>
+          )}
 
           {/* Token params grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -999,7 +1434,7 @@ Currency:      GYDS`;
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Initial Supply (whole tokens)</label>
-              <Input type="number" min={1} value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="1000000" />
+              <Input type="number" min={tokenSymbol.trim().toUpperCase() === "GYD" ? 0 : 1} step={1} value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="1000000" />
             </div>
           </div>
 
@@ -1060,17 +1495,24 @@ Currency:      GYDS`;
         </div>
       </div>
 
+      <GydMintPanel rpcUrl={proxyRpcUrl(undefined, "mainnet")} refreshKey={gydRefreshKey} />
+
       {/* Deploy on GYDS Chain */}
       <div className="rounded-xl border border-primary/40 bg-card overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-primary/20 bg-primary/5">
           <Zap className="w-4 h-4 text-primary" />
           <h2 className="font-semibold text-sm">Deploy on GYDS Chain</h2>
-          <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">Requires MetaMask</span>
+          <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded">Requires an EVM wallet</span>
         </div>
         <div className="p-5 space-y-4">
           <p className="text-sm text-muted-foreground">
-            Deploy the token above directly to the GYDS network. MetaMask will add the GYDS network automatically if needed.
+            Deploy the token above to the selected GYDS network. Your browser wallet will add that network if needed.
           </p>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+            Deployment needs native GYDS for network fees on {network.name}
+            {network.chainId === null ? "" : ` (chain ID ${network.chainId})`}. Fund the same admin wallet on this network first;
+            token balances such as GYD or tUSDT cannot pay gas.
+          </div>
 
           {/* Status display */}
           {deployStatus === "idle" && (
@@ -1079,7 +1521,7 @@ Currency:      GYDS`;
               className="w-full gap-2 h-11 text-sm font-semibold"
             >
               <Zap className="w-4 h-4" />
-              Deploy {tokenName || "Token"} ({tokenSymbol || "???"}) with MetaMask
+              Deploy {tokenName || "Token"} ({tokenSymbol || "???"}) with wallet
             </Button>
           )}
 
@@ -1155,7 +1597,7 @@ Currency:      GYDS`;
 
           {/* MetaMask network config (always visible) */}
           <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1.5">
-            <p className="text-xs text-muted-foreground font-medium">Add GYDS network to MetaMask manually if needed:</p>
+            <p className="text-xs text-muted-foreground font-medium">Add the selected GYDS network to your wallet manually if needed:</p>
             <div className="relative">
               <pre className="text-xs font-mono bg-secondary/50 rounded p-2 overflow-auto">{metaMaskSetup}</pre>
               <Button variant="ghost" size="sm" onClick={() => copyText(metaMaskSetup, "MetaMask config")}
@@ -1183,7 +1625,7 @@ Currency:      GYDS`;
                     <a href="https://remix.ethereum.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
                       remix.ethereum.org <ExternalLink className="w-3 h-3" />
                     </a>
-                    , paste the Solidity code above, compile with 0.8.20+, connect MetaMask → Injected Provider, deploy.
+                    , paste the Solidity code above, compile with 0.8.20+, connect your browser wallet → Injected Provider, deploy.
                   </p>
                 </div>
                 <div className="space-y-1.5">
@@ -1276,6 +1718,106 @@ node deploy-token.js \\
   );
 }
 
+function AutoUpdateSettingsTab() {
+  const [settings, setSettings] = useState<AutoUpdateSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setSettings(await fetchAutoUpdateSettings());
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load update settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const toggle = async (enabled: boolean) => {
+    setSaving(true);
+    try {
+      const next = await saveAutoUpdateSettings(enabled);
+      setSettings(next);
+      toast.success(enabled ? "Automatic updates enabled" : "Automatic updates disabled");
+    } catch (saveError) {
+      toast.error("Could not save automatic update setting", {
+        description: saveError instanceof Error ? saveError.message : "Request failed",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+            <CalendarClock className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold">Automatic software updates</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              On the 10th, upgrade Ubuntu packages, pull the latest Git code, rebuild the explorer and API, restart services, and check health. The server will not reboot automatically.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-medium ${settings?.enabled ? "text-primary" : "text-muted-foreground"}`}>
+            {loading ? "Loading" : settings?.enabled ? "On" : "Off"}
+          </span>
+          <Switch
+            checked={settings?.enabled ?? false}
+            onCheckedChange={toggle}
+            disabled={loading || saving || !settings?.schedulerInstalled}
+            aria-label="Enable monthly automatic software updates"
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-background/50 p-3">
+          <Clock3 className="h-4 w-4 text-primary" />
+          <div>
+            <p className="text-xs text-muted-foreground">Scheduled time</p>
+            <p className="text-sm font-medium">{settings?.schedule ?? "10th of each month at 03:00"}</p>
+            <p className="text-xs text-muted-foreground">{settings?.timeZone ?? "America/Guyana"} time</p>
+          </div>
+        </div>
+        <div className="rounded-lg border border-border bg-background/50 p-3">
+          <p className="text-xs text-muted-foreground">Scheduler status</p>
+          <p className="mt-1 text-sm font-medium">
+            {loading ? "Checking…" : settings?.schedulerInstalled ? "Installed on this server" : "Not installed"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {settings?.schedulerInstalled
+              ? settings.updatedAt
+                ? `Last setting change: ${new Date(settings.updatedAt).toLocaleString()}`
+                : "Updates are off until you enable them."
+              : "Run sudo ./update.sh on the Ubuntu server to install the timer."}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div role="alert" className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      {!settings?.schedulerInstalled && !loading && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          The schedule runs server-side; the switch stays unavailable until the Ubuntu timer has been installed.
+        </p>
+      )}
+    </section>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const AdminDashboard = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1283,13 +1825,16 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = getStoredToken();
     const session = getStoredSession();
-    if (session && !isPrivilegedSession(session)) {
+    if (!session) {
+      setIsAuthenticated(false);
+      return;
+    }
+    if (!isPrivilegedSession(session)) {
       navigate("/dashboard", { replace: true });
       return;
     }
-    if (token) setIsAuthenticated(true);
+    setIsAuthenticated(true);
   }, [navigate]);
 
   if (!isAuthenticated) {
@@ -1316,9 +1861,10 @@ const AdminDashboard = () => {
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "node",    label: "Node Settings",  icon: <Settings className="w-3.5 h-3.5" /> },
-    { id: "nodes",   label: "Nodes",          icon: <Network  className="w-3.5 h-3.5" /> },
+    { id: "nodes",   label: "Network Nodes",  icon: <Network  className="w-3.5 h-3.5" /> },
     { id: "coins",   label: "Coins",          icon: <Coins    className="w-3.5 h-3.5" /> },
     { id: "tokens",  label: "Tokens",         icon: <Coins    className="w-3.5 h-3.5" /> },
+    { id: "updates", label: "Auto Updates",   icon: <CalendarClock className="w-3.5 h-3.5" /> },
     { id: "wallets", label: "Admin Wallets",  icon: <Shield   className="w-3.5 h-3.5" /> },
   ];
 
@@ -1361,6 +1907,7 @@ const AdminDashboard = () => {
         {activeTab === "nodes"   && <NodesTab />}
         {activeTab === "coins"   && <CoinSettingsTab />}
         {activeTab === "tokens"  && <TokensTab />}
+        {activeTab === "updates" && <AutoUpdateSettingsTab />}
         {activeTab === "wallets" && <AdminWalletsTab />}
       </motion.div>
     </div>

@@ -20,10 +20,26 @@
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const { Pool } = require("pg");
+const {
+  normalizeRpcUrl,
+  assertExpectedChainId,
+  advanceIndexedBlock,
+} = require("./helpers");
 
 // ---- Config -----------------------------------------------
-const PRIMARY_RPC   = process.env.VITE_RPC_URL   || process.env.RPC_URL   || "https://rpc.netlifegy.com";
-const SECONDARY_RPC = process.env.VITE_RPC_URL_2  || process.env.RPC_URL_2 || "https://boost.netlifegy.com";
+const EXPECTED_CHAIN_ID = BigInt(
+  process.env.GYDS_MAINNET_CHAIN_ID || process.env.GYDS_CHAIN_ID || process.env.VITE_CHAIN_ID || "198282",
+);
+const ENV_RPC_ENDPOINTS = [
+  process.env.GYDS_REMOTE_RPC_URL,
+  process.env.RPC_URL,
+  process.env.VITE_RPC_URL,
+  process.env.GYDS_REMOTE_RPC_URL_2,
+  process.env.RPC_URL_2,
+  process.env.BOOSTNODE_RPC_URL,
+  process.env.VITE_BOOSTNODE_RPC_URL,
+  process.env.VITE_RPC_URL_2,
+].map(normalizeRpcUrl).filter(Boolean);
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || "5", 10) * 1000;
 const BATCH_SIZE    = parseInt(process.env.BATCH_SIZE    || "10", 10);
 
@@ -45,18 +61,61 @@ const warn = (...a) => console.warn( `[${ts()}] [WARN] `, ...a);
 const err  = (...a) => console.error(`[${ts()}] [ERROR]`, ...a);
 
 // ---- State -------------------------------------------------
-let activeRpc = PRIMARY_RPC;
+let rpcEndpoints = [...new Set(ENV_RPC_ENDPOINTS)];
+let activeRpc = rpcEndpoints[0] || "";
 let lastIndexedBlock = 0;
 let isRunning = false;
+let nextRpcCatalogWarningAt = 0;
+let nextNoRpcWarningAt = 0;
+const verifiedChainEndpoints = new Map();
+
+function displayRpcHost(rpcUrl) {
+  try {
+    return new URL(rpcUrl).host;
+  } catch {
+    return "unconfigured RPC";
+  }
+}
+
+async function refreshRpcEndpoints() {
+  let databaseEndpoints = [];
+  try {
+    const { rows } = await pool.query(`
+      SELECT name, rpc_url
+      FROM network_nodes
+      WHERE is_active = TRUE
+        AND type IN ('main', 'full', 'lite', 'rpc', 'boost')
+      ORDER BY CASE name
+        WHEN 'Explorer Primary RPC' THEN 0
+        WHEN 'Explorer Boost Node' THEN 1
+        ELSE 2
+      END, id ASC
+    `);
+    databaseEndpoints = rows.map((row) => normalizeRpcUrl(row.rpc_url)).filter(Boolean);
+  } catch (error) {
+    const now = Date.now();
+    if (now >= nextRpcCatalogWarningAt) {
+      warn(`Could not read dashboard RPC settings; using .env endpoints: ${error.message}`);
+      nextRpcCatalogWarningAt = now + 60_000;
+    }
+  }
+
+  rpcEndpoints = [...new Set([...databaseEndpoints, ...ENV_RPC_ENDPOINTS])];
+  if (!rpcEndpoints.includes(activeRpc)) activeRpc = rpcEndpoints[0] || "";
+  for (const endpoint of verifiedChainEndpoints.keys()) {
+    if (!rpcEndpoints.includes(endpoint)) verifiedChainEndpoints.delete(endpoint);
+  }
+  return rpcEndpoints;
+}
 
 // ---- RPC helpers -------------------------------------------
 async function rpcCall(method, params = []) {
   const body = JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 });
-  const tryFetch = async (url) => {
+  const tryFetch = async (url, requestBody = body) => {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body,
+      body: requestBody,
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -65,24 +124,39 @@ async function rpcCall(method, params = []) {
     return json.result;
   };
 
-  try {
-    const result = await tryFetch(activeRpc);
-    if (activeRpc !== PRIMARY_RPC) {
-      log(`Recovered — switching back to primary RPC: ${PRIMARY_RPC}`);
-      activeRpc = PRIMARY_RPC;
-    }
-    return result;
-  } catch (e) {
-    const fallback = activeRpc === PRIMARY_RPC ? SECONDARY_RPC : PRIMARY_RPC;
-    warn(`RPC call failed on ${activeRpc}: ${e.message}. Trying fallback: ${fallback}`);
+  const candidates = [...new Set([activeRpc, ...rpcEndpoints].filter(Boolean))];
+  if (candidates.length === 0) {
+    throw new Error("No absolute Mainnet RPC URL is configured. Set one in the admin dashboard or .env.");
+  }
+
+  let lastError;
+  for (const endpoint of candidates) {
     try {
-      const result = await tryFetch(fallback);
-      activeRpc = fallback;
+      const verifiedUntil = verifiedChainEndpoints.get(endpoint) || 0;
+      if (verifiedUntil <= Date.now()) {
+        const chainHex = await tryFetch(
+          endpoint,
+          JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id: 1 }),
+        );
+        assertExpectedChainId(chainHex, EXPECTED_CHAIN_ID);
+        verifiedChainEndpoints.set(endpoint, Date.now() + 60_000);
+      }
+
+      const result = method === "eth_chainId"
+        ? `0x${EXPECTED_CHAIN_ID.toString(16)}`
+        : await tryFetch(endpoint);
+      if (activeRpc !== endpoint) {
+        log(`Using Mainnet RPC ${displayRpcHost(endpoint)}`);
+      }
+      activeRpc = endpoint;
       return result;
-    } catch (e2) {
-      throw new Error(`Both RPC endpoints failed. Last error: ${e2.message}`);
+    } catch (error) {
+      lastError = error;
+      warn(`RPC request failed on ${displayRpcHost(endpoint)}: ${error.message}`);
     }
   }
+
+  throw lastError instanceof Error ? lastError : new Error("All configured Mainnet RPC endpoints failed.");
 }
 
 function hexToNumber(hex) {
@@ -193,8 +267,7 @@ async function indexBlock(blockNumber) {
 
   const block = await rpcCall("eth_getBlockByNumber", [hexNum, true]);
   if (!block) {
-    warn(`Block ${blockNumber} not found (null response).`);
-    return;
+    throw new Error(`Block ${blockNumber} was not returned by the RPC.`);
   }
 
   await upsertBlock(block);
@@ -202,14 +275,10 @@ async function indexBlock(blockNumber) {
   const txs = Array.isArray(block.transactions) ? block.transactions : [];
   for (const tx of txs) {
     if (typeof tx === "string") continue; // hash-only mode
-    try {
-      const num = hexToNumber(block.number);
-      await upsertTransaction(tx, num);
-      await upsertAddress(tx.from, tx);
-      if (tx.to) await upsertAddress(tx.to, tx);
-    } catch (e) {
-      warn(`  Failed to index tx ${tx.hash}: ${e.message}`);
-    }
+    const num = hexToNumber(block.number);
+    await upsertTransaction(tx, num);
+    await upsertAddress(tx.from, tx);
+    if (tx.to) await upsertAddress(tx.to, tx);
   }
 }
 
@@ -219,6 +288,17 @@ async function pollOnce() {
   isRunning = true;
 
   try {
+    await refreshRpcEndpoints();
+    if (rpcEndpoints.length === 0) {
+      const now = Date.now();
+      if (now >= nextNoRpcWarningAt) {
+        warn("No absolute Mainnet RPC URL is configured. Set one in Admin → Nodes or the API server's .env.");
+        nextNoRpcWarningAt = now + 60_000;
+      }
+      return;
+    }
+    const chainHex = await rpcCall("eth_chainId");
+    assertExpectedChainId(chainHex, EXPECTED_CHAIN_ID);
     const latestHex = await rpcCall("eth_blockNumber");
     const latestBlock = hexToNumber(latestHex);
 
@@ -239,19 +319,18 @@ async function pollOnce() {
     for (let n = from; n <= to; n++) {
       try {
         await indexBlock(n);
+        lastIndexedBlock = advanceIndexedBlock(lastIndexedBlock, n);
       } catch (e) {
         err(`Failed to index block ${n}: ${e.message}`);
         break; // stop batch on error, retry next poll
       }
     }
 
-    lastIndexedBlock = to;
-
     // Record network stats every 10 blocks
-    if (to % 10 === 0) {
+    if (lastIndexedBlock > 0 && lastIndexedBlock % 10 === 0) {
       try {
         const gasPrice = await rpcCall("eth_gasPrice");
-        await recordNetworkStats(to, gasPrice);
+        await recordNetworkStats(lastIndexedBlock, gasPrice);
       } catch { /* non-fatal */ }
     }
 
@@ -271,8 +350,6 @@ async function pollOnce() {
 // ---- Startup -----------------------------------------------
 async function main() {
   log("GYDS Block Indexer starting...");
-  log(`  Primary RPC:   ${PRIMARY_RPC}`);
-  log(`  Secondary RPC: ${SECONDARY_RPC}`);
   log(`  Poll interval: ${POLL_INTERVAL / 1000}s`);
   log(`  Batch size:    ${BATCH_SIZE} blocks`);
 
@@ -287,11 +364,18 @@ async function main() {
 
   // Test RPC
   try {
+    await refreshRpcEndpoints();
+    if (rpcEndpoints.length === 0) {
+      throw new Error("No absolute Mainnet RPC URL is configured.");
+    }
+    log(`Configured Mainnet RPC hosts: ${rpcEndpoints.map(displayRpcHost).join(", ")}`);
+    const chainHex = await rpcCall("eth_chainId");
+    assertExpectedChainId(chainHex, EXPECTED_CHAIN_ID);
     const block = await rpcCall("eth_blockNumber");
     log(`RPC connected. Chain head: ${hexToNumber(block)}`);
   } catch (e) {
     err("Failed to connect to RPC:", e.message);
-    err("Indexer will retry on next poll. Continuing...");
+    err("Indexing will remain idle until a reachable chain-198282 RPC is configured.");
   }
 
   // Run immediately then on interval

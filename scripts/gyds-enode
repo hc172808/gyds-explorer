@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${EUID}" -ne 0 ]; then
+  echo "Run this command with sudo: sudo gyds-enode" >&2
+  exit 1
+fi
+
+source /etc/gyds/node.env
+DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
+IPC_PATH="${DATA_DIR}/geth.ipc"
+
+if ! systemctl is-active --quiet gyds-node; then
+  echo "GYDS node is stopped; starting gyds-node..."
+  systemctl start gyds-node || true
+fi
+
+for _ in $(seq 1 30); do
+  if systemctl is-active --quiet gyds-node && [ -S "${IPC_PATH}" ]; then
+    ENODE="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>&1)" || {
+      echo "Failed to read enode from the Geth IPC socket:" >&2
+      echo "${ENODE}" >&2
+      exit 1
+    }
+    if [ -n "${ENODE}" ]; then
+      echo "${ENODE}"
+      exit 0
+    fi
+  fi
+  sleep 1
+done
+
+echo "GYDS node did not become ready; no IPC socket found at ${IPC_PATH}." >&2
+echo "Recent service logs:" >&2
+journalctl -u gyds-node -n 50 --no-pager >&2 || true
+exit 1

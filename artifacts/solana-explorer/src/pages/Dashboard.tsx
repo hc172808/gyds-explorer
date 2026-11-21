@@ -6,16 +6,16 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { clearSession, getStoredSession, type WalletSession } from "@/lib/session";
-import { fetchCoinSettings, type CoinSetting } from "@/lib/networkApi";
+import { fetchCoinSettings, proxyRpcUrl, type CoinSetting } from "@/lib/networkApi";
 
 const DEFAULT_COINS: CoinSetting[] = [
-  { symbol: "GYDS", name: "GYDSChain", decimals: 9, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
+  { symbol: "GYDS", name: "GYDSChain", decimals: 18, contractAddress: null, logoUrl: "/assets/gyds-logo.svg", description: "" },
   { symbol: "GYD", name: "GYD", decimals: 6, contractAddress: null, logoUrl: "/assets/gyd-logo.svg", description: "" },
 ];
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { primaryRpc, network } = useNetwork();
+  const { network } = useNetwork();
   const [session, setSession] = useState<WalletSession | null>(null);
   const [coins, setCoins] = useState<CoinSetting[]>(DEFAULT_COINS);
   const [balance, setBalance] = useState<string | null>(null);
@@ -33,7 +33,9 @@ export default function Dashboard() {
       .catch(() => undefined);
   }, [navigate]);
 
-  const rpcUrl = primaryRpc || network.rpcEndpoints[0];
+  const rpcUrl = network.type === "custom"
+    ? network.rpcEndpoints[0]
+    : proxyRpcUrl(undefined, network.type);
 
   const loadBalance = useCallback(async () => {
     if (!session) return;
@@ -41,11 +43,11 @@ export default function Dashboard() {
     try {
       const provider = new JsonRpcProvider(rpcUrl);
       const raw = await provider.getBalance(session.walletAddress);
-      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 9;
+      const decimals = coins.find((c) => c.symbol === "GYDS")?.decimals ?? 18;
       setBalance(formatUnits(raw, decimals));
     } catch {
       setBalance(null);
-      toast.error("Could not read your balance", { description: `No answer from ${rpcUrl}` });
+      toast.error("Could not read your balance", { description: "The configured GYDS network is currently unavailable." });
     } finally {
       setLoading(false);
     }
@@ -53,8 +55,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (session) loadBalance();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [session, rpcUrl, loadBalance]);
 
   if (!session) return null;
 

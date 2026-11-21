@@ -24,8 +24,17 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+      - name: Typecheck workspaces
+        run: bun run typecheck
+
       - name: Build frontend
         run: bun run build
+
+      - name: Build API
+        run: bun run --filter @workspace/api-server build
+
+      - name: Check production scripts
+        run: bash -n deploy.sh node-setup.sh && node --check indexer/indexer.js
 
       - name: dist-check
         run: bash scripts/dist-check.sh

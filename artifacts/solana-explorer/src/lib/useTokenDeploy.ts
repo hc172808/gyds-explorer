@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { BrowserProvider, ContractFactory, JsonRpcProvider, Contract } from "ethers";
 import TOKEN_ARTIFACT from "./gyds-token-artifact.json";
+import TGYD_TOKEN_ARTIFACT from "./tgyd-token-artifact.json";
+import { getEthereumProvider, getEthereumProviderForAccount } from "./ethereumProvider";
+import { getNativeCoinForNetwork } from "./coins";
+import type { NetworkType } from "./networkConfig";
 
-const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198281);
-export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198281);
+const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 198282);
+export const GYDS_CHAIN_ID   = BigInt(Number.isSafeInteger(configuredChainId) && configuredChainId > 0 ? configuredChainId : 198282);
 export const GYDS_CHAIN_HEX  = `0x${GYDS_CHAIN_ID.toString(16)}`;
 
 export type DeployStatus = "idle" | "connecting" | "switching" | "deploying" | "confirming" | "success" | "error";
@@ -16,6 +20,7 @@ export interface DeployResult {
   decimals: number;
   supply: string;
   mintable: boolean;
+  maxSupply?: string;
   deployedAt: string;
 }
 
@@ -25,9 +30,41 @@ export interface DeployParams {
   decimals: number;
   initialSupply: string;
   mintable: boolean;
+  maxSupply?: string;
+  expectedDeployer?: string;
 }
 
-export function useTokenDeploy(rpcUrl: string) {
+export function formatDeployError(
+  error: unknown,
+  networkName: string,
+  chainId: bigint | number | null,
+  nativeCoinSymbol = "GYDS",
+): string {
+  const value = error as any;
+  const message = [
+    typeof error === "string" ? error : "",
+    value?.reason,
+    value?.shortMessage,
+    value?.message,
+    value?.info?.error?.message,
+    value?.error?.message,
+    value?.data?.message,
+  ].filter((part) => typeof part === "string" && part.length > 0).join(" ");
+
+  if (/no asset fund|no native gyds|insufficient funds|funds for gas|not enough funds|insufficient balance|balance too low/i.test(message)) {
+    const chainText = chainId === null ? "" : ` (chain ID ${chainId})`;
+    return `This wallet does not have enough native ${nativeCoinSymbol} to pay deployment fees on ${networkName}${chainText}. Fund the same admin wallet with ${nativeCoinSymbol} on this network, then retry. ERC-20 token balances cannot pay gas.`;
+  }
+
+  return message.replace(/\(action=.*/, "").trim() || "Deployment failed";
+}
+
+export function useTokenDeploy(
+  rpcUrl: string,
+  selectedChainId: number | null = Number(GYDS_CHAIN_ID),
+  selectedNetworkName = "GYDS Network",
+  selectedNetworkType: NetworkType = "mainnet",
+) {
   const [status,          setStatus]          = useState<DeployStatus>("idle");
   const [txHash,          setTxHash]          = useState<string | null>(null);
   const [contractAddress, setContractAddress] = useState<string | null>(null);
@@ -35,9 +72,12 @@ export function useTokenDeploy(rpcUrl: string) {
   const [deployer,        setDeployer]        = useState<string | null>(null);
 
   const deploy = async (params: DeployParams): Promise<DeployResult | null> => {
-    const ethereum = (window as any).ethereum;
+    let activeChainId: bigint | null = null;
+    const ethereum = params.expectedDeployer
+      ? await getEthereumProviderForAccount(params.expectedDeployer)
+      : getEthereumProvider();
     if (!ethereum) {
-      setError("MetaMask not detected. Install MetaMask and configure the GYDS network.");
+      setError("Could not find the connected admin wallet. Reconnect the same authorized wallet, then try again.");
       setStatus("error");
       return null;
     }
@@ -48,29 +88,57 @@ export function useTokenDeploy(rpcUrl: string) {
       setTxHash(null);
       setContractAddress(null);
 
+      const isTgyd = params.symbol.trim().toUpperCase() === "TGYD";
+      if (isTgyd && (selectedNetworkType !== "testnet" || selectedChainId !== 198281)) {
+        throw new Error("TGYD can only be deployed on GYDS Testnet.");
+      }
+      if (isTgyd && (!params.maxSupply || BigInt(params.initialSupply) > BigInt(params.maxSupply))) {
+        throw new Error("TGYD requires a valid supply cap at least as large as its initial supply.");
+      }
+
       // Request accounts
-      const provider = new BrowserProvider(ethereum);
+      const provider = new BrowserProvider(ethereum as any);
       await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
+      if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+        throw new Error("Connect the admin wallet that will own this token before deploying GYD.");
+      }
       setDeployer(signer.address);
 
-      // Ensure we're on GYDS network
+      // Confirm the selected RPC and wallet target the same chain. Custom RPC
+      // chain IDs are discovered from the endpoint instead of guessed.
+      const rpcProvider = new JsonRpcProvider(rpcUrl);
+      const rpcNetwork = await rpcProvider.getNetwork();
+      const targetChainId = selectedChainId === null
+        ? rpcNetwork.chainId
+        : BigInt(selectedChainId);
+      activeChainId = targetChainId;
+      if (rpcNetwork.chainId !== targetChainId) {
+        throw new Error(`Selected RPC is on chain ${rpcNetwork.chainId}; expected ${targetChainId}.`);
+      }
+      const targetChainHex = `0x${targetChainId.toString(16)}`;
+
+      // Ensure we're on the selected GYDS network
       const network = await provider.getNetwork();
-      if (network.chainId !== GYDS_CHAIN_ID) {
+      if (network.chainId !== targetChainId) {
         setStatus("switching");
         try {
-          await provider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+          await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
         } catch (switchErr: any) {
           if (switchErr.code === 4902 || switchErr.code === -32603) {
             // Network not in MetaMask — add it
             await provider.send("wallet_addEthereumChain", [{
-              chainId:         GYDS_CHAIN_HEX,
-              chainName:       "GYDS Network",
+              chainId:         targetChainHex,
+              chainName:       selectedNetworkName,
               rpcUrls:         [rpcUrl],
-              nativeCurrency:  { name: "GYDSChain", symbol: "GYDS", decimals: 9 },
+              nativeCurrency:  {
+                name: getNativeCoinForNetwork(selectedNetworkType).name,
+                symbol: getNativeCoinForNetwork(selectedNetworkType).symbol,
+                decimals: getNativeCoinForNetwork(selectedNetworkType).decimals,
+              },
             }]);
             // After adding, switch again
-            await provider.send("wallet_switchEthereumChain", [{ chainId: GYDS_CHAIN_HEX }]);
+            await provider.send("wallet_switchEthereumChain", [{ chainId: targetChainHex }]);
           } else {
             throw switchErr;
           }
@@ -78,32 +146,58 @@ export function useTokenDeploy(rpcUrl: string) {
         // Re-acquire signer after switch
         const refreshed = new BrowserProvider(ethereum);
         const refreshedSigner = await refreshed.getSigner();
+        if (params.expectedDeployer && refreshedSigner.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+          throw new Error("The connected wallet changed. Reconnect the admin wallet that will own this token.");
+        }
         setDeployer(refreshedSigner.address);
 
         // Deploy
-        return await _deploy(refreshedSigner, params);
+        return await _deploy(refreshedSigner, params, targetChainId);
       }
 
-      return await _deploy(signer, params);
+      return await _deploy(signer, params, targetChainId);
     } catch (e: any) {
-      const msg = e?.reason || e?.shortMessage || e?.message || "Deployment failed";
-      setError(msg.replace(/\(action=.*/, "").trim());
+      setError(formatDeployError(
+        e,
+        selectedNetworkName,
+        activeChainId ?? selectedChainId,
+        getNativeCoinForNetwork(selectedNetworkType).symbol,
+      ));
       setStatus("error");
       return null;
     }
   };
 
-  const _deploy = async (signer: any, params: DeployParams): Promise<DeployResult | null> => {
+  const _deploy = async (signer: any, params: DeployParams, chainId: bigint): Promise<DeployResult | null> => {
+    if (params.expectedDeployer && signer.address.toLowerCase() !== params.expectedDeployer.toLowerCase()) {
+      throw new Error("The connected wallet does not match the authenticated admin wallet.");
+    }
     setStatus("deploying");
 
-    const factory  = new ContractFactory(TOKEN_ARTIFACT.abi, TOKEN_ARTIFACT.bytecode, signer);
-    const contract = await factory.deploy(
-      params.name,
-      params.symbol,
-      params.decimals,
-      BigInt(params.initialSupply),
-      params.mintable,
-    );
+    const balance = await signer.provider.getBalance(signer.address);
+    if (balance === 0n) {
+      throw new Error("NO_NATIVE_GYDS_FOR_GAS");
+    }
+
+    const isTgyd = params.symbol.trim().toUpperCase() === "TGYD";
+    const artifact = isTgyd ? TGYD_TOKEN_ARTIFACT : TOKEN_ARTIFACT;
+    const factory = new ContractFactory(artifact.abi, artifact.bytecode, signer);
+    const contract = isTgyd
+      ? await factory.deploy(
+          params.name,
+          params.symbol,
+          params.decimals,
+          BigInt(params.initialSupply),
+          BigInt(params.maxSupply!),
+          params.mintable,
+        )
+      : await factory.deploy(
+          params.name,
+          params.symbol,
+          params.decimals,
+          BigInt(params.initialSupply),
+          params.mintable,
+        );
 
     const hash = contract.deploymentTransaction()?.hash ?? "";
     setTxHash(hash);
@@ -122,6 +216,7 @@ export function useTokenDeploy(rpcUrl: string) {
       decimals:        params.decimals,
       supply:          params.initialSupply,
       mintable:        params.mintable,
+      ...(isTgyd ? { maxSupply: params.maxSupply } : {}),
       deployedAt:      new Date().toISOString(),
     };
   };

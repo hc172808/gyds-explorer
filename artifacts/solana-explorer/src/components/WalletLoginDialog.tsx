@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Wallet, Loader2, ShieldCheck, ExternalLink } from "lucide-react";
 import {
   Dialog,
@@ -12,8 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { setStoredToken } from "@/lib/featureGateApi";
-import { requestSessionNonce, storeSession, verifySessionSignature } from "@/lib/session";
-import { getEthereumProvider } from "@/lib/wallet";
+import {
+  dashboardPathFor,
+  requestSessionNonce,
+  storeSession,
+  verifySessionSignature,
+  type WalletSession,
+} from "@/lib/session";
+import { getEthereumProvider, getWalletError } from "@/lib/wallet";
 
 interface WalletLoginDialogProps {
   onLoginSuccess: (walletAddress: string, label: string | null) => void;
@@ -26,9 +33,12 @@ declare global {
 }
 
 const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [manualAddress, setManualAddress] = useState("");
+  const [signatureInput, setSignatureInput] = useState("");
+  const [authError, setAuthError] = useState("");
   const [step, setStep] = useState<"connect" | "sign">("connect");
   const [signMessage, setSignMessage] = useState("");
   const [pendingAddress, setPendingAddress] = useState("");
@@ -88,39 +98,85 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
     const { message } = await requestSessionNonce(address);
     setPendingAddress(address);
     setSignMessage(message);
+    setSignatureInput("");
+    setAuthError("");
     setStep("sign");
 
-    // Auto-sign if wallet extension available
-     const ethereum = getEthereumProvider();
-     if (ethereum) {
+    const ethereum = getEthereumProvider();
+    if (ethereum) {
       try {
-        setLoading(true);
-         const signature = (await ethereum.request({
+        const signature = (await ethereum.request({
           method: "personal_sign",
           params: [message, address],
         })) as string;
         await completeAuth(address, signature);
-      } catch {
-        toast.info("Please sign the message to authenticate");
-        setLoading(false);
+      } catch (error: unknown) {
+        const message = getWalletError(error);
+        setAuthError(message);
+        toast.error("Authentication failed", { description: message });
       }
+    }
+  };
+
+  const retryWalletSignature = async () => {
+    const ethereum = getEthereumProvider();
+    if (!ethereum) {
+      const message = "No browser wallet detected. Install MetaMask or another Web3 wallet.";
+      setAuthError(message);
+      toast.error("Wallet not detected", { description: message });
+      return;
+    }
+    setLoading(true);
+    setAuthError("");
+    try {
+      const signature = (await ethereum.request({
+        method: "personal_sign",
+        params: [signMessage, pendingAddress],
+      })) as string;
+      await completeAuth(pendingAddress, signature);
+    } catch (error: unknown) {
+      const message = getWalletError(error);
+      setAuthError(message);
+      toast.error("Authentication failed", { description: message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitManualSignature = async () => {
+    if (!signatureInput.trim()) {
+      toast.error("Signature required", { description: "Paste the wallet signature to finish signing in." });
+      return;
+    }
+    setLoading(true);
+    setAuthError("");
+    try {
+      await completeAuth(pendingAddress, signatureInput.trim());
+    } catch (error: unknown) {
+      const message = getWalletError(error);
+      setAuthError(message);
+      toast.error("Authentication failed", { description: message });
+    } finally {
+      setLoading(false);
     }
   };
 
   const completeAuth = async (address: string, signature: string) => {
     const result = await verifySessionSignature(address, signature);
     setStoredToken(result.token);
-    storeSession({
+    const session: WalletSession = {
       walletAddress: result.walletAddress,
       label: result.label,
       role: result.role,
-    });
+    };
+    storeSession(session);
     toast.success(result.role === "user" ? "Wallet authenticated" : "Admin authenticated", {
       description: `Wallet: ${address.slice(0, 6)}...${address.slice(-4)}`,
     });
     setOpen(false);
     setStep("connect");
     onLoginSuccess(result.walletAddress, result.label);
+    navigate(dashboardPathFor(session), { replace: true });
   };
 
   return (
@@ -128,7 +184,7 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2 border-primary/20 text-primary hover:bg-primary/10">
           <Wallet className="w-3.5 h-3.5" />
-          Admin Login
+          Wallet Login
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -214,22 +270,25 @@ const WalletLoginDialog = ({ onLoginSuccess }: WalletLoginDialogProps) => {
                 <Input
                   placeholder="Paste signature here (0x...)"
                   className="font-mono text-xs"
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter") {
-                      const sig = (e.target as HTMLInputElement).value;
-                      setLoading(true);
-                      try {
-                        await completeAuth(pendingAddress, sig);
-                      } catch (err: unknown) {
-                        const message = err instanceof Error ? err.message : "Verification failed";
-                        toast.error("Verification failed", { description: message });
-                      } finally {
-                        setLoading(false);
-                      }
-                    }
+                  value={signatureInput}
+                  onChange={(event) => setSignatureInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void submitManualSignature();
                   }}
                 />
+                <Button onClick={submitManualSignature} disabled={loading} className="w-full">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify signature"}
+                </Button>
               </div>
+            )}
+            {getEthereumProvider() && !loading && (
+              <Button onClick={retryWalletSignature} className="w-full gap-2">
+                <Wallet className="w-4 h-4" />
+                Sign in wallet
+              </Button>
+            )}
+            {authError && (
+              <p role="alert" className="text-sm text-destructive">{authError}</p>
             )}
           </div>
         )}

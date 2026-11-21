@@ -14,15 +14,26 @@ import (
 	"github.com/guardian-chain/blockchain-go/internal/database"
 	"github.com/guardian-chain/blockchain-go/internal/indexer"
 	"github.com/guardian-chain/blockchain-go/internal/network"
+	"github.com/guardian-chain/blockchain-go/internal/networkconfig"
 )
 
 func main() {
+	networkName := flag.String("network", "", "Required network identity: mainnet or testnet")
 	dataDir := flag.String("datadir", "./data", "Data directory for blockchain storage")
 	listenAddr := flag.String("listen", ":30303", "P2P listen address")
 	apiAddr := flag.String("api", ":8545", "Explorer API listen address")
 	bootstrap := flag.String("bootstrap", "", "Bootstrap node address (host:port)")
 	minerAddr := flag.String("miner", "", "Miner/validator GYDS address for rewards")
 	flag.Parse()
+
+	networkConfig, err := networkconfig.Parse(*networkName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	genesisHash, err := blockchain.ExpectedGenesisHash(networkConfig.ChainID)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Initialize database
 	db, err := database.NewLevelDB(*dataDir + "/chaindata")
@@ -32,7 +43,7 @@ func main() {
 	defer db.Close()
 
 	// Initialize blockchain
-	chain, err := blockchain.NewBlockchain(db)
+	chain, err := blockchain.NewBlockchain(db, networkConfig.ChainID)
 	if err != nil {
 		log.Fatalf("Failed to initialize blockchain: %v", err)
 	}
@@ -41,7 +52,10 @@ func main() {
 	pos := consensus.NewProofOfStake(chain.State())
 
 	// Initialize P2P network
-	p2p := network.NewP2PNode(*listenAddr)
+	p2p, err := network.NewP2PNode(*listenAddr, networkConfig.ChainID, genesisHash)
+	if err != nil {
+		log.Fatalf("Failed to initialize P2P network: %v", err)
+	}
 
 	// Register message handlers
 	p2p.RegisterHandler(network.MsgBlock, func(data []byte, peer *network.Peer) {
@@ -106,6 +120,8 @@ func main() {
 	}
 
 	fmt.Printf("Guardian Chain Full Node started\n")
+	fmt.Printf("  Network:  %s\n", networkConfig.Name)
+	fmt.Printf("  Chain ID: %d\n", networkConfig.ChainID)
 	fmt.Printf("  P2P:      %s\n", *listenAddr)
 	fmt.Printf("  API:      %s\n", *apiAddr)
 	fmt.Printf("  Data:     %s\n", *dataDir)
