@@ -19,7 +19,7 @@ fi
 
 cat > "${UNIT_DIR}/gyds-explorer-auto-update.service" <<EOF
 [Unit]
-Description=Pull, build, and restart the GYDS Explorer
+Description=Update Ubuntu packages and the GYDS Explorer
 After=network-online.target
 Wants=network-online.target
 

@@ -1542,9 +1542,10 @@ protocol balances have been erased.
 
 - [x] Run the app's Git updater on the 10th of each month at 03:00
       America/Guyana time; the Admin switch still controls whether updates run.
-- [x] Keep the monthly updater app-focused: pull the full Git branch, install
-      application dependencies, build the web/API apps, restart configured
-      services, and check health.
+- [x] Pull the full Git branch, install application dependencies, build the
+      web/API apps, restart configured services, and check health monthly.
+- [x] Add Ubuntu package-list refresh and non-removing package upgrades to
+      scheduled runs; report reboot-required state without rebooting.
 - [x] Align the Admin display, API responses, setup guide and systemd timer
       with the 10th-of-month schedule; scheduled runs refresh an old timer.
 - [x] Check saved RPC nodes server-side every five seconds and show their
@@ -1554,5 +1555,3 @@ protocol balances have been erased.
 - [!] Apply and verify the changed timer on the Ubuntu host; this workspace
       cannot access that server's systemd state. Run `sudo ./update.sh`, then
       check `systemctl list-timers gyds-explorer-auto-update.timer`.
-- [!] Decide whether monthly updates should also upgrade Ubuntu packages;
-      system package upgrades are not included pending explicit confirmation.

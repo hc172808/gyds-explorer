@@ -1761,9 +1761,9 @@ function AutoUpdateSettingsTab() {
             <CalendarClock className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold">Automatic Git updates</h2>
+            <h2 className="text-base font-semibold">Automatic software updates</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Pull the latest code, install dependencies, rebuild the explorer and API, then restart services on a monthly schedule.
+              On the 10th, upgrade Ubuntu packages, pull the latest Git code, rebuild the explorer and API, restart services, and check health. The server will not reboot automatically.
             </p>
           </div>
         </div>
@@ -1775,7 +1775,7 @@ function AutoUpdateSettingsTab() {
             checked={settings?.enabled ?? false}
             onCheckedChange={toggle}
             disabled={loading || saving || !settings?.schedulerInstalled}
-            aria-label="Enable monthly automatic Git updates"
+            aria-label="Enable monthly automatic software updates"
           />
         </div>
       </div>

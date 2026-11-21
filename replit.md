@@ -20,7 +20,7 @@ A Solana-compatible blockchain explorer that lets users browse blocks, transacti
 - `sudo bash /var/www/gyds-explorer/check-services.sh` — check local services and configured ports
 - `SERVER_SETUP.md` — complete Ubuntu deployment, port, firewall, and validator guide
 - `cd /var/www/gyds-explorer && sudo ./update.sh` — safely pull, install, build the frontend and API, restart services, and check health
-- Admin → Auto Updates — enable or disable the Ubuntu monthly Git update timer (10th at 03:00 America/Guyana time)
+- Admin → Auto Updates — enable or disable the monthly app and Ubuntu package update timer (10th at 03:00 America/Guyana time; no automatic reboot)
 - Browser RPC env defaults to the same-origin `/api/rpc` proxy; server-side `GYDS_REMOTE_RPC_URL` and `GYDS_REMOTE_RPC_URL_2` select remote nodes.
 - Network chain ID: `198282` (hex: `0x3068a`)
 - Local node gateways try configured upstreams, reject incompatible chain IDs, and fall back to deterministic mock data when upstream access is unavailable. Check `/status` for the active source.

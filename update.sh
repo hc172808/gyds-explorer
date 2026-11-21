@@ -2,8 +2,9 @@
 # ============================================================
 # GYDS Explorer — Update Script
 # ============================================================
-# Pulls latest code from git, installs any new dependencies,
-# rebuilds the frontend, restarts all services, and checks health.
+# Pulls latest code from git, installs application dependencies, rebuilds the
+# frontend/API, restarts services, and checks health. Scheduled runs also apply
+# non-removing Ubuntu package upgrades before updating the application.
 #
 # Usage:
 #   chmod +x update.sh
@@ -14,7 +15,8 @@
 #   --skip-build   Skip frontend build (use when only API changed)
 #   --branch NAME  Pull a specific branch (default: current branch)
 #   --no-restart   Pull and build only, do not restart services
-#   --scheduled    Internal mode: exit without updating unless enabled in Admin settings
+#   --scheduled    Internal mode: only update when enabled in Admin settings;
+#                  also apply Ubuntu package upgrades
 # ============================================================
 
 set -e
@@ -134,8 +136,8 @@ database_query() {
 
 if [ "${SCHEDULED}" = true ]; then
   # Keep an existing Ubuntu timer aligned with this checkout before checking
-  # the admin opt-in flag. This only refreshes the schedule; it does not update
-  # packages or run the application update.
+  # the admin opt-in flag. This only refreshes the schedule; the app and OS
+  # updates below still require the admin opt-in flag.
   if [ -f "${APP_DIR}/scripts/install-auto-update.sh" ]; then
     APP_DIR="${APP_DIR}" bash "${APP_DIR}/scripts/install-auto-update.sh" \
       || warn "Could not refresh the monthly systemd timer schedule."
@@ -228,6 +230,35 @@ fi
 # Never stash deployment changes during an unattended or manual update.
 if ! git diff --quiet HEAD || [ -n "$(git ls-files --others --exclude-standard)" ]; then
   err "The Git checkout has local changes. Commit or move them before updating; this script will not stash or overwrite them."
+fi
+
+if [ "${SCHEDULED}" = true ]; then
+  [ -r /etc/os-release ] || err "Cannot identify the operating system; refusing unattended package upgrades."
+  . /etc/os-release
+  [ "${ID:-}" = "ubuntu" ] || err "Scheduled OS package upgrades are supported only on Ubuntu; found '${ID:-unknown}'."
+  command -v apt-get >/dev/null 2>&1 || err "apt-get is required for scheduled Ubuntu package upgrades."
+
+  log "Refreshing Ubuntu package lists..."
+  if ! apt-get update -o Acquire::Retries=3 >> "${LOG_FILE}" 2>&1; then
+    tail -n 40 "${LOG_FILE}" >&2 || true
+    err "Ubuntu package list update failed; application update was stopped."
+  fi
+
+  log "Applying available Ubuntu package upgrades..."
+  if ! DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none NEEDRESTART_MODE=a \
+    apt-get upgrade --with-new-pkgs -y \
+      -o DPkg::Lock::Timeout=300 \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      >> "${LOG_FILE}" 2>&1; then
+    tail -n 40 "${LOG_FILE}" >&2 || true
+    err "Ubuntu package upgrade failed; review the package log before retrying."
+  fi
+  check_node_version
+  if [ -f /var/run/reboot-required ]; then
+    warn "Ubuntu package updates require a reboot. No automatic reboot will be performed."
+  fi
+  log "Ubuntu package upgrades completed."
 fi
 
 PULL_OUTPUT=$(git pull --ff-only origin "${TARGET_BRANCH}" 2>&1)
