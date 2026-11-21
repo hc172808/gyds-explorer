@@ -5,9 +5,19 @@ standalone Ubuntu 22.04 server. Keep the existing application architecture and
 use **npm only**. This document records the requested work; it is not a claim
 that the work has already been completed.
 
+## Progress tracking
+
+- Read this file before development and resume from the first applicable
+  unfinished item.
+- Mark verified completions `[x]`, leave unfinished work `[ ]`, and mark
+  blocked work `[!]` with the reason and what is needed to unblock it.
+- Update this file after each development task while preserving earlier
+  project history.
+
 ## Target production environment
 
-- [ ] Ubuntu 22.04
+- [!] Ubuntu 22.04 — blocked because this workspace cannot inspect the separate
+      production host; need `lsb_release -a` output from that server.
 - [ ] Node.js `22.18.0` or newer
 - [ ] npm as the package manager
 - [ ] PostgreSQL
@@ -1527,3 +1537,22 @@ protocol balances have been erased.
       admins to `/admin`.
 - [x] Admin dashboard can edit each coin's logo URL, name and about text
       (Coin Settings tab, saved server-side).
+
+## Recent verified changes
+
+- [x] Run the app's Git updater on the 10th of each month at 03:00
+      America/Guyana time; the Admin switch still controls whether updates run.
+- [x] Keep the monthly updater app-focused: pull the full Git branch, install
+      application dependencies, build the web/API apps, restart configured
+      services, and check health.
+- [x] Align the Admin display, API responses, setup guide and systemd timer
+      with the 10th-of-month schedule; scheduled runs refresh an old timer.
+- [x] Check saved RPC nodes server-side every five seconds and show their
+      connection status only in Admin settings.
+- [x] Use GYDS=18 decimals and GYD=6 in the chain spec, node setup defaults,
+      API, and explorer formatting.
+- [!] Apply and verify the changed timer on the Ubuntu host; this workspace
+      cannot access that server's systemd state. Run `sudo ./update.sh`, then
+      check `systemctl list-timers gyds-explorer-auto-update.timer`.
+- [!] Decide whether monthly updates should also upgrade Ubuntu packages;
+      system package upgrades are not included pending explicit confirmation.

@@ -133,6 +133,14 @@ database_query() {
 }
 
 if [ "${SCHEDULED}" = true ]; then
+  # Keep an existing Ubuntu timer aligned with this checkout before checking
+  # the admin opt-in flag. This only refreshes the schedule; it does not update
+  # packages or run the application update.
+  if [ -f "${APP_DIR}/scripts/install-auto-update.sh" ]; then
+    APP_DIR="${APP_DIR}" bash "${APP_DIR}/scripts/install-auto-update.sh" \
+      || warn "Could not refresh the monthly systemd timer schedule."
+  fi
+
   AUTO_UPDATE_ENABLED="$(database_query "SELECT COALESCE((SELECT lower(value) IN ('true','1','yes','on') FROM system_settings WHERE key = 'auto_update_enabled'), false);")" \
     || err "Could not read the automatic update setting. Skipping this scheduled run."
   if [ "${AUTO_UPDATE_ENABLED}" != "t" ]; then
@@ -362,8 +370,8 @@ else
   info "Skipping service restart (--no-restart)."
 fi
 
-# Install or refresh the timer on a manual update. Scheduled runs leave the
-# existing timer alone; the database flag decides whether it performs work.
+# Install or refresh the timer on a manual update. The database flag still
+# decides whether scheduled runs perform the Git/dependency/build update.
 if [ "${SCHEDULED}" = false ] && [ -f "${APP_DIR}/scripts/install-auto-update.sh" ]; then
   APP_DIR="${APP_DIR}" bash "${APP_DIR}/scripts/install-auto-update.sh" \
     || warn "Could not install the monthly systemd timer. Run scripts/install-auto-update.sh manually."

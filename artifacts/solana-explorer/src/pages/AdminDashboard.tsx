@@ -1785,8 +1785,8 @@ function AutoUpdateSettingsTab() {
           <Clock3 className="h-4 w-4 text-primary" />
           <div>
             <p className="text-xs text-muted-foreground">Scheduled time</p>
-            <p className="text-sm font-medium">15th of each month at 3:00 AM</p>
-            <p className="text-xs text-muted-foreground">America/Guyana time</p>
+            <p className="text-sm font-medium">{settings?.schedule ?? "10th of each month at 03:00"}</p>
+            <p className="text-xs text-muted-foreground">{settings?.timeZone ?? "America/Guyana"} time</p>
           </div>
         </div>
         <div className="rounded-lg border border-border bg-background/50 p-3">
