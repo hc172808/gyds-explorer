@@ -1555,3 +1555,18 @@ protocol balances have been erased.
 - [!] Apply and verify the changed timer on the Ubuntu host; this workspace
       cannot access that server's systemd state. Run `sudo ./update.sh`, then
       check `systemctl list-timers gyds-explorer-auto-update.timer`.
+
+## Blockchain Go and chain identity review
+
+- [x] Verify active Geth configuration: Mainnet uses chain/network ID `198282`
+      (`0x3068a`), Testnet uses `198281` (`0x30689`), and `node-setup.sh`
+      validates both and writes the selected chain ID to genesis.
+- [x] Confirm the archived Go backup already uses GYDS=18 decimals and
+      GYD=6 decimals.
+- [!] Decide whether to add network identity to the archived Go prototype. It
+      has no chain ID in genesis, block headers, or its P2P handshake; adding
+      one changes network compatibility and needs an explicit activation plan.
+- [!] Verify a live Mainnet `eth_chainId` after configuring a reachable RPC;
+      the Replit preview's Mainnet RPC currently returns 502.
+- [!] Run the full archived Go test suite when its Go dependencies are
+      available; the offline test could not resolve uncached module downloads.
