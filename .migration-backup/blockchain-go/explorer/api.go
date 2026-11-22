@@ -108,8 +108,9 @@ func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLatest(w http.ResponseWriter, r *http.Request) {
 	num, hash := s.chain.LatestBlock()
 	s.writeJSON(w, 200, map[string]interface{}{
-		"number": num,
-		"hash":   hash,
+		"chainId": s.chain.ChainID(),
+		"number":  num,
+		"hash":    hash,
 	})
 }
 
@@ -127,6 +128,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	num, hash := s.chain.LatestBlock()
 	indexed := s.indexer.GetLastIndexedBlock()
 	s.writeJSON(w, 200, map[string]interface{}{
+		"chainId":        s.chain.ChainID(),
 		"chainHeight":    num,
 		"latestHash":     hash,
 		"indexedHeight":  indexed,

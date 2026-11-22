@@ -1682,11 +1682,17 @@ protocol balances have been erased.
       validates both and writes the selected chain ID to genesis.
 - [x] Confirm the archived Go backup already uses GYDS=18 decimals and
       GYD=6 decimals.
-- [ ] Make the archived Go prototype network-aware after task approval: bind
-      transactions and peers to the selected chain ID and verify signatures.
+- [x] Make the archived Go prototype chain-aware: require Mainnet/Testnet,
+      bind genesis and persisted data to chain identity, reject mismatched peers,
+      and verify chain-bound P-256 signatures.
+- [x] Add secret-safe Step 5 progress and failure diagnostics to `deploy.sh`;
+      a domain is optional and omitted domains use the server IP over HTTP.
+- [!] Run `deploy.sh` again on Ubuntu to confirm Step 5 proceeds; domains are
+      optional. If it stops, provide the new line-numbered error output.
 - [ ] Fix the wallet's Add Network action in Wallet Setup and shared wallet
       flows; the click currently does not successfully add the selected network.
 - [!] Verify a live Mainnet `eth_chainId` after configuring a reachable RPC;
       the Replit preview's Mainnet RPC currently returns 502.
-- [!] Run the full archived Go test suite when its Go dependencies are
-      available; the offline test could not resolve uncached module downloads.
+- [!] Run the full archived Go test suite when the Go package firewall permits
+      the pinned dependency; it blocked `golang.org/x/crypto@v0.17.0` for a
+      critical CVE. Do not bypass that block.

@@ -29,13 +29,13 @@ type Transaction struct {
 	Hash      string   `json:"hash"`
 	From      string   `json:"from"`
 	To        string   `json:"to"`
-	Value     string   `json:"value"`     // Integer base units: GYDS/STAKE 10^18, GYD 10^6
-	CoinType  CoinType `json:"coinType"`  // GYDS, GYD, or STAKE
+	Value     string   `json:"value"`    // Integer base units: GYDS/STAKE 10^18, GYD 10^6
+	CoinType  CoinType `json:"coinType"` // GYDS, GYD, or STAKE
 	Nonce     uint64   `json:"nonce"`
-	GasPrice  uint64   `json:"gasPrice"`  // GYDS base units per gas, regardless of CoinType
+	GasPrice  uint64   `json:"gasPrice"` // GYDS base units per gas, regardless of CoinType
 	GasLimit  uint64   `json:"gasLimit"`
 	Data      []byte   `json:"data,omitempty"` // Contract data (future use)
-	PublicKey string   `json:"publicKey"`       // Uncompressed P-256 public key, hex encoded
+	PublicKey string   `json:"publicKey"`      // Uncompressed P-256 public key, hex encoded
 	Signature string   `json:"signature"`      // Fixed-width P-256 r||s, hex encoded
 	Timestamp int64    `json:"timestamp"`
 }
@@ -190,8 +190,10 @@ func ValidateTransaction(tx *Transaction, state *StateDB, expectedChainID uint64
 		}
 	case CoinStake:
 		bal := state.GetGYDSBalance(tx.From)
-		if bal.Cmp(amount) < 0 {
-			return fmt.Errorf("insufficient GYDS for staking: have %s, need %s", bal.String(), amount.String())
+		gasCost := new(big.Int).Mul(new(big.Int).SetUint64(tx.GasPrice), new(big.Int).SetUint64(tx.GasLimit))
+		totalCost := new(big.Int).Add(amount, gasCost)
+		if bal.Cmp(totalCost) < 0 {
+			return fmt.Errorf("insufficient GYDS for staking and gas: have %s, need %s", bal.String(), totalCost.String())
 		}
 	default:
 		return fmt.Errorf("unknown coin type: %s", tx.CoinType)
@@ -199,6 +201,9 @@ func ValidateTransaction(tx *Transaction, state *StateDB, expectedChainID uint64
 
 	if tx.Timestamp <= 0 || tx.Timestamp > time.Now().Add(15*time.Second).Unix() {
 		return errors.New("invalid transaction timestamp")
+	}
+	if tx.Nonce == ^uint64(0) {
+		return errors.New("transaction nonce cannot be incremented")
 	}
 
 	publicKey, err := utils.PublicKeyFromHex(tx.PublicKey)

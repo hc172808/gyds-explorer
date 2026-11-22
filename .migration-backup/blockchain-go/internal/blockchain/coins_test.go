@@ -26,7 +26,7 @@ func TestGYDDenomination(t *testing.T) {
 }
 
 func TestGenesisDualCoinBaseUnits(t *testing.T) {
-		chain := &Blockchain{state: NewStateDB(), chainID: networkconfig.MainnetChainID}
+	chain := &Blockchain{state: NewStateDB(), chainID: networkconfig.MainnetChainID}
 	chain.createGenesis()
 	address := "0x0000000000000000000000000000000000000001"
 	if got := chain.state.GetGYDSBalance(address).String(); got != "1000000000000000000000000000" {
@@ -41,14 +41,11 @@ func TestTransfersPreserveEachCoinBaseUnits(t *testing.T) {
 	for _, coin := range []CoinType{CoinGYDS, CoinGYD} {
 		t.Run(string(coin), func(t *testing.T) {
 			state := NewStateDB()
-			from := "0x0000000000000000000000000000000000000001"
 			to := "0x0000000000000000000000000000000000000002"
 			amount := GYDSBaseUnits()
 			if coin == CoinGYD {
 				amount = GYDBaseUnits()
 			}
-			state.SetGYDSBalance(from, new(big.Int).Mul(big.NewInt(2), GYDSBaseUnits()))
-			state.SetGYDBalance(from, new(big.Int).Mul(big.NewInt(2), GYDBaseUnits()))
 			privateKey, err := utils.GenerateKeyPair()
 			if err != nil {
 				t.Fatal(err)
@@ -64,13 +61,13 @@ func TestTransfersPreserveEachCoinBaseUnits(t *testing.T) {
 			if err := SignTransaction(tx, privateKey, networkconfig.MainnetChainID); err != nil {
 				t.Fatal(err)
 			}
-			from = tx.From
+			from := tx.From
 			state.SetGYDSBalance(from, new(big.Int).Mul(big.NewInt(2), GYDSBaseUnits()))
 			state.SetGYDBalance(from, new(big.Int).Mul(big.NewInt(2), GYDBaseUnits()))
 			if err := ValidateTransaction(tx, state, networkconfig.MainnetChainID); err != nil {
 				t.Fatal(err)
 			}
-			chain := &Blockchain{state: state}
+			chain := &Blockchain{state: state, chainID: networkconfig.MainnetChainID}
 			if err := chain.applyTransaction(tx, ""); err != nil {
 				t.Fatal(err)
 			}

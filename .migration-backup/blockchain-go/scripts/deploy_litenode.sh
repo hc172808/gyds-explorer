@@ -5,11 +5,16 @@ NODE_NAME="guardian-litenode"
 BIN_DIR="/usr/local/bin"
 USER="guardian"
 P2P_PORT=30304
-BOOTSTRAP_NODE="${1:-}"
+NETWORK="${1:-}"
+BOOTSTRAP_NODE="${2:-}"
 
-if [ -z "$BOOTSTRAP_NODE" ]; then
-    echo "Usage: $0 <bootstrap_node_address>"
-    echo "  Example: $0 10.0.0.1:30303"
+if [[ "$NETWORK" != "mainnet" && "$NETWORK" != "testnet" ]] || [ -z "$BOOTSTRAP_NODE" ]; then
+    echo "Usage: $0 <mainnet|testnet> <bootstrap_node_address>"
+    echo "  Example: $0 testnet 10.0.0.1:30303"
+    exit 1
+fi
+if [[ ! "$BOOTSTRAP_NODE" =~ ^[A-Za-z0-9.-]+:[0-9]{1,5}$ ]]; then
+    echo "Invalid bootstrap node address; use hostname:port or IPv4:port."
     exit 1
 fi
 
@@ -37,6 +42,7 @@ Wants=network-online.target
 Type=simple
 User=$USER
 ExecStart=$BIN_DIR/guardian-litenode \\
+    --network=$NETWORK \\
     --listen=:$P2P_PORT \\
     --bootstrap=$BOOTSTRAP_NODE
 Restart=always
@@ -53,6 +59,6 @@ sudo systemctl enable guardian-litenode
 sudo systemctl restart guardian-litenode
 
 echo ""
-echo "Lite node deployed! Bootstrap: $BOOTSTRAP_NODE"
+echo "Lite node deployed! Network: $NETWORK; bootstrap: $BOOTSTRAP_NODE"
 echo "  sudo systemctl status guardian-litenode"
 echo "  sudo journalctl -u guardian-litenode -f"

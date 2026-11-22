@@ -7,6 +7,22 @@ BIN_DIR="/usr/local/bin"
 USER="guardian"
 P2P_PORT=30303
 API_PORT=8545
+NETWORK="${1:-}"
+BOOTSTRAP_NODE="${2:-}"
+MINER_ADDRESS="${MINER_ADDRESS:-}"
+
+if [[ "$NETWORK" != "mainnet" && "$NETWORK" != "testnet" ]]; then
+    echo "Usage: $0 <mainnet|testnet> [bootstrap_node_address]"
+    exit 1
+fi
+if [[ -n "$BOOTSTRAP_NODE" && ! "$BOOTSTRAP_NODE" =~ ^[A-Za-z0-9.-]+:[0-9]{1,5}$ ]]; then
+    echo "Invalid bootstrap node address; use hostname:port or IPv4:port."
+    exit 1
+fi
+if [[ -n "$MINER_ADDRESS" && ! "$MINER_ADDRESS" =~ ^0[xX][0-9a-fA-F]{40}$ ]]; then
+    echo "MINER_ADDRESS must be a 20-byte 0x-prefixed address."
+    exit 1
+fi
 
 echo "=== Guardian Chain Full Node Deployment ==="
 
@@ -37,10 +53,12 @@ Wants=network-online.target
 Type=simple
 User=$USER
 ExecStart=$BIN_DIR/guardian-fullnode \\
+    --network=$NETWORK \\
     --datadir=$DATA_DIR \\
     --listen=:$P2P_PORT \\
     --api=:$API_PORT \\
-    --miner=\${MINER_ADDRESS:-}
+    --bootstrap=$BOOTSTRAP_NODE \\
+    --miner=$MINER_ADDRESS
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
@@ -58,6 +76,7 @@ sudo systemctl restart guardian-fullnode
 
 echo ""
 echo "Full node deployed successfully!"
+echo "  Network:  $NETWORK"
 echo "  P2P port: $P2P_PORT"
 echo "  API port: $API_PORT"
 echo "  Data dir: $DATA_DIR"

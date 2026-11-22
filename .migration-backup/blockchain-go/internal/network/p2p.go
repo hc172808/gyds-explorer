@@ -55,16 +55,17 @@ type MessageHandler func(data []byte, peer *Peer)
 
 // P2PNode manages peer-to-peer networking
 type P2PNode struct {
-	mu           sync.RWMutex
-	listenAddr   string
-	chainID      uint64
-	genesisHash  string
-	listener     net.Listener
-	peers        map[string]*Peer
-	handlers     map[byte]MessageHandler
-	maxPeers     int
-	running      bool
-	stopCh       chan struct{}
+	mu          sync.RWMutex
+	listenAddr  string
+	chainID     uint64
+	genesisHash string
+	listener    net.Listener
+	peers       map[string]*Peer
+	handlers    map[byte]MessageHandler
+	maxPeers    int
+	running     bool
+	stopCh      chan struct{}
+	stopOnce    sync.Once
 }
 
 // NewP2PNode creates a node that only peers with the same chain ID and genesis
@@ -96,20 +97,34 @@ func (n *P2PNode) RegisterHandler(msgType byte, handler MessageHandler) {
 
 // Start begins listening for incoming connections
 func (n *P2PNode) Start() error {
-	var err error
-	n.listener, err = net.Listen("tcp", n.listenAddr)
+	listener, err := net.Listen("tcp", n.listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", n.listenAddr, err)
 	}
 
+	n.mu.Lock()
+	select {
+	case <-n.stopCh:
+		n.mu.Unlock()
+		listener.Close()
+		return errors.New("P2P node is stopped and cannot be restarted")
+	default:
+	}
+	if n.listener != nil {
+		n.mu.Unlock()
+		listener.Close()
+		return errors.New("P2P node is already started")
+	}
+	n.listener = listener
 	n.running = true
+	n.mu.Unlock()
 	log.Printf("P2P listening on %s", n.listenAddr)
 
 	// Start peer discovery loop
 	go n.discoveryLoop()
 
 	for {
-		conn, err := n.listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
 			case <-n.stopCh:
@@ -126,16 +141,23 @@ func (n *P2PNode) Start() error {
 
 // Stop shuts down the P2P node
 func (n *P2PNode) Stop() {
-	n.running = false
-	close(n.stopCh)
-	if n.listener != nil {
-		n.listener.Close()
-	}
-	n.mu.Lock()
-	for _, peer := range n.peers {
-		peer.conn.Close()
-	}
-	n.mu.Unlock()
+	n.stopOnce.Do(func() {
+		close(n.stopCh)
+		n.mu.Lock()
+		n.running = false
+		listener := n.listener
+		peers := make([]*Peer, 0, len(n.peers))
+		for _, peer := range n.peers {
+			peers = append(peers, peer)
+		}
+		n.mu.Unlock()
+		if listener != nil {
+			_ = listener.Close()
+		}
+		for _, peer := range peers {
+			_ = peer.conn.Close()
+		}
+	})
 }
 
 // Connect establishes a connection to a remote peer
@@ -203,6 +225,12 @@ func (n *P2PNode) addPeer(peer *Peer) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	select {
+	case <-n.stopCh:
+		peer.conn.Close()
+		return errors.New("P2P node is stopped")
+	default:
+	}
 	if !n.running && n.listener != nil {
 		peer.conn.Close()
 		return errors.New("P2P node is stopping")
@@ -226,7 +254,9 @@ func (n *P2PNode) removePeer(addr string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if peer, ok := n.peers[addr]; ok {
+		peer.mu.Lock()
 		peer.closing = true
+		peer.mu.Unlock()
 		peer.conn.Close()
 		delete(n.peers, addr)
 		log.Printf("Peer disconnected: %s (total: %d)", addr, len(n.peers))
@@ -246,7 +276,10 @@ func (n *P2PNode) handlePeer(peer *Peer) {
 		peer.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		msgType, data, err := readFrame(peer.conn)
 		if err != nil {
-			if !peer.closing {
+			peer.mu.Lock()
+			closing := peer.closing
+			peer.mu.Unlock()
+			if !closing {
 				log.Printf("Read error from %s: %v", peer.Addr, err)
 			}
 			return

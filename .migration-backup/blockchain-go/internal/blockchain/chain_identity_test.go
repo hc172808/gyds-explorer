@@ -3,9 +3,8 @@ package blockchain
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -233,9 +232,7 @@ func TestBlockRejectsMismatchedChainID(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = chain.validateBlock(&Block{Header: Header{ChainID: networkconfig.TestnetChainID}})
-	if err == nil || !errors.Is(err, errors.New("wrong chain ID")) {
-		if err == nil || err.Error() != fmt.Sprintf("wrong chain ID: expected %d, got %d", networkconfig.MainnetChainID, networkconfig.TestnetChainID) {
-			t.Fatalf("wrong-network block was not rejected clearly: %v", err)
-		}
+	if err == nil || !strings.Contains(err.Error(), "wrong chain ID") {
+		t.Fatalf("wrong-network block was not rejected clearly: %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package utils
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"math/big"
 	"strings"
@@ -77,7 +78,7 @@ func TestVerifySignatureRejectsHighSAndMalformedKeys(t *testing.T) {
 }
 
 func TestP256HelpersRejectOtherCurves(t *testing.T) {
-	otherKey, err := ecdsa.GenerateKey(elliptic.P384(), nil)
+	otherKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}

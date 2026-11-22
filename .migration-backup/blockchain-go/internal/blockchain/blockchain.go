@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/guardian-chain/blockchain-go/internal/database"
-	"github.com/guardian-chain/blockchain-go/internal/utils"
 	"github.com/guardian-chain/blockchain-go/internal/networkconfig"
+	"github.com/guardian-chain/blockchain-go/internal/utils"
 )
 
 // Header represents a block header
@@ -48,8 +48,8 @@ type Blockchain struct {
 }
 
 const (
-	chainIdentityKey     = "chain_identity"
-	chainStorageVersion  = 1
+	chainIdentityKey    = "chain_identity"
+	chainStorageVersion = 1
 )
 
 type persistedChainIdentity struct {
@@ -124,6 +124,24 @@ func NewBlockchain(db database.Storage, chainID uint64) (*Blockchain, error) {
 	}
 	if latest.Hash == "" || latest.Hash != computeBlockHash(latest) {
 		return nil, errors.New("latest block hash is invalid")
+	}
+
+	latestBlockData, err := db.Get([]byte(fmt.Sprintf("block_num:%d", latest.Number)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read latest block data: %w", err)
+	}
+	if latestBlockData == nil {
+		return nil, errors.New("latest block header exists but block data is missing")
+	}
+	var latestBlock Block
+	if err := json.Unmarshal(latestBlockData, &latestBlock); err != nil {
+		return nil, fmt.Errorf("corrupted latest block data: %w", err)
+	}
+	if latestBlock.Header.Number != latest.Number ||
+		latestBlock.Header.ChainID != chainID ||
+		latestBlock.Header.Hash != latest.Hash ||
+		latestBlock.Header.Hash != computeBlockHash(latestBlock.Header) {
+		return nil, errors.New("latest block data does not match the persisted chain identity")
 	}
 
 	genesisData, err := db.Get([]byte("block_num:0"))
@@ -275,9 +293,23 @@ func (bc *Blockchain) validateBlock(block *Block) error {
 		return errors.New("block hash mismatch")
 	}
 	// Validate each transaction
+	seenNonces := make(map[string]map[uint64]struct{})
 	for _, tx := range block.Transactions {
+		if tx != nil {
+			if _, exists := seenNonces[tx.From][tx.Nonce]; exists {
+				return fmt.Errorf("duplicate transaction nonce %d for sender %s", tx.Nonce, tx.From)
+			}
+			if seenNonces[tx.From] == nil {
+				seenNonces[tx.From] = make(map[uint64]struct{})
+			}
+			seenNonces[tx.From][tx.Nonce] = struct{}{}
+		}
 		if err := ValidateTransaction(tx, bc.state, bc.chainID); err != nil {
-			return fmt.Errorf("invalid tx %s: %w", tx.Hash, err)
+			txHash := ""
+			if tx != nil {
+				txHash = tx.Hash
+			}
+			return fmt.Errorf("invalid tx %s: %w", txHash, err)
 		}
 	}
 	return nil
@@ -319,7 +351,9 @@ func (bc *Blockchain) applyTransaction(tx *Transaction, miner string) error {
 		bc.state.SubGYDBalance(tx.From, amount)
 		bc.state.AddGYDBalance(tx.To, amount)
 	case CoinStake:
-		return bc.applyStakeTx(tx)
+		if err := bc.applyStakeTx(tx); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown coin type: %s", tx.CoinType)
 	}
@@ -359,21 +393,28 @@ func (bc *Blockchain) saveBlock(block *Block) error {
 		return err
 	}
 	return bc.db.BatchPut(map[string][]byte{
-		"block:" + block.Header.Hash:      data,
+		"block:" + block.Header.Hash:                     data,
 		fmt.Sprintf("block_num:%d", block.Header.Number): data,
-		"latest_block":                   headerData,
-		"state_snapshot":                 snapData,
-		chainIdentityKey:                 identityData,
+		"latest_block":   headerData,
+		"state_snapshot": snapData,
+		chainIdentityKey: identityData,
 	})
 }
 
 // AddPendingTx adds a transaction to the pending pool
 func (bc *Blockchain) AddPendingTx(tx *Transaction) error {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
 	if err := ValidateTransaction(tx, bc.state, bc.chainID); err != nil {
 		return err
 	}
 	bc.pendingMu.Lock()
 	defer bc.pendingMu.Unlock()
+	for _, pending := range bc.pendingTxs {
+		if pending.From == tx.From && pending.Nonce == tx.Nonce {
+			return fmt.Errorf("transaction nonce %d for sender %s is already pending", tx.Nonce, tx.From)
+		}
+	}
 	bc.pendingTxs = append(bc.pendingTxs, tx)
 	return nil
 }

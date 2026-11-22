@@ -55,15 +55,20 @@ func PubKeyToAddress(pub *ecdsa.PublicKey) string {
 		return ""
 	}
 	pubBytes := elliptic.Marshal(elliptic.P256(), pub.X, pub.Y)
-	hash := Keccak256(pubBytes[1:]) // Skip 0x04 prefix
+	hash := Keccak256(pubBytes[1:])             // Skip 0x04 prefix
 	return "0x" + hex.EncodeToString(hash[12:]) // Last 20 bytes
 }
 
 // SignData signs data with P-256 ECDSA and returns canonical fixed-width r||s.
 func SignData(privKey *ecdsa.PrivateKey, data []byte) (string, error) {
 	if privKey == nil || privKey.Curve != elliptic.P256() || privKey.Curve.Params().Name != p256CurveName ||
-		privKey.D == nil || privKey.D.Sign() <= 0 || privKey.D.Cmp(privKey.Curve.Params().N) >= 0 {
+		privKey.D == nil || privKey.D.Sign() <= 0 || privKey.D.Cmp(privKey.Curve.Params().N) >= 0 ||
+		privKey.X == nil || privKey.Y == nil {
 		return "", errors.New("private key must be a valid P-256 key")
+	}
+	expectedX, expectedY := privKey.Curve.ScalarBaseMult(privKey.D.Bytes())
+	if expectedX.Cmp(privKey.X) != 0 || expectedY.Cmp(privKey.Y) != 0 {
+		return "", errors.New("private key public point does not match its scalar")
 	}
 	hash := Keccak256(data)
 	r, s, err := ecdsa.Sign(rand.Reader, privKey, hash)

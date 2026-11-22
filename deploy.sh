@@ -22,7 +22,16 @@
 # Prerequisites: Ubuntu 22.04 with root/sudo access
 # ============================================================
 
-set -e
+set -eE
+
+on_unexpected_error() {
+  local status=$?
+  local line="${BASH_LINENO[0]:-unknown}"
+  printf '[✗ ERROR] Deployment stopped at deploy.sh line %s (exit %s). No credentials or command arguments were printed.\n' \
+    "${line}" "${status}" >&2
+  exit "${status}"
+}
+trap on_unexpected_error ERR
 
 # ---------- Configuration ----------
 APP_NAME="gyds-explorer"
@@ -243,6 +252,8 @@ generate_secret() {
 
 DB_PASSWORD=$(generate_password)
 API_SECRET="${JWT_SECRET_KEY:-${API_SECRET_KEY:-${JWT_SECRET:-$(generate_secret)}}}"
+[ "${#DB_PASSWORD}" -eq 24 ] || err "OpenSSL did not generate the database password; confirm openssl is installed and rerun."
+[ "${#API_SECRET}" -ge 32 ] || err "A valid API signing secret could not be generated; confirm openssl is installed or set JWT_SECRET_KEY, API_SECRET_KEY, or JWT_SECRET in the environment."
 
 drop_existing_database() {
   [ "${RESET_EXISTING}" = true ] || return 0
@@ -572,6 +583,7 @@ fi
 # STEP 5: Generate .env Configuration
 # ============================================================
 log "Step 5/11 — Generating .env configuration..."
+info "Using the supplied domain if present; otherwise resolving this server's IP address."
 
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 BASE_URL="http://localhost:${WEB_PORT}"
@@ -618,11 +630,15 @@ process.stdout.write(`${unsigned}.${signature}`);
 NODE
 }
 
-ANON_KEY="$(generate_supabase_jwt anon)"
-SERVICE_ROLE_KEY="$(generate_supabase_jwt service_role)"
+info "Generating application compatibility tokens."
+ANON_KEY="$(generate_supabase_jwt anon)" || err "Could not generate the public compatibility token. Verify the API signing secret and Node.js installation."
+SERVICE_ROLE_KEY="$(generate_supabase_jwt service_role)" || err "Could not generate the service compatibility token. Verify the API signing secret and Node.js installation."
+[ -n "${ANON_KEY}" ] || err "The public compatibility token is empty; stopping before writing .env."
+[ -n "${SERVICE_ROLE_KEY}" ] || err "The service compatibility token is empty; stopping before writing .env."
 
 # Restrict access from the first byte written; chmod below keeps this invariant
 # if the file already existed with broader permissions.
+info "Writing the protected environment file."
 umask 077
 cat > "${APP_DIR}/.env" <<EOF
 # ============================================================
@@ -700,6 +716,7 @@ EOF
 
 chmod 600 "${APP_DIR}/.env"
 [ -s "${APP_DIR}/.env" ] || err "Environment file was not created at ${APP_DIR}/.env."
+info "Checking the generated environment file without displaying its contents."
 
 # Drizzle reads DATABASE_URL from the process environment; unlike the API's
 # Node --env-file startup, `npm run push` does not automatically load .env.

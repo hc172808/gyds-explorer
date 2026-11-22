@@ -1,11 +1,14 @@
 package networkconfig
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestParseSupportedNetworks(t *testing.T) {
 	tests := []struct {
-		name    string
-		want    Config
+		name string
+		want Config
 	}{
 		{name: "mainnet", want: Config{Name: Mainnet, ChainID: 198282}},
 		{name: "testnet", want: Config{Name: Testnet, ChainID: 198281}},
@@ -19,6 +22,13 @@ func TestParseSupportedNetworks(t *testing.T) {
 			}
 			if got != test.want {
 				t.Fatalf("Parse(%q) = %+v, want %+v", test.name, got, test.want)
+			}
+			wantHex := "0x3068a"
+			if test.name == "testnet" {
+				wantHex = "0x30689"
+			}
+			if gotHex := fmt.Sprintf("0x%x", got.ChainID); gotHex != wantHex {
+				t.Fatalf("chain ID hex = %s, want %s", gotHex, wantHex)
 			}
 			fromID, err := FromChainID(got.ChainID)
 			if err != nil || fromID != got {

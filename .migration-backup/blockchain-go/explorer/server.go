@@ -48,6 +48,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":      "ok",
 		"service":     "guardian-explorer-api",
+		"chainId":     s.chain.ChainID(),
 		"chainHeight": num,
 		"latestHash":  hash,
 		"timestamp":   time.Now().Unix(),
