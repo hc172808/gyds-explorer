@@ -583,7 +583,13 @@ fi
 # Frontend must use RELATIVE paths so the app works over the bare IP, over the
 # domain, and over both http and https. Absolute localhost URLs break the browser.
 API_URL="/api"
-CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost,${BASE_URL}$( [ -n "${SERVER_IP}" ] && echo ",http://${SERVER_IP}" )$( [ -n "${DOMAIN}" ] && echo ",https://${DOMAIN}" )"
+CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost,${BASE_URL}"
+if [ -n "${SERVER_IP}" ]; then
+  CORS_ORIGINS+=",http://${SERVER_IP}"
+fi
+if [ -n "${DOMAIN}" ] && [ "${DOMAIN}" != "_" ]; then
+  CORS_ORIGINS+=",https://${DOMAIN}"
+fi
 GYDS_REMOTE_RPC_URL="${GYDS_REMOTE_RPC_URL:-}"
 GYDS_REMOTE_RPC_URL_2="${GYDS_REMOTE_RPC_URL_2:-}"
 
