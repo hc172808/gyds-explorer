@@ -9,6 +9,7 @@ export interface EthereumProvider {
 }
 
 function injectedEthereumProviders(): EthereumProvider[] {
+  if (typeof window === "undefined") return [];
   const walletWindow = window as Window & {
     ethereum?: EthereumProvider;
     phantom?: { ethereum?: EthereumProvider };

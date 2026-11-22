@@ -1,64 +1,97 @@
 import { useEffect, useMemo, useState } from "react";
-import { JsonRpcProvider } from "ethers";
 import { AlertCircle, CheckCircle2, Copy, ExternalLink, KeyRound, Smartphone, WalletCards } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { proxyRpcUrl } from "@/lib/networkApi";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { getNativeCoinForNetwork } from "@/lib/coins";
 import {
   GYD_TOKEN,
   GYDS_NETWORK,
   addGydsNetwork,
   addGydToken,
+  createWalletNetworkConfig,
+  getRpcChainId,
   getRpcUrls,
   getWalletError,
   isGydConfigured,
 } from "@/lib/wallet";
 
+type RpcCheck = {
+  key: string;
+  status: "checking" | "ready" | "error";
+  error?: string;
+};
+
 const WalletOnboarding = () => {
   const { network, networkType } = useNetwork();
   const [busy, setBusy] = useState<"network" | "token" | null>(null);
-  const [networkAdded, setNetworkAdded] = useState(false);
+  const [networkAddedKey, setNetworkAddedKey] = useState<string | null>(null);
   const [tokenAdded, setTokenAdded] = useState(false);
-  const [detectedChainId, setDetectedChainId] = useState<number | null>(null);
+  const [detectedChainId, setDetectedChainId] = useState<bigint | null>(null);
+  const [rpcCheck, setRpcCheck] = useState<RpcCheck>({ key: "", status: "checking" });
 
   const rpcEndpoint = networkType === "custom"
     ? network.rpcEndpoints[0] || ""
     : proxyRpcUrl(undefined, networkType);
   const rpcUrls = useMemo(() => getRpcUrls(rpcEndpoint), [rpcEndpoint]);
-  const chainId = network.chainId ?? detectedChainId;
-  const walletNetwork = useMemo(() => ({
-    ...GYDS_NETWORK,
-    chainId: chainId === null ? GYDS_NETWORK.chainId : `0x${chainId.toString(16)}`,
-    chainName: networkType === "custom" ? "GYDS Custom Network" : `GYDS ${network.name}`,
-  }), [chainId, network.name, networkType]);
+  const expectedChainId = network.chainId === null ? undefined : BigInt(network.chainId);
+  const chainId = expectedChainId ?? detectedChainId;
+  const rpcCheckKey = `${networkType}:${network.chainId ?? "auto"}:${rpcEndpoint}`;
+  const activeRpcCheck: RpcCheck = rpcCheck.key === rpcCheckKey
+    ? rpcCheck
+    : { key: rpcCheckKey, status: "checking" };
+  const networkAdded = networkAddedKey === rpcCheckKey;
+  const nativeCoin = getNativeCoinForNetwork(networkType);
+  const walletNetwork = useMemo(
+    () => createWalletNetworkConfig(networkType, chainId ?? BigInt(GYDS_NETWORK.chainId)),
+    [chainId, networkType],
+  );
 
   useEffect(() => {
     setDetectedChainId(null);
-    if (network.chainId !== null || !rpcEndpoint) return;
-
     let active = true;
-    const provider = new JsonRpcProvider(rpcEndpoint);
-    provider.getNetwork()
+    setNetworkAddedKey(null);
+
+    if (!rpcUrls.length) {
+      setRpcCheck({
+        key: rpcCheckKey,
+        status: "error",
+        error: "Enter a custom RPC URL in the network selector before adding this network.",
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    setRpcCheck({ key: rpcCheckKey, status: "checking" });
+    getRpcChainId(rpcUrls, expectedChainId)
       .then((detected) => {
-        if (active) setDetectedChainId(Number(detected.chainId));
+        if (!active) return;
+        setDetectedChainId(detected);
+        setRpcCheck({ key: rpcCheckKey, status: "ready" });
       })
-      .catch(() => {
-        if (active) setDetectedChainId(null);
+      .catch((error: unknown) => {
+        if (!active) return;
+        setDetectedChainId(null);
+        setRpcCheck({
+          key: rpcCheckKey,
+          status: "error",
+          error: getWalletError(error),
+        });
       });
     return () => {
       active = false;
-      provider.destroy();
     };
-  }, [network.chainId, rpcEndpoint]);
+  }, [expectedChainId, network.chainId, rpcCheckKey, rpcUrls]);
 
   const manualDetails = [
     ["Network name", walletNetwork.chainName],
-    ["Chain ID", chainId === null ? "Detecting from RPC…" : `${walletNetwork.chainId} (${chainId})`],
+    ["Chain ID", chainId === null ? "Not detected from RPC" : `${walletNetwork.chainId} (${chainId.toString()})`],
     ["RPC URL", rpcUrls[0] || "Enter a custom RPC in the network selector."],
-    ["Currency", `${GYDS_NETWORK.nativeCurrency.name} (${GYDS_NETWORK.nativeCurrency.symbol})`],
-    ["Decimals", String(GYDS_NETWORK.nativeCurrency.decimals)],
+    ["Currency", `${walletNetwork.nativeCurrency.name} (${walletNetwork.nativeCurrency.symbol})`],
+    ["Decimals", String(walletNetwork.nativeCurrency.decimals)],
     ["Block explorer", GYDS_NETWORK.blockExplorerUrl],
   ];
 
@@ -74,7 +107,7 @@ const WalletOnboarding = () => {
         throw new Error("Could not detect a chain ID from the selected RPC.");
       }
       await addGydsNetwork(rpcUrls, walletNetwork);
-      setNetworkAdded(true);
+      setNetworkAddedKey(rpcCheckKey);
       toast.success(`${walletNetwork.chainName} added to your wallet`);
     } catch (error) {
       toast.error(getWalletError(error));
@@ -122,10 +155,33 @@ const WalletOnboarding = () => {
             </div>
             <img src="/assets/gyds-logo.svg" alt="" className="h-11 w-11 rounded-xl" />
           </div>
-          <Button onClick={handleNetwork} disabled={busy !== null || chainId === null || rpcUrls.length === 0} className="w-full gap-2">
+          <Button
+            onClick={handleNetwork}
+            disabled={busy !== null || chainId === null || rpcUrls.length === 0 || activeRpcCheck.status !== "ready"}
+            className="w-full gap-2"
+          >
             {networkAdded ? <CheckCircle2 className="h-4 w-4" /> : <WalletCards className="h-4 w-4" />}
-            {busy === "network" ? "Waiting for wallet…" : networkAdded ? "Network added" : `Add ${network.name}`}
+            {busy === "network"
+              ? "Waiting for wallet approval…"
+              : activeRpcCheck.status === "checking"
+                ? "Checking RPC…"
+                : activeRpcCheck.status === "error"
+                  ? "RPC unavailable"
+                  : networkAdded
+                    ? "Network added"
+                    : `Add ${network.name}`}
           </Button>
+          {activeRpcCheck.status === "error" && (
+            <p role="alert" className="mt-3 text-sm text-destructive">
+              {activeRpcCheck.error}
+              {networkType === "mainnet" && " Ask an administrator to configure a reachable Mainnet RPC in Admin settings."}
+            </p>
+          )}
+          {activeRpcCheck.status === "ready" && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              RPC verified on chain {chainId?.toString()}.
+            </p>
+          )}
           <p className="mt-3 text-xs text-muted-foreground flex gap-2">
             <Smartphone className="h-4 w-4 shrink-0" />
           Works with compatible browser wallets. Mobile wallets may need their
@@ -180,14 +236,14 @@ const WalletOnboarding = () => {
         </div>
         <div className="mt-5 rounded-lg border border-border bg-secondary/30 p-4 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">Important safety check</p>
-          Confirm the chain ID is <span className="font-mono text-foreground">{chainId ?? "not detected"}</span> before saving. Adding a network or token never sends funds.
+          Confirm the chain ID is <span className="font-mono text-foreground">{chainId?.toString() ?? "not detected"}</span> before saving. Adding a network or token never sends funds.
         </div>
       </section>
 
       <div className="mt-6 flex flex-wrap gap-4 text-sm text-muted-foreground">
         <Link to="/terms" className="hover:text-foreground hover:underline">Read terms</Link>
         <Link to="/admin" className="hover:text-foreground hover:underline">Admin network settings</Link>
-        <a href={GYDS_NETWORK.blockExplorerUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
+        <a href={walletNetwork.blockExplorerUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground hover:underline">
           Open explorer <ExternalLink className="h-3.5 w-3.5" />
         </a>
       </div>
