@@ -86,6 +86,11 @@ production node implementation. Do not inspect or copy private keys or secrets.
       supply handling; it now needs only a public deployer address, not a key.
 - [x] Updated the archived Go pending-transaction path to validate against its
       configured chain ID.
+- [!] The archived Go prototype also has production-blocking limitations:
+      P-256 rather than Ethereum secp256k1 signatures, validator eligibility
+      that does not stop non-validator mining, unverified LiteNode proofs,
+      indexer cursor advancement despite storage errors, and block transactions
+      validated against one pre-block state. Keep this prototype out of service.
 - [!] Full archived Go tests need dependencies blocked in this Replit
       environment (`goleveldb` and `x/crypto`); dependency-free network and
       consensus tests pass.
