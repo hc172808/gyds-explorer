@@ -10,14 +10,17 @@
 # Usage:
 #   sudo bash pre-launch-check.sh
 #   ENV_FILE=/etc/gyds/node.env EXPECTED_BLOCK_MIN=1000 bash pre-launch-check.sh
+#   NETWORK_ENV=testnet ENV_FILE=/etc/gyds-testnet/node.env bash pre-launch-check.sh
 #
 # Exit codes: 0 = ready for production, 1 = one or more blocking failures.
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/scripts/node-setup-helpers.sh"
 ENV_FILE="${ENV_FILE:-/etc/gyds/node.env}"
 RPC_URL="${RPC_URL:-}"
-SERVICE="${SERVICE:-gyds-node}"
+SERVICE="${SERVICE:-}"
 MIN_PEERS="${MIN_PEERS:-1}"
 MIN_DISK_FREE_GB="${MIN_DISK_FREE_GB:-10}"
 EXPECTED_BLOCK_MIN="${EXPECTED_BLOCK_MIN:-1}"
@@ -50,13 +53,35 @@ NODE_TYPE="${NODE_TYPE:-}"
 CHAIN_ID="${CHAIN_ID:-}"
 NETWORK_ID="${NETWORK_ID:-}"
 NATIVE_DECIMALS="${NATIVE_DECIMALS:-}"
-DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
-CONFIG_DIR="${CONFIG_DIR:-/etc/gyds}"
-RPC_PORT="${RPC_PORT:-8545}"
-WS_PORT="${WS_PORT:-8546}"
-P2P_PORT="${P2P_PORT:-30303}"
-METRICS_PORT="${METRICS_PORT:-6060}"
+NETWORK_ENV="${NETWORK_ENV:-}"
+DATA_DIR="${DATA_DIR:-}"
+CONFIG_DIR="${CONFIG_DIR:-}"
+SERVICE="${SERVICE:-}"
 PUBLIC_RPC="${PUBLIC_RPC:-no}"
+
+if [ -z "$NETWORK_ENV" ]; then
+  NETWORK_ENV=testnet
+  [ "$CHAIN_ID" = "198281" ] || NETWORK_ENV=mainnet
+fi
+NETWORK_ENV="${NETWORK_ENV,,}"
+NETWORK_CHAIN_ID="$(gyds_network_chain_id "$NETWORK_ENV")" || {
+  fail "NETWORK_ENV must be mainnet or testnet"
+  NETWORK_ENV=mainnet
+  NETWORK_CHAIN_ID=198282
+}
+if [ "$NETWORK_ENV" = "testnet" ]; then
+  DATA_DIR="${DATA_DIR:-/var/lib/gyds-testnet}"
+  CONFIG_DIR="${CONFIG_DIR:-/etc/gyds-testnet}"
+  SERVICE="${SERVICE:-gyds-node-testnet}"
+else
+  DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
+  CONFIG_DIR="${CONFIG_DIR:-/etc/gyds}"
+  SERVICE="${SERVICE:-gyds-node}"
+fi
+RPC_PORT="${RPC_PORT:-$(gyds_network_default_port "$NETWORK_ENV" rpc)}"
+WS_PORT="${WS_PORT:-$(gyds_network_default_port "$NETWORK_ENV" ws)}"
+P2P_PORT="${P2P_PORT:-$(gyds_network_default_port "$NETWORK_ENV" p2p)}"
+METRICS_PORT="${METRICS_PORT:-$(gyds_network_default_port "$NETWORK_ENV" metrics)}"
 RPC_URL="${RPC_URL:-http://127.0.0.1:${RPC_PORT}}"
 
 rpc_target() {
@@ -100,8 +125,11 @@ if [ -f "$SPEC" ]; then
   [ "$SPEC_DEC" = "18" ] && [ "$SPEC_GYD" = "6" ] && pass "chain-spec.json matches (GYDS 18 / GYD 6)"
 fi
 
-if [ "$CHAIN_ID" != "$NETWORK_ID" ]; then
-  warn "CHAIN_ID ($CHAIN_ID) differs from NETWORK_ID ($NETWORK_ID)"
+if [ "$CHAIN_ID" != "$NETWORK_CHAIN_ID" ]; then
+  fail "NETWORK_ENV=$NETWORK_ENV requires CHAIN_ID=$NETWORK_CHAIN_ID (found ${CHAIN_ID:-missing})"
+fi
+if [ "$NETWORK_ID" != "$NETWORK_CHAIN_ID" ]; then
+  fail "NETWORK_ENV=$NETWORK_ENV requires NETWORK_ID=$NETWORK_CHAIN_ID (found ${NETWORK_ID:-missing})"
 fi
 
 if [ "$NODE_TYPE" = "validator" ] && [ -z "${VALIDATOR_ADDRESS:-}" ]; then

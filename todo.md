@@ -99,6 +99,37 @@ production node implementation. Do not inspect or copy private keys or secrets.
 - [!] No reachable GYDS Mainnet RPC is configured in this workspace; live-chain
       verification and publishing remain separate approved work.
 
+### Audit recheck — 2026-11-22
+
+- [x] Classified the maintained Geth setup/operation scripts, Express API and
+      PostgreSQL node catalog, React explorer/wallet, block indexer, and
+      Solidity sources as production code; Replit node launchers/gateways as
+      local test support; Solidity JSON artifacts as generated compiler
+      outputs; and `.migration-backup/blockchain-go/` as archived prototype.
+- [x] Fixed peer-node setup to validate an existing genesis file's chain ID
+      and run `geth init` for it instead of silently skipping initialization.
+- [x] Prevented oversized supply strings from wrapping in Bash integer math
+      before the Mainnet cap and Testnet fixed-supply checks.
+- [x] Made `node-verify.sh` and `pre-launch-check.sh` select the correct
+      Mainnet/Testnet chain and network IDs, RPC/service/data-directory
+      defaults, and Testnet ports; mismatched pre-launch IDs now block launch.
+- [x] Added focused shell-helper and node-verifier regression tests.
+- [x] Explorer tests (31), indexer tests (5), node/setup tests (4), all
+      workspace typechecks, decimal validation, shell syntax checks, explorer
+      production build, and API production build passed.
+- [!] Full archived Go tests are blocked by uncached `goleveldb` and
+      `golang.org/x/crypto`; dependency-free network-identity and consensus
+      tests pass.
+- [!] `npm run compile:tgyd-token` is blocked because `solc` is declared but
+      not installed in this workspace; generated contract bytecode could not
+      be compared with source.
+- [!] Exact Mainnet genesis identity and live Geth behavior remain unverified:
+      chain ID alone does not prove two nodes use the same genesis file, and no
+      reachable Mainnet RPC is configured. Verify a trusted genesis hash on an
+      isolated staging node before promoting additional peers.
+- [!] The production build reports an existing large JavaScript chunk warning;
+      this audit did not change frontend bundling.
+
 ## Target production environment
 
 - [!] Ubuntu 22.04 — blocked because this workspace cannot inspect the separate
@@ -1611,8 +1642,9 @@ protocol balances have been erased.
       post-reset TGYD deployment path is defined.
 - [ ] **Admin dashboard**: per-node environment field (mainnet/testnet) and
       filtering, so nodes of both environments are managed in one place.
-- [ ] **Pre-launch + verify scripts**: accept the environment flag and check the
-      correct ports/chain id for testnet runs.
+- [x] **Pre-launch + verify scripts**: accept the environment flag and check the
+      correct ports, data directories, service names, and chain/network IDs for
+      Testnet runs.
 
 ### I. Wallet sign-in for everyone — added 2026-09-08
 

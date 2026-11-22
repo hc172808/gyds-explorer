@@ -131,6 +131,7 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
 #   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/scripts/node-setup-helpers.sh"
 if [ "${NETWORK_ENV,,}" = "testnet" ]; then
   ENV_FILES=(
     "${SCRIPT_DIR}/node.testnet.env"
@@ -247,23 +248,23 @@ fi
 [[ "$CHAIN_ID" =~ ^[0-9]+$ ]] || err "CHAIN_ID must be a whole number."
 [[ "$NETWORK_ID" =~ ^[0-9]+$ ]] || err "NETWORK_ID must be a whole number."
 [[ "$NATIVE_DECIMALS" = "18" ]] || err "NATIVE_DECIMALS must be 18."
-[[ "$NATIVE_SUPPLY" =~ ^[0-9]+$ ]] || err "NATIVE_SUPPLY must be a whole number."
-[[ "$ADMIN_SUPPLY" =~ ^[0-9]+$ ]] || err "ADMIN_SUPPLY must be a whole number."
+NATIVE_SUPPLY_VALUE="$(gyds_normalize_uint "$NATIVE_SUPPLY")" || err "NATIVE_SUPPLY must be a whole number."
+ADMIN_SUPPLY_VALUE="$(gyds_normalize_uint "$ADMIN_SUPPLY")" || err "ADMIN_SUPPLY must be a whole number."
+NATIVE_SUPPLY="$NATIVE_SUPPLY_VALUE"
+ADMIN_SUPPLY="$ADMIN_SUPPLY_VALUE"
 EXPECTED_CHAIN_ID=198282
 if [ "$NETWORK_ENV" = "testnet" ]; then
   EXPECTED_CHAIN_ID=198281
 fi
 [ "$CHAIN_ID" = "$EXPECTED_CHAIN_ID" ] || err "${NETWORK_ENV} chain ID must be ${EXPECTED_CHAIN_ID}."
 [ "$NETWORK_ID" = "$EXPECTED_CHAIN_ID" ] || err "${NETWORK_ENV} network ID must be ${EXPECTED_CHAIN_ID}."
-NATIVE_SUPPLY_VALUE=$((10#${NATIVE_SUPPLY}))
-ADMIN_SUPPLY_VALUE=$((10#${ADMIN_SUPPLY}))
 if [ "$NETWORK_ENV" = "testnet" ]; then
   [ "$NATIVE_SUPPLY_VALUE" -eq 1000000 ] || err "Testnet NATIVE_SUPPLY must be exactly 1,000,000 TGYDS."
   [ "$ADMIN_SUPPLY_VALUE" -eq 5000 ] || err "Testnet ADMIN_SUPPLY must be exactly 5,000 TGYDS."
 else
-  [ "$NATIVE_SUPPLY_VALUE" -le 1000000000 ] || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
+  gyds_uint_le "$NATIVE_SUPPLY_VALUE" 1000000000 || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
 fi
-[ "$ADMIN_SUPPLY_VALUE" -le "$NATIVE_SUPPLY_VALUE" ] || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
+gyds_uint_le "$ADMIN_SUPPLY_VALUE" "$NATIVE_SUPPLY_VALUE" || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
 ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"
 NATIVE_SUPPLY_BASE_UNITS="${NATIVE_SUPPLY_VALUE}${ZEROS}"   # raw EVM base units (18 decimals)
 info "${NATIVE_COIN_SYMBOL} native precision: ${NATIVE_DECIMALS} decimals (${NATIVE_SUPPLY_BASE_UNITS} genesis base units)"
@@ -646,9 +647,7 @@ GENESIS
 else
   info "For ${NODE_TYPE} nodes, genesis.json must exactly match the MAIN node."
 
-  if [ -f "${CONFIG_DIR}/genesis.json" ]; then
-    warn "Existing genesis.json found at ${CONFIG_DIR}/genesis.json — using it."
-  else
+  if [ ! -f "${CONFIG_DIR}/genesis.json" ]; then
     echo ""
     read -p "Path to genesis.json copied from the MAIN node (or press Enter to use placeholder): " GENESIS_PATH
 
@@ -658,13 +657,14 @@ else
     else
       err "A verified genesis.json from the MAIN node is required. Refusing to initialize from a placeholder."
     fi
-
-    GENESIS_CHAIN_ID=$(jq -r '.config.chainId // empty' "${CONFIG_DIR}/genesis.json" 2>/dev/null || true)
-    [ "$GENESIS_CHAIN_ID" = "$CHAIN_ID" ] || err "Genesis chainId ${GENESIS_CHAIN_ID:-missing} does not match ${CHAIN_ID}."
-
-    geth init --datadir "${DATA_DIR}" "${CONFIG_DIR}/genesis.json"
-    log "Blockchain initialized with genesis."
+  else
+    warn "Existing genesis.json found at ${CONFIG_DIR}/genesis.json — validating it before use."
   fi
+
+  gyds_validate_and_init_genesis \
+    "${CONFIG_DIR}/genesis.json" "$CHAIN_ID" "$DATA_DIR" "$(command -v geth)" ||
+    err "Peer genesis validation or initialization failed; no node service was created."
+  log "Blockchain initialized with the verified genesis."
 fi
 
 # ============================================================

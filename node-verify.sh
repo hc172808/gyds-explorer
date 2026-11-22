@@ -5,18 +5,22 @@
 #
 # Usage:
 #   RPC_URL=http://127.0.0.1:8545 bash node-verify.sh
+#   NETWORK_ENV=testnet bash node-verify.sh
 #   RPC_URL=https://rpc.example.com GENESIS_FILE=/etc/gyds/genesis.json bash node-verify.sh
 
 set -uo pipefail
 
-RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
-EXPECTED_CHAIN_ID="${EXPECTED_CHAIN_ID:-198282}"
-EXPECTED_NETWORK_ID="${EXPECTED_NETWORK_ID:-198282}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/scripts/node-setup-helpers.sh"
+RPC_URL="${RPC_URL:-}"
+NETWORK_ENV="${NETWORK_ENV:-mainnet}"
+EXPECTED_CHAIN_ID="${EXPECTED_CHAIN_ID:-}"
+EXPECTED_NETWORK_ID="${EXPECTED_NETWORK_ID:-}"
 EXPECTED_NATIVE_DECIMALS="${EXPECTED_NATIVE_DECIMALS:-18}"
 MIN_PEERS="${MIN_PEERS:-1}"
 MIN_DISK_FREE_GB="${MIN_DISK_FREE_GB:-10}"
-DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
-SERVICE="${SERVICE:-gyds-node}"
+DATA_DIR="${DATA_DIR:-}"
+SERVICE="${SERVICE:-}"
 GENESIS_FILE="${GENESIS_FILE:-}"
 CHECK_HOST="${CHECK_HOST:-yes}"
 
@@ -32,12 +36,26 @@ rpc_target() {
   target="${target##*@}"
   printf '%s' "$target"
 }
-RPC_TARGET="$(rpc_target "$RPC_URL")"
-
 FAILURES=0
 fail() { printf 'ERROR: %s\n' "$1" >&2; FAILURES=$((FAILURES + 1)); }
 warn() { printf 'WARN:  %s\n' "$1" >&2; }
 hard() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
+
+NETWORK_ENV="${NETWORK_ENV,,}"
+NETWORK_CHAIN_ID="$(gyds_network_chain_id "$NETWORK_ENV")" ||
+  hard "NETWORK_ENV must be mainnet or testnet."
+EXPECTED_CHAIN_ID="${EXPECTED_CHAIN_ID:-$NETWORK_CHAIN_ID}"
+EXPECTED_NETWORK_ID="${EXPECTED_NETWORK_ID:-$NETWORK_CHAIN_ID}"
+if [ "$NETWORK_ENV" = "testnet" ]; then
+  RPC_URL="${RPC_URL:-http://127.0.0.1:9545}"
+  DATA_DIR="${DATA_DIR:-/var/lib/gyds-testnet}"
+  SERVICE="${SERVICE:-gyds-node-testnet}"
+else
+  RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
+  DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
+  SERVICE="${SERVICE:-gyds-node}"
+fi
+RPC_TARGET="$(rpc_target "$RPC_URL")"
 
 command -v curl >/dev/null || hard "curl is required."
 command -v jq >/dev/null || hard "jq is required."
