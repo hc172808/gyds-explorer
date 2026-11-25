@@ -313,6 +313,11 @@ export function getWalletError(error: unknown): string {
     : typeof errorRecord?.message === "string"
       ? errorRecord.message
       : String(error ?? "");
+  if (
+    message === `Wrong RPC chain ID: expected ${NETWORK_CHAIN_IDS.mainnet}, but the endpoint reports ${NETWORK_CHAIN_IDS.testnet}.`
+  ) {
+    return "This action is set to Mainnet, but the available RPC is the private Testnet. Select Testnet in the explorer’s network menu to add the local test network. Mainnet needs its own chain ID 198282 RPC.";
+  }
   if (/broadcast\s*channel\s*unavailable/i.test(message)) {
     return "Your wallet cannot communicate with this page. Open the explorer in a normal browser tab (not an embedded preview), unlock the wallet, and try again.";
   }
