@@ -46,7 +46,7 @@ export function createWalletNetworkConfig(networkType: NetworkType, chainId: big
     chainName: networkType === "mainnet"
       ? GYDS_NETWORK.chainName
       : networkType === "testnet"
-        ? "GYDS Testnet"
+        ? "GYDS Private Testnet"
         : "GYDS Custom Network",
     nativeCurrency: networkType === "mainnet"
       ? GYDS_NETWORK.nativeCurrency
@@ -239,9 +239,7 @@ export async function switchToGydsNetwork(
 ) {
   const chainId = network === "testnet" ? BigInt(NETWORK_CHAIN_IDS.testnet) : GYDS_CHAIN_ID;
   const chainHex = `0x${chainId.toString(16)}`;
-  const walletNetwork: WalletNetworkConfig = network === "testnet"
-    ? { ...GYDS_NETWORK, chainId: chainHex, chainName: "GYDS Testnet" }
-    : GYDS_NETWORK;
+  const walletNetwork = createWalletNetworkConfig(network, chainId);
   const currentChainId = await provider.request({ method: "eth_chainId" });
   if (typeof currentChainId === "string" && BigInt(currentChainId) === chainId) return;
 
@@ -251,7 +249,8 @@ export async function switchToGydsNetwork(
       params: [{ chainId: chainHex }],
     });
   } catch (error) {
-    if ((error as { code?: number })?.code !== 4902) throw error;
+    const code = (error as { code?: number })?.code;
+    if (code !== 4902 && code !== -32603) throw error;
     await addGydsNetwork(rpcUrls, walletNetwork, provider);
     await provider.request({
       method: "wallet_switchEthereumChain",

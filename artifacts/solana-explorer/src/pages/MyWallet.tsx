@@ -9,7 +9,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { API_BASE, fetchCoinSettings, fetchNetworkNodes, proxyRpcUrl, type CoinSetting, type PublicNetworkNode } from "@/lib/networkApi";
 import { fetchTokenBalances, type TokenBalance } from "@/lib/useTokenDeploy";
 import { getNativeCoinForNetwork, getTokenCoinForNetwork } from "@/lib/coins";
-import { localTokenStorageKey } from "@/lib/networkConfig";
+import { localTokenStorageKey, NETWORK_CHAIN_IDS } from "@/lib/networkConfig";
 import {
   addTokenToWallet,
   getEthereumProvider,
@@ -81,6 +81,8 @@ function qrUrl(address: string) {
 export default function MyWallet() {
   const navigate = useNavigate();
   const { network, networkType, customRpcUrl } = useNetwork();
+  const testnetRpcUrl = proxyRpcUrl(undefined, "testnet");
+  const testnetNativeCoin = getNativeCoinForNetwork("testnet");
   const isEmbedded = (() => {
     try {
       return window.self !== window.top;
@@ -205,6 +207,18 @@ export default function MyWallet() {
     toast.success(`${label} copied`);
   };
 
+  const copyTestnetSetup = async () => {
+    const setup = [
+      "Network name: GYDS Private Testnet",
+      `RPC URL: ${testnetRpcUrl}`,
+      `Chain ID: ${NETWORK_CHAIN_IDS.testnet}`,
+      `Currency symbol: ${testnetNativeCoin.symbol}`,
+      `Currency decimals: ${testnetNativeCoin.decimals}`,
+    ].join("\n");
+    await navigator.clipboard.writeText(setup);
+    toast.success("Private Testnet setup copied");
+  };
+
   const requestTestnetFunds = async () => {
     if (networkType !== "testnet" || !address) return;
     setRequestingTestFunds(true);
@@ -260,11 +274,12 @@ export default function MyWallet() {
       }
       const selectedRpc = networkType === "custom" ? customRpcUrl.trim() : proxyRpcUrl(undefined, networkType);
       if (!selectedRpc) throw new Error("Set a custom RPC URL before adding this asset.");
+      const walletRpcUrls = getRpcUrls(selectedRpc);
       const targetChainId = network.chainId === null
         ? (await new JsonRpcProvider(selectedRpc).getNetwork()).chainId
         : BigInt(network.chainId);
-      if (networkType === "mainnet") {
-        await switchToGydsNetwork(provider, getRpcUrls(selectedRpc));
+      if (networkType !== "custom") {
+        await switchToGydsNetwork(provider, walletRpcUrls, networkType);
       } else {
         try {
           await provider.request({
@@ -280,7 +295,7 @@ export default function MyWallet() {
             params: [{
               chainId: `0x${targetChainId.toString(16)}`,
               chainName: network.name,
-              rpcUrls: [selectedRpc],
+              rpcUrls: walletRpcUrls,
               nativeCurrency: { name: native.name, symbol: native.symbol, decimals: native.decimals },
             }],
           });
@@ -496,7 +511,7 @@ export default function MyWallet() {
             <div className="mb-4">
               <h2 className="text-base font-semibold">Add coins to your wallet</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Token imports use your wallet’s Web3 request. Your wallet must support token imports and be on GYDS Mainnet.
+                Wallet actions target {network.name}. If automatic network setup is unavailable, use the manual details below.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -525,6 +540,41 @@ export default function MyWallet() {
               ))}
             </div>
           </section>
+        )}
+
+        {address && networkType === "testnet" && (
+          <details className="rounded-2xl border border-border bg-card p-5">
+            <summary className="cursor-pointer text-sm font-semibold">Manual Private Testnet setup</summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Use these values if your wallet cannot add the network automatically. This local chain is isolated and its test funds have no real-world value.
+            </p>
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div className="rounded-lg bg-secondary/30 p-3">
+                <p className="text-xs text-muted-foreground">Network name</p>
+                <p className="mt-1 font-medium">GYDS Private Testnet</p>
+              </div>
+              <div className="rounded-lg bg-secondary/30 p-3">
+                <p className="text-xs text-muted-foreground">Chain ID</p>
+                <p className="mt-1 font-mono">{NETWORK_CHAIN_IDS.testnet}</p>
+              </div>
+              <div className="rounded-lg bg-secondary/30 p-3 sm:col-span-2">
+                <p className="text-xs text-muted-foreground">RPC URL</p>
+                <p className="mt-1 break-all font-mono text-xs">{testnetRpcUrl}</p>
+              </div>
+              <div className="rounded-lg bg-secondary/30 p-3">
+                <p className="text-xs text-muted-foreground">Currency</p>
+                <p className="mt-1 font-medium">{testnetNativeCoin.symbol} · {testnetNativeCoin.decimals} decimals</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => void copy(testnetRpcUrl, "Testnet RPC URL")} className="gap-1.5">
+                <Copy className="h-3.5 w-3.5" /> Copy RPC URL
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void copyTestnetSetup()} className="gap-1.5">
+                <Copy className="h-3.5 w-3.5" /> Copy all settings
+              </Button>
+            </div>
+          </details>
         )}
 
         {!address ? (
