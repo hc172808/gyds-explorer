@@ -169,11 +169,6 @@ router.post("/faucet", async (req, res) => {
     res.status(400).json({ error: "Enter a valid EVM wallet address." });
     return;
   }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(TGYD_TOKEN_ADDRESS)) {
-    res.status(503).json({ error: "The Testnet TGYD contract address has not been configured on the API server." });
-    return;
-  }
-
   const walletKey = address.toLowerCase();
   if (inFlight.has(walletKey)) {
     res.status(429).json({ error: "A faucet claim for this wallet is already processing." });
@@ -222,47 +217,53 @@ router.post("/faucet", async (req, res) => {
       throw new Error("The private Testnet faucet account is unavailable or is not unlocked on the local node.");
     }
 
-    const tokenCode = await rpc("eth_getCode", [TGYD_TOKEN_ADDRESS, "latest"]);
-    if (typeof tokenCode !== "string" || tokenCode === "0x" || tokenCode === "0x0") {
-      throw new Error("TGYD is not deployed on the current Testnet chain. The admin wallet must deploy it before faucet claims resume.");
-    }
-
-    const symbolData = await rpc("eth_call", [{
-      to: TGYD_TOKEN_ADDRESS,
-      data: TGYD_INTERFACE.encodeFunctionData("symbol"),
-    }, "latest"]);
-    if (typeof symbolData !== "string" || TGYD_INTERFACE.decodeFunctionResult("symbol", symbolData)[0] !== "TGYD") {
-      throw new Error("The configured Testnet token contract is not TGYD.");
-    }
-
-    const tokenClaimData = TGYD_INTERFACE.encodeFunctionData("claimFaucet", [address]);
-    try {
-      await rpc("eth_call", [{
-        from: faucetAddress,
-        to: TGYD_TOKEN_ADDRESS,
-        data: tokenClaimData,
-      }, "latest"]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (/cooldown/i.test(message)) {
-        throw new Error("This wallet has already claimed TGYD in the past 24 hours.");
-      }
-      if (/cap|supply/i.test(message)) {
-        if (reservationId) {
-          await finishClaim(walletKey, reservationId);
-          reservationId = null;
+    let tokenClaimData: string | null = null;
+    let warning: string | undefined;
+    if (!/^0x[a-fA-F0-9]{40}$/.test(TGYD_TOKEN_ADDRESS)) {
+      warning = "100 TGYDS will be sent for gas. Deploy the Testnet TGYD contract to enable token claims.";
+    } else {
+      const tokenCode = await rpc("eth_getCode", [TGYD_TOKEN_ADDRESS, "latest"]);
+      if (typeof tokenCode !== "string" || tokenCode === "0x" || tokenCode === "0x0") {
+        warning = "100 TGYDS will be sent for gas. TGYD is not deployed on this private chain yet.";
+      } else {
+        const symbolData = await rpc("eth_call", [{
+          to: TGYD_TOKEN_ADDRESS,
+          data: TGYD_INTERFACE.encodeFunctionData("symbol"),
+        }, "latest"]);
+        if (typeof symbolData !== "string" || TGYD_INTERFACE.decodeFunctionResult("symbol", symbolData)[0] !== "TGYD") {
+          warning = "100 TGYDS will be sent for gas. The configured TGYD address is not a valid Testnet TGYD contract.";
+        } else {
+          tokenClaimData = TGYD_INTERFACE.encodeFunctionData("claimFaucet", [address]);
+          try {
+            await rpc("eth_call", [{
+              from: faucetAddress,
+              to: TGYD_TOKEN_ADDRESS,
+              data: tokenClaimData,
+            }, "latest"]);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            if (/cooldown/i.test(message)) {
+              throw new Error("This wallet has already claimed TGYD in the past 24 hours.");
+            }
+            if (/cap|supply/i.test(message)) {
+              if (reservationId) {
+                await finishClaim(walletKey, reservationId);
+                reservationId = null;
+              }
+              const resetQueued = await queueTestnetReset("tgyd-supply-exhausted");
+              if (resetQueued) {
+                res.status(202).json({
+                  error: "The TGYD supply cap is exhausted. A Testnet-only reset has been queued; the admin wallet must redeploy TGYD before claims resume.",
+                  resetQueued: true,
+                });
+                return;
+              }
+              throw new Error("The TGYD supply cap is exhausted. Automatic reset is not ready on this server; operator action is required.");
+            }
+            throw new Error("The TGYD faucet contract is not ready to issue a claim.");
+          }
         }
-        const resetQueued = await queueTestnetReset("tgyd-supply-exhausted");
-        if (resetQueued) {
-          res.status(202).json({
-            error: "The TGYD supply cap is exhausted. A Testnet-only reset has been queued; the admin wallet must redeploy TGYD before claims resume.",
-            resetQueued: true,
-          });
-          return;
-        }
-        throw new Error("The TGYD supply cap is exhausted. Automatic reset is not ready on this server; operator action is required.");
       }
-      throw new Error("The TGYD faucet contract is not ready to issue a claim.");
     }
 
     const [balanceHex, gasPriceHex] = await Promise.all([
@@ -303,19 +304,20 @@ router.post("/faucet", async (req, res) => {
     anyTransactionSent = true;
 
     let tgydTransactionHash: string | null = null;
-    let warning: string | undefined;
-    try {
-      const tokenHash = await rpc("eth_sendTransaction", [{
-        from: faucetAddress,
-        to: TGYD_TOKEN_ADDRESS,
-        data: tokenClaimData,
-        gas: "0x186a0",
-        gasPrice: `0x${gasPrice.toString(16)}`,
-      }]);
-      if (!validTxHash(tokenHash)) throw new Error("The Testnet node did not return a valid TGYD transaction hash.");
-      tgydTransactionHash = tokenHash;
-    } catch {
-      warning = "100 TGYDS was sent, but the TGYD transaction failed. The daily claim is used; contact the Testnet operator.";
+    if (tokenClaimData) {
+      try {
+        const tokenHash = await rpc("eth_sendTransaction", [{
+          from: faucetAddress,
+          to: TGYD_TOKEN_ADDRESS,
+          data: tokenClaimData,
+          gas: "0x186a0",
+          gasPrice: `0x${gasPrice.toString(16)}`,
+        }]);
+        if (!validTxHash(tokenHash)) throw new Error("The Testnet node did not return a valid TGYD transaction hash.");
+        tgydTransactionHash = tokenHash;
+      } catch {
+        warning = "100 TGYDS was sent, but the TGYD transaction failed. The daily claim is used; contact the Testnet operator.";
+      }
     }
 
     await finishClaim(walletKey, reservationId, new Date());

@@ -171,6 +171,10 @@ else
   GETH_ARGS+=(--syncmode "${REPLIT_LITE_SYNC_MODE:-full}" --gcmode full --maxpeers 10)
 fi
 
+if [ "${REPLIT_NODE_PRIVATE:-0}" = "1" ]; then
+  GETH_ARGS+=(--nodiscover --maxpeers 0)
+fi
+
 if [ "${MINE,,}" = "true" ] || [ "${MINE}" = "1" ] || [ "${MINE,,}" = "yes" ]; then
   GETH_ARGS+=(
     --mine

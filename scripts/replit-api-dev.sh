@@ -12,6 +12,14 @@ NODE_PIDS=()
 export REPLIT_CHAIN_ID="${REPLIT_CHAIN_ID:-198281}"
 export REPLIT_NETWORK_ID="${REPLIT_NETWORK_ID:-${REPLIT_CHAIN_ID}}"
 export GYDS_RPC_MODE="${GYDS_RPC_MODE:-local}"
+USE_MOCK_NODES="${REPLIT_USE_MOCK_NODES:-}"
+if [ -z "${USE_MOCK_NODES}" ]; then
+  if [ -x "${ROOT_DIR}/.replit-node/bin/geth" ] || command -v geth >/dev/null 2>&1; then
+    USE_MOCK_NODES=0
+  else
+    USE_MOCK_NODES=1
+  fi
+fi
 
 cleanup() {
   trap - EXIT INT TERM
@@ -25,7 +33,7 @@ trap cleanup EXIT INT TERM
 
 if [ "${REPLIT_NODE_EXTERNAL:-0}" != "1" ]; then
   STATE_FILE="${REPLIT_TEST_STATE_FILE:-${ROOT_DIR}/.replit-node/test-network/state.json}"
-  if [ "${REPLIT_USE_MOCK_NODES:-1}" = "1" ]; then
+  if [ "${USE_MOCK_NODES}" = "1" ]; then
     node "${ROOT_DIR}/scripts/replit-test-node.mjs" --type rpc --port "${RPC_PORT}" --state "${STATE_FILE}" &
     NODE_PIDS+=("$!")
     node "${ROOT_DIR}/scripts/replit-test-node.mjs" --type lite --port "${LITE_RPC_PORT}" --state "${STATE_FILE}" &
@@ -35,12 +43,21 @@ if [ "${REPLIT_NODE_EXTERNAL:-0}" != "1" ]; then
   else
     (
       cd "${ROOT_DIR}"
-      REPLIT_NODE_TYPE="${REPLIT_NODE_TYPE:-rpc}" \
+      REPLIT_NODE_TYPE="rpc" \
+        REPLIT_NODE_DIR="${REPLIT_PRIVATE_TESTNET_NODE_DIR:-${ROOT_DIR}/.replit-node/private-testnet}" \
+        REPLIT_CHAIN_ID="198281" \
+        REPLIT_NETWORK_ID="198281" \
+        REPLIT_HTTP_ADDR="127.0.0.1" \
+        REPLIT_WS_ADDR="127.0.0.1" \
+        REPLIT_NODE_PRIVATE="1" \
+        REPLIT_NODE_MINE="true" \
         REPLIT_RPC_PORT="${RPC_PORT}" \
         bash scripts/replit-node.sh
     ) &
     NODE_PIDS+=("$!")
-    export REPLIT_RPC_URL="${REPLIT_RPC_URL:-http://127.0.0.1:${RPC_PORT}}"
+    export REPLIT_RPC_URL="http://127.0.0.1:${RPC_PORT}"
+    export GYDS_PRIVATE_TESTNET_RPC_URL="${REPLIT_RPC_URL}"
+    export GYDS_TESTNET_FAUCET_RPC_URL="${REPLIT_RPC_URL}"
   fi
 fi
 

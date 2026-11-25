@@ -1,4 +1,5 @@
 - [Replit local RPC gateway](local-rpc-gateway.md) — validate GYDS chain identity before upstream use and label deterministic mock fallback responses.
+- [Private local Testnet](private-local-testnet.md) — chain ID 198281 is isolated from public GYDS Testnet; never treat its balances or contracts as public.
 - [npm workspace migration](npm-workspace-migration.md) — npm cannot resolve pnpm catalog or workspace protocols; use concrete versions and local file links.
 - [npm lockfile registry refresh](npm-lockfile-registry-refresh.md) — npm preserves stale resolved URLs; full lockfile regeneration is required to remove internal registries.
 - [Replit package firewall behavior](replit-package-firewall.md) — treat firewall 404s as security blocks, not stale URLs; avoid public-registry overrides and defer optional tooling.

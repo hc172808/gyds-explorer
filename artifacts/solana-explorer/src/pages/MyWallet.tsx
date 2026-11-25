@@ -225,13 +225,20 @@ export default function MyWallet() {
         error?: string;
       };
       if (!response.ok) throw new Error(result.error || "Could not request testnet funds.");
-      if (result.warning || !result.tgydTransactionHash) {
-        toast.error("Partial Testnet claim", {
-          description: `${result.nativeAmount ?? "100"} ${result.nativeSymbol ?? "TGYDS"} was sent. ${result.warning ?? "The TGYD transaction was not confirmed."}`,
-        });
-      } else {
+      if (!result.nativeTransactionHash) {
+        throw new Error("The faucet did not return a native GYDS transaction.");
+      }
+      if (result.tgydTransactionHash) {
         toast.success(`${result.nativeAmount} ${result.nativeSymbol} and ${result.tgydAmount} ${result.tgydSymbol} sent`, {
           description: `TGYDS transaction: ${result.nativeTransactionHash}\nTGYD transaction: ${result.tgydTransactionHash}`,
+        });
+      } else if (result.warning?.toLowerCase().includes("transaction failed")) {
+        toast.error("Partial Testnet claim", {
+          description: `${result.nativeAmount ?? "100"} ${result.nativeSymbol ?? "TGYDS"} was sent. ${result.warning}`,
+        });
+      } else {
+        toast.success(`${result.nativeAmount ?? "100"} ${result.nativeSymbol ?? "TGYDS"} sent`, {
+          description: `${result.warning ?? "Testnet gas funds were sent."}\nTransaction: ${result.nativeTransactionHash}`,
         });
       }
       window.setTimeout(() => void loadBalances(), 6000);
@@ -545,14 +552,14 @@ export default function MyWallet() {
                   <div>
                     <h2 className="text-sm font-semibold">Testnet daily faucet</h2>
                     <p className="mt-1 max-w-xl text-xs text-muted-foreground">
-                      Claim 100 TGYDS and 100 TGYD once per wallet every 24 hours. These are Testnet-only tokens with no real-world value.
-                      Claims pause if the faucet reserve or TGYD supply cap runs out; the chain will not reset automatically.
+                      Claim 100 native TGYDS for gas once per wallet every 24 hours. After the Testnet TGYD token is deployed and configured, claims include 100 TGYD too.
+                      These are isolated Testnet assets with no real-world value.
                     </p>
                   </div>
                 </div>
                 <Button onClick={() => void requestTestnetFunds()} disabled={requestingTestFunds} className="gap-2">
                   {requestingTestFunds ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}
-                  {requestingTestFunds ? "Claiming…" : "Get 100 TGYDS + 100 TGYD"}
+                  {requestingTestFunds ? "Claiming…" : "Get testnet funds"}
                 </Button>
               </section>
             )}
