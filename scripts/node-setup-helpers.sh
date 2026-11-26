@@ -24,6 +24,20 @@ gyds_network_default_port() {
   esac
 }
 
+gyds_normalize_enode_output() {
+  local value="${1:-}"
+  value="${value//$'\r'/}"
+  if [[ "${#value}" -ge 2 && "$value" == \"*\" ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s\n' "$value"
+}
+
+gyds_is_valid_enode_url() {
+  local value="${1:-}"
+  [[ "$value" =~ ^enode://[0-9a-fA-F]{128}@([[:alnum:].-]+|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}(\?[^[:space:]]*)?$ ]]
+}
+
 gyds_normalize_uint() {
   local value="${1:-}"
   [[ "$value" =~ ^[0-9]+$ ]] || return 1

@@ -43,6 +43,24 @@ test("network selection maps to the documented chain IDs and node ports", () => 
   assert.notEqual(invalid.status, 0);
 });
 
+test("enode output is unquoted and validated before sharing", () => {
+  const key = "a".repeat(128);
+  const quoted = `"enode://${key}@203.0.113.10:30303?discport=0"\r`;
+  const normalized = runShell('source "$1"; gyds_normalize_enode_output "$2"', [quoted]);
+  assert.equal(normalized.status, 0);
+  assert.equal(normalized.stdout.trim(), `enode://${key}@203.0.113.10:30303?discport=0`);
+
+  const valid = runShell('source "$1"; gyds_is_valid_enode_url "$2"', [
+    normalized.stdout.trim(),
+  ]);
+  assert.equal(valid.status, 0);
+
+  const invalid = runShell('source "$1"; gyds_is_valid_enode_url "$2"', [
+    `enode://abcd@203.0.113.10:30303`,
+  ]);
+  assert.notEqual(invalid.status, 0);
+});
+
 test("node verifier applies Testnet chain identity from NETWORK_ENV", async (context) => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "gyds-verify-test-"));
   context.after(() => rmSync(tempDir, { recursive: true, force: true }));

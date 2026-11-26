@@ -1340,6 +1340,10 @@ MGMT
 install -o root -g root -m 0755 \
   "${SCRIPT_DIR}/scripts/gyds-enode" \
   "/usr/local/bin/${TOOL_PREFIX}-enode"
+install -d -o root -g root -m 0755 /usr/local/lib/gyds
+install -o root -g root -m 0644 \
+  "${SCRIPT_DIR}/scripts/node-setup-helpers.sh" \
+  /usr/local/lib/gyds/node-setup-helpers.sh
 
 cat > "/usr/local/bin/${TOOL_PREFIX}-peers" <<'MGMT'
 #!/bin/bash
@@ -1352,6 +1356,7 @@ cat > "/usr/local/bin/${TOOL_PREFIX}-admin-check" <<'MGMT'
 #!/usr/bin/env bash
 set -euo pipefail
 
+source /usr/local/lib/gyds/node-setup-helpers.sh
 source /etc/gyds/node.env
 IPC_PATH="${DATA_DIR:-/var/lib/gyds}/geth.ipc"
 
@@ -1367,9 +1372,10 @@ ADMIN_TYPE="$(geth attach --exec 'typeof admin' "${IPC_PATH}" 2>/dev/null | tr -
   exit 1
 }
 
-ENODE="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>/dev/null | tr -d '\r')"
-[ -n "${ENODE}" ] || {
-  echo "ERROR: admin.nodeInfo.enode returned no value." >&2
+ENODE_OUTPUT="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>/dev/null)"
+ENODE="$(gyds_normalize_enode_output "${ENODE_OUTPUT}")"
+gyds_is_valid_enode_url "${ENODE}" || {
+  echo "ERROR: admin.nodeInfo.enode returned an invalid enode URL." >&2
   exit 1
 }
 

@@ -6,6 +6,15 @@ if [ "${EUID}" -ne 0 ]; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HELPERS_FILE="${SCRIPT_DIR}/node-setup-helpers.sh"
+[ -r "${HELPERS_FILE}" ] || HELPERS_FILE="/usr/local/lib/gyds/node-setup-helpers.sh"
+[ -r "${HELPERS_FILE}" ] || {
+  echo "GYDS node setup helpers are missing; rerun node-setup.sh." >&2
+  exit 1
+}
+source "${HELPERS_FILE}"
+
 source /etc/gyds/node.env
 DATA_DIR="${DATA_DIR:-/var/lib/gyds}"
 IPC_PATH="${DATA_DIR}/geth.ipc"
@@ -17,15 +26,18 @@ fi
 
 for _ in $(seq 1 30); do
   if systemctl is-active --quiet gyds-node && [ -S "${IPC_PATH}" ]; then
-    ENODE="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>&1)" || {
+    ENODE_OUTPUT="$(geth attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}" 2>&1)" || {
       echo "Failed to read enode from the Geth IPC socket:" >&2
-      echo "${ENODE}" >&2
+      echo "${ENODE_OUTPUT}" >&2
       exit 1
     }
-    if [ -n "${ENODE}" ]; then
-      echo "${ENODE}"
+    ENODE="$(gyds_normalize_enode_output "${ENODE_OUTPUT}")"
+    if gyds_is_valid_enode_url "${ENODE}"; then
+      printf '%s\n' "${ENODE}"
       exit 0
     fi
+    echo "Geth returned an invalid enode URL; refusing to print it." >&2
+    exit 1
   fi
   sleep 1
 done

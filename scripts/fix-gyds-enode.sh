@@ -12,6 +12,7 @@ GETH_VERSION="1.13.15-c5ba367e"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR=""
 STAGED_GETH=""
+source "${SCRIPT_DIR}/node-setup-helpers.sh"
 
 cleanup() {
   if [ -n "${TMP_DIR}" ] && [ -d "${TMP_DIR}" ]; then
@@ -158,6 +159,10 @@ fi
 
 # Refresh the command itself when this script is run from the project checkout.
 if [ -f "${SCRIPT_DIR}/gyds-enode" ]; then
+  install -d -o root -g root -m 0755 /usr/local/lib/gyds
+  install -o root -g root -m 0644 \
+    "${SCRIPT_DIR}/node-setup-helpers.sh" \
+    /usr/local/lib/gyds/node-setup-helpers.sh
   install -o root -g root -m 0755 \
     "${SCRIPT_DIR}/gyds-enode" /usr/local/bin/gyds-enode
 fi
@@ -181,9 +186,10 @@ if [ "${READY}" -ne 1 ]; then
   fail "Node startup failed. Chain data and keystore were left untouched."
 fi
 
-ENODE="$("${GETH_BIN}" attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}")" ||
+ENODE_OUTPUT="$("${GETH_BIN}" attach --exec 'admin.nodeInfo.enode' "${IPC_PATH}")" ||
   fail "Node is running, but Geth could not return its enode over IPC."
-[ -n "${ENODE}" ] || fail "Geth returned an empty enode URL."
+ENODE="$(gyds_normalize_enode_output "${ENODE_OUTPUT}")"
+gyds_is_valid_enode_url "${ENODE}" || fail "Geth returned an invalid enode URL."
 
 echo
 echo "GYDS node is running."
