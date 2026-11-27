@@ -17,6 +17,9 @@
 //     --decimals 18 \
 //     --deployer-address 0xYOUR_PUBLIC_WALLET_ADDRESS
 //
+// GYD starts with zero supply and can be minted by its owner on demand:
+//   --name "GYD Stablecoin" --symbol GYD --supply 0 --decimals 6 --mintable true
+//
 // Or use .env / environment variables:
 //   TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_DECIMALS, DEPLOYER_ADDRESS
 //
@@ -56,8 +59,12 @@ if (!/^0x[a-fA-F0-9]{40}$/.test(DEPLOYER_ADDRESS)) {
   console.error("Error: --deployer-address (or DEPLOYER_ADDRESS in .env) must be a public EVM wallet address.");
   process.exit(1);
 }
-if (!/^\d+$/.test(TOKEN_SUPPLY) || BigInt(TOKEN_SUPPLY) <= 0n) {
-  console.error("Error: --supply must be a positive whole-token amount.");
+const isGyd = TOKEN_SYMBOL.trim().toUpperCase() === "GYD";
+if (
+  !/^\d+$/.test(TOKEN_SUPPLY) ||
+  (BigInt(TOKEN_SUPPLY) === 0n && !(isGyd && MINTABLE))
+) {
+  console.error("Error: --supply must be a positive whole-token amount; zero is allowed only for mintable GYD.");
   process.exit(1);
 }
 if (!/^\d+$/.test(TOKEN_DECIMALS) || Number(TOKEN_DECIMALS) > 18) {
@@ -72,8 +79,7 @@ if (TOKEN_SYMBOL.trim().toUpperCase() === "TGYD") {
   console.error("Error: TGYD is Testnet-only; this helper targets GYDS Mainnet.");
   process.exit(1);
 }
-if (TOKEN_SYMBOL.trim().toUpperCase() === "GYD" &&
-    (Number(TOKEN_DECIMALS) !== 6 || !MINTABLE)) {
+if (isGyd && (Number(TOKEN_DECIMALS) !== 6 || !MINTABLE)) {
   console.error("Error: GYD must use 6 decimals and owner-controlled minting.");
   process.exit(1);
 }

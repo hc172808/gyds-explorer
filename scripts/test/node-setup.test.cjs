@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const helpers = path.resolve(__dirname, "../node-setup-helpers.sh");
+const setupScript = path.resolve(__dirname, "../../node-setup.sh");
 const nodeVerify = path.resolve(__dirname, "../../node-verify.sh");
 
 function runShell(command, args = []) {
@@ -21,15 +22,27 @@ test("unsigned supply parsing strips leading zeroes without arithmetic overflow"
   assert.equal(normalized.status, 0);
   assert.equal(normalized.stdout.trim(), "10");
 
-  const withinCap = runShell('source "$1"; gyds_uint_le "$2" 1000000000', [
-    "18446744073709551617",
+  const atMainnetCap = runShell('source "$1"; gyds_uint_le "$2" 3000000000', [
+    "3000000000",
   ]);
-  assert.notEqual(withinCap.status, 0);
+  assert.equal(atMainnetCap.status, 0);
 
-  const validLeadingZeroes = runShell('source "$1"; gyds_uint_le "$2" 1000000000', [
+  const aboveMainnetCap = runShell('source "$1"; gyds_uint_le "$2" 3000000000', [
+    "3000000001",
+  ]);
+  assert.notEqual(aboveMainnetCap.status, 0);
+
+  const validLeadingZeroes = runShell('source "$1"; gyds_uint_le "$2" 3000000000', [
     "000000000000001000000000",
   ]);
   assert.equal(validLeadingZeroes.status, 0);
+});
+
+test("Mainnet node setup targets exactly 3 billion GYDS", () => {
+  const source = readFileSync(setupScript, "utf8");
+  assert.match(source, /NATIVE_SUPPLY="\$\{NATIVE_SUPPLY:-3000000000\}"/);
+  assert.match(source, /\[ "\$NATIVE_SUPPLY_VALUE" = "3000000000" \]/);
+  assert.match(source, /Mainnet NATIVE_SUPPLY must be exactly 3,000,000,000 GYDS/);
 });
 
 test("network selection maps to the documented chain IDs and node ports", () => {

@@ -425,13 +425,13 @@ verified before a production deployment.
 - [ ] Treat **GYDSChain** as the network's native coin:
   - Full name: `GYDSChain`
   - Symbol: `GYDS`
-  - Requested initial/max supply: `1,000,000,000 GYDS`
+  - Requested mainnet genesis supply target: `3,000,000,000 GYDS`
   - Native decimals: `18` (must be verified against the chain protocol and
     genesis configuration).
 - [ ] Treat **GYD** as a separate token deployed on GYDSChain:
   - Token name: `GYD` or the final approved full name
   - Symbol: `GYD`
-  - Requested supply: `10,000,000,000 GYD`
+  - Initial supply: `0 GYD`, with owner-authorized minting on demand.
   - Intended value: pegged to USD at `1 GYD = 1 USD`, subject to the backing
     and redemption design below.
 - [ ] Do not represent the native GYDS coin as an ERC-20 contract. Its balance
@@ -439,9 +439,11 @@ verified before a production deployment.
 - [ ] Do not invent a GYD contract address. The address only exists after the
       GYD contract is deployed on chain and the deployment transaction
       confirms.
-- [ ] Document whether each supply is a hard cap or an initial allocation:
-  - GYDS: fixed `1B` genesis supply, or a defined emission schedule.
-  - GYD: fixed `10B` cap, or controlled minting against verified reserves.
+- [ ] Document supply policy before mainnet deployment:
+  - GYDS: `3B` configured genesis allocation; changing an initialized chain's
+    supply requires a separate migration decision.
+  - GYD: zero initial supply and owner-authorized minting on demand; the current
+    contract does not enforce a maximum or verify reserves.
 - [ ] Record the smallest unit and display precision for both assets, and use
       integer base units for all balances and supply calculations:
   - GYDS: 18 decimals (`1 GYDS = 1,000,000,000,000,000,000` base units).
@@ -483,14 +485,14 @@ verified before a production deployment.
       VITE_NATIVE_COIN_NAME=GYDSChain
       VITE_NATIVE_COIN_SYMBOL=GYDS
        VITE_NATIVE_COIN_DECIMALS=18
-      VITE_NATIVE_COIN_SUPPLY=1000000000
+      VITE_NATIVE_COIN_SUPPLY=3000000000
        VITE_NATIVE_COIN_LOGO_URL=/assets/gyds-logo.svg
       VITE_NATIVE_COIN_DESCRIPTION=
       VITE_GYD_NAME=GYD
       VITE_GYD_SYMBOL=GYD
        VITE_GYD_DECIMALS=6
-      VITE_GYD_INITIAL_SUPPLY=10000000000
-      VITE_GYD_MAX_SUPPLY=10000000000
+      VITE_GYD_INITIAL_SUPPLY=0
+      VITE_GYD_MAX_SUPPLY=
       VITE_GYD_PEG_CURRENCY=USD
       VITE_GYD_PEG_VALUE=1
       VITE_GYD_TOKEN_ADDRESS=
@@ -518,14 +520,14 @@ verified before a production deployment.
 - [ ] Locate the actual GYDSChain genesis, node, or protocol configuration
       that controls native coin supply. The explorer alone cannot mint or
       change the native coin supply.
-- [ ] Configure or verify the requested `1,000,000,000 GYDS` supply at the
+- [ ] Configure or verify the requested `3,000,000,000 GYDS` supply at the
       protocol level.
 - [ ] Define the initial distribution:
   - Genesis allocation wallet(s).
   - Treasury, validator, faucet, or ecosystem allocations.
   - Vesting and unlock rules, if any.
   - Transaction-fee policy and whether fees are burned or paid to validators.
-- [ ] Decide whether the 1B amount is fixed forever or whether additional
+- [ ] Decide whether the 3B amount is fixed forever or whether additional
       issuance is possible under consensus rules.
 - [ ] Generate and securely record the genesis/deployment artifacts needed by
       validators. Do not store private keys in the repository.
@@ -760,7 +762,8 @@ one server with separate services, data directories, and ports. Keep staging
   - Burning behavior defined for redemption.
   - Ownership and admin roles secured with a multisig or approved custody
       process rather than a personal hot wallet.
-- [ ] Add a hard maximum supply check if GYD must never exceed `10B`.
+- [ ] Define and enforce an on-chain GYD maximum if one is required; the current
+      owner-mintable contract has no maximum supply.
 - [ ] Implement the approved GYD minting model:
   - Minting is on demand only through an authorized on-chain minter role.
   - Admin minting requires a dedicated role, not unrestricted contract owner
@@ -987,7 +990,7 @@ one server with separate services, data directories, and ports. Keep staging
 
 - [ ] The explorer shows the GYDSChain logo, name, symbol, description, chain
       ID, and official links.
-- [ ] The network's native supply is verified as `1B GYDS` or the approved
+- [ ] The network's native supply is verified as `3B GYDS` or the approved
       final tokenomics.
 - [ ] GYD's final name, symbol, decimals, supply/cap, peg wording, and backing
       model are approved.
@@ -1659,14 +1662,14 @@ protocol balances have been erased.
 
 - [x] Ensure `deploy.sh` exports the database URL it just wrote to `.env` so
       the Drizzle schema push can connect; shell and dotenv handoff checks pass.
-- [x] Run the app's Git updater on the 10th of each month at 03:00
+- [x] Run the app's Git updater on the 15th of each month at 03:00
       America/Guyana time; the Admin switch still controls whether updates run.
 - [x] Pull the full Git branch, install application dependencies, build the
       web/API apps, restart configured services, and check health monthly.
 - [x] Add Ubuntu package-list refresh and non-removing package upgrades to
       scheduled runs; report reboot-required state without rebooting.
 - [x] Align the Admin display, API responses, setup guide and systemd timer
-      with the 10th-of-month schedule; scheduled runs refresh an old timer.
+      with the 15th-of-month schedule; scheduled runs refresh an old timer.
 - [x] Check saved RPC nodes server-side every five seconds and show their
       connection status only in Admin settings.
 - [x] Use GYDS=18 decimals and GYD=6 in the chain spec, node setup defaults,

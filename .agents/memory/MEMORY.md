@@ -15,5 +15,6 @@
 - [Admin wallet provider selection](admin-wallet-provider-selection.md) — wallet actions must use the injected EVM provider exposing the authenticated admin account.
 - [Geth flag checks under pipefail](gyds-geth-flag-checks.md) — capture help output before checking options; `grep -q` can cause false negatives in strict pipelines.
 - [GYD mint compatibility](gyd-mint-compatibility.md) — preserve whole-token mint semantics for existing contracts; use a separate raw-unit method for fractional GYD.
+- [GYDS mainnet supply](gyds-token-supply.md) — mainnet genesis targets 3B native GYDS; an existing chain's supply cannot be changed by rebuilding.
 - [Testnet DEX scope](dex-testnet-scope.md) — keep swaps testnet-only and never treat a testnet “USDT” ticker as verified Tether.
 - [Bun override limits](bun-overrides.md) — Bun can ignore nested or version-scoped overrides; verify resolved packages in both lockfiles.

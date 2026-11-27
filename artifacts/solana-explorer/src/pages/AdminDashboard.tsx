@@ -1774,7 +1774,7 @@ function AutoUpdateSettingsTab() {
           <div>
             <h2 className="text-base font-semibold">Automatic software updates</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              On the 10th, upgrade Ubuntu packages, pull the latest Git code, rebuild the explorer and API, restart services, and check health. The server will not reboot automatically.
+              On the 15th, upgrade Ubuntu packages, pull the latest Git code, rebuild the explorer and API, restart services, and check health. The server will not reboot automatically.
             </p>
           </div>
         </div>
@@ -1796,7 +1796,7 @@ function AutoUpdateSettingsTab() {
           <Clock3 className="h-4 w-4 text-primary" />
           <div>
             <p className="text-xs text-muted-foreground">Scheduled time</p>
-            <p className="text-sm font-medium">{settings?.schedule ?? "10th of each month at 03:00"}</p>
+            <p className="text-sm font-medium">{settings?.schedule ?? "15th of each month at 03:00"}</p>
             <p className="text-xs text-muted-foreground">{settings?.timeZone ?? "America/Guyana"} time</p>
           </div>
         </div>

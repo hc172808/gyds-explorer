@@ -98,7 +98,7 @@ The deployment and update scripts install a monthly systemd timer. It is
 **disabled by default** and does nothing until an admin enables it in
 **Admin → Auto Updates**. When enabled, the timer applies available Ubuntu
 package upgrades, pulls the latest Git code, rebuilds the web/API apps, restarts
-services, and checks health on the 10th of each month at 03:00
+services, and checks health on the 15th of each month at 03:00
 America/Guyana time. Package upgrades do not remove packages or automatically
 reboot the server; if `/var/run/reboot-required` appears, plan a maintenance
 reboot. A missed run is made up after the server starts again. Inspect the timer

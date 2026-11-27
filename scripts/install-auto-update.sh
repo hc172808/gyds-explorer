@@ -36,7 +36,7 @@ cat > "${UNIT_DIR}/gyds-explorer-auto-update.timer" <<'EOF'
 Description=Run GYDS Explorer updates monthly
 
 [Timer]
-OnCalendar=*-*-10 03:00:00 America/Guyana
+OnCalendar=*-*-15 03:00:00 America/Guyana
 Persistent=true
 AccuracySec=1min
 Unit=gyds-explorer-auto-update.service
@@ -48,5 +48,5 @@ EOF
 systemctl daemon-reload
 systemctl enable gyds-explorer-auto-update.timer
 systemctl restart gyds-explorer-auto-update.timer
-echo "Installed monthly timer: day 10 at 03:00 America/Guyana time."
+echo "Installed monthly timer: day 15 at 03:00 America/Guyana time."
 systemctl list-timers gyds-explorer-auto-update.timer --no-pager

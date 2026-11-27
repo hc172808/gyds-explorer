@@ -127,7 +127,7 @@ HEALTH_STALL_SECONDS="${HEALTH_STALL_SECONDS:-300}"
 #   BOOTNODE_ENODE      alias for MAIN_NODE_ENODE (used by Admin Dashboard)
 #   VALIDATOR_ADDRESS   0x... signing account address (validator only)
 #   NATIVE_DECIMALS     native GYDS precision (must remain 18)
-#   NATIVE_SUPPLY       genesis GYDS allocation (default 1000000000)
+#   NATIVE_SUPPLY       genesis GYDS allocation (default 3000000000)
 #   GYDS_RPC_MODE       local | remote | auto (explorer connection preference)
 #   GYDS_REMOTE_RPC_URL remote RPC URL used by the explorer
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -205,7 +205,7 @@ case "${NETWORK_ENV,,}" in
     NETWORK_ENV="mainnet"
     NATIVE_COIN_NAME="${NATIVE_COIN_NAME:-GYDSChain}"
     NATIVE_COIN_SYMBOL="${NATIVE_COIN_SYMBOL:-GYDS}"
-    NATIVE_SUPPLY="${NATIVE_SUPPLY:-1000000000}"
+    NATIVE_SUPPLY="${NATIVE_SUPPLY:-3000000000}"
     ADMIN_SUPPLY="${ADMIN_SUPPLY:-1000000}"
     NODE_NAME="${NODE_NAME:-gyds-node}"
     ;;
@@ -262,7 +262,8 @@ if [ "$NETWORK_ENV" = "testnet" ]; then
   [ "$NATIVE_SUPPLY_VALUE" -eq 1000000 ] || err "Testnet NATIVE_SUPPLY must be exactly 1,000,000 TGYDS."
   [ "$ADMIN_SUPPLY_VALUE" -eq 5000 ] || err "Testnet ADMIN_SUPPLY must be exactly 5,000 TGYDS."
 else
-  gyds_uint_le "$NATIVE_SUPPLY_VALUE" 1000000000 || err "NATIVE_SUPPLY cannot exceed the 1,000,000,000 GYDS supply target."
+  gyds_uint_le "$NATIVE_SUPPLY_VALUE" 3000000000 || err "NATIVE_SUPPLY cannot exceed the 3,000,000,000 GYDS supply target."
+  [ "$NATIVE_SUPPLY_VALUE" = "3000000000" ] || err "Mainnet NATIVE_SUPPLY must be exactly 3,000,000,000 GYDS; update node.env before initializing."
 fi
 gyds_uint_le "$ADMIN_SUPPLY_VALUE" "$NATIVE_SUPPLY_VALUE" || err "ADMIN_SUPPLY cannot exceed NATIVE_SUPPLY."
 ZEROS="$(printf '0%.0s' $(seq 1 "${NATIVE_DECIMALS}"))"

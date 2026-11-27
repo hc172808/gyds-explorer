@@ -11,7 +11,7 @@ import { requireAdmin, type AdminRequest } from "../middlewares/requireAdmin";
 
 const router = Router();
 const AUTO_UPDATE_KEY = "auto_update_enabled";
-const AUTO_UPDATE_SCHEDULE = "10th of each month at 03:00";
+const AUTO_UPDATE_SCHEDULE = "15th of each month at 03:00";
 const AUTO_UPDATE_TIME_ZONE = "America/Guyana";
 
 function makeResponse(enabled: boolean, updatedAt: Date | null) {

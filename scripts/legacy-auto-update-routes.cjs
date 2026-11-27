@@ -4,7 +4,7 @@ const { startNodeHealthMonitor } = require("./node-health-monitor.cjs");
 
 const SETTING_KEY = "auto_update_enabled";
 const TIMER_FILE = "/etc/systemd/system/gyds-explorer-auto-update.timer";
-const SCHEDULE = "10th of each month at 03:00";
+const SCHEDULE = "15th of each month at 03:00";
 const TIME_ZONE = "America/Guyana";
 
 module.exports = function registerAutoUpdateRoutes({ app, pool, requireAdmin }) {

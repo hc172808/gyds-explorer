@@ -20,9 +20,11 @@
     "replit:dev": "bash scripts/replit-dev.sh",
     "typecheck:libs": "tsc --build",
     "typecheck": "bash scripts/typecheck-all.sh",
-    "test": "npm run test --workspace=@workspace/solana-explorer && npm run test:indexer && npm run test:node-setup",
+    "test": "npm run test --workspace=@workspace/solana-explorer && npm run test:indexer && npm run test:node-setup && npm run test:auto-update && npm run test:deploy-token",
     "test:indexer": "node --test indexer/test/*.test.js",
     "test:node-setup": "node --test scripts/test/node-setup.test.cjs",
+    "test:auto-update": "node --test scripts/test/auto-update.test.cjs",
+    "test:deploy-token": "node --test scripts/test/deploy-token.test.cjs",
     "check:decimals": "node scripts/check-decimals.mjs",
     "compile:tgyd-token": "node scripts/compile-tgyd-token.mjs"
   },

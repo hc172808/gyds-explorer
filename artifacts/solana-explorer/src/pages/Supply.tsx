@@ -40,7 +40,7 @@ const Supply = () => {
             { label: "Token Symbol", value: nativeCoin.symbol },
             { label: "Decimals", value: String(nativeCoin.decimals) },
             { label: "Type", value: "Native Coin" },
-            { label: "Configured Genesis Supply", value: networkType === "testnet" ? "1,000,000 TGYDS" : networkType === "mainnet" ? "1,000,000,000 GYDS" : "Not available from RPC" },
+            { label: "Genesis Supply Target", value: networkType === "testnet" ? "1,000,000 TGYDS" : networkType === "mainnet" ? "3,000,000,000 GYDS (fresh genesis only)" : "Not available from RPC" },
             ...(networkType === "testnet" ? [{ label: "Admin Genesis Allocation", value: "5,000 TGYDS (configured in the node environment)" }] : []),
             { label: "Current Block Height", value: isLoading ? "..." : stats?.blockNumber.toLocaleString() ?? "—" },
             { label: "Chain ID", value: String(network.chainId ?? (isLoading ? "..." : (stats?.chainId ?? "—"))) },
