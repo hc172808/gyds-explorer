@@ -51,6 +51,14 @@ test("Mainnet node setup targets exactly 3 billion GYDS", () => {
   assert.ok(files.indexOf('"/etc/gyds/node.env"') < files.indexOf('"${SCRIPT_DIR}/.env"'));
 });
 
+test("node signing password files are readable by the Geth service group", () => {
+  const source = readFileSync(setupScript, "utf8");
+  assert.match(source, /chown root:gyds "\$\{CONFIG_DIR\}\/account-password\.txt"/);
+  assert.match(source, /chmod 640 "\$\{CONFIG_DIR\}\/account-password\.txt"/);
+  assert.match(source, /chown root:gyds "\$\{CONFIG_DIR\}\/validator-password\.txt"/);
+  assert.match(source, /chmod 640 "\$\{CONFIG_DIR\}\/validator-password\.txt"/);
+});
+
 test("network selection maps to the documented chain IDs and node ports", () => {
   const result = runShell(
     'source "$1"; printf "%s %s %s %s %s\\n" "$(gyds_network_chain_id testnet)" "$(gyds_network_default_port testnet rpc)" "$(gyds_network_default_port testnet ws)" "$(gyds_network_default_port testnet p2p)" "$(gyds_network_default_port testnet metrics)"',

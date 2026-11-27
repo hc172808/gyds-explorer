@@ -537,7 +537,8 @@ if [ "$NODE_TYPE" = "validator" ]; then
   # The node service signs blocks with a local geth keystore account. Never
   # accept an address that is not actually available to the service.
   printf '%s\n' "${VALIDATOR_PASSWORD}" > "${CONFIG_DIR}/validator-password.txt"
-  chmod 600 "${CONFIG_DIR}/validator-password.txt"
+  chown root:gyds "${CONFIG_DIR}/validator-password.txt"
+  chmod 640 "${CONFIG_DIR}/validator-password.txt"
 
   if [ -z "${VALIDATOR_ADDRESS}" ]; then
     if geth account list --datadir "${DATA_DIR}" 2>/dev/null | grep -qE '0x[a-fA-F0-9]{40}'; then
@@ -562,7 +563,8 @@ if [ "$NODE_TYPE" = "main" ]; then
 
   ACCOUNT_PASSWORD=$(openssl rand -base64 16)
   echo "${ACCOUNT_PASSWORD}" > "${CONFIG_DIR}/account-password.txt"
-  chmod 600 "${CONFIG_DIR}/account-password.txt"
+  chown root:gyds "${CONFIG_DIR}/account-password.txt"
+  chmod 640 "${CONFIG_DIR}/account-password.txt"
 
   ACCOUNT_OUTPUT=$(geth account new --datadir "${DATA_DIR}" --password "${CONFIG_DIR}/account-password.txt" 2>&1)
   MAIN_ACCOUNT=$(echo "${ACCOUNT_OUTPUT}" | grep -oE '0x[a-fA-F0-9]{40}' | head -1)
@@ -750,7 +752,8 @@ chmod 600 "${CONFIG_DIR}/node.env"
 # Write validator password file if applicable
 if [ "$NODE_TYPE" = "validator" ] && [ -n "$VALIDATOR_PASSWORD" ]; then
   echo "${VALIDATOR_PASSWORD}" > "${CONFIG_DIR}/validator-password.txt"
-  chmod 600 "${CONFIG_DIR}/validator-password.txt"
+  chown root:gyds "${CONFIG_DIR}/validator-password.txt"
+  chmod 640 "${CONFIG_DIR}/validator-password.txt"
 fi
 
 log "Environment written to ${CONFIG_DIR}/node.env"
