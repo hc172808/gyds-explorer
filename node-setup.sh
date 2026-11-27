@@ -143,10 +143,10 @@ if [ "${NETWORK_ENV,,}" = "testnet" ]; then
   )
 else
   ENV_FILES=(
-    "${SCRIPT_DIR}/.env"
     "${SCRIPT_DIR}/node.env"
-    "/var/www/gyds-explorer/.env"
     "/etc/gyds/node.env"
+    "${SCRIPT_DIR}/.env"
+    "/var/www/gyds-explorer/.env"
   )
 fi
 for ENV_FILE in "${ENV_FILES[@]}"; do

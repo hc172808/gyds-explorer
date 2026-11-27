@@ -43,6 +43,12 @@ test("Mainnet node setup targets exactly 3 billion GYDS", () => {
   assert.match(source, /NATIVE_SUPPLY="\$\{NATIVE_SUPPLY:-3000000000\}"/);
   assert.match(source, /\[ "\$NATIVE_SUPPLY_VALUE" = "3000000000" \]/);
   assert.match(source, /Mainnet NATIVE_SUPPLY must be exactly 3,000,000,000 GYDS/);
+
+  const mainnetEnvFiles = source.match(/else\s+ENV_FILES=\(([\s\S]*?)\n\s*\)\nfi/);
+  assert.ok(mainnetEnvFiles);
+  const files = mainnetEnvFiles[1];
+  assert.ok(files.indexOf('"${SCRIPT_DIR}/node.env"') < files.indexOf('"${SCRIPT_DIR}/.env"'));
+  assert.ok(files.indexOf('"/etc/gyds/node.env"') < files.indexOf('"${SCRIPT_DIR}/.env"'));
 });
 
 test("network selection maps to the documented chain IDs and node ports", () => {
