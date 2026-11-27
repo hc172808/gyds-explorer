@@ -529,6 +529,8 @@ else
 fi
 
 chown -R root:root "${CONFIG_DIR}"
+chown root:gyds "${CONFIG_DIR}"
+chmod 710 "${CONFIG_DIR}"
 chown -R gyds:gyds "${DATA_DIR}" "${LOG_DIR}"
 
 log "Directories ready: ${DATA_DIR}, ${CONFIG_DIR}, ${LOG_DIR}"

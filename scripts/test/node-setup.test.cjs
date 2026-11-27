@@ -53,6 +53,8 @@ test("Mainnet node setup targets exactly 3 billion GYDS", () => {
 
 test("node signing password files are readable by the Geth service group", () => {
   const source = readFileSync(setupScript, "utf8");
+  assert.match(source, /chown root:gyds "\$\{CONFIG_DIR\}"/);
+  assert.match(source, /chmod 710 "\$\{CONFIG_DIR\}"/);
   assert.match(source, /chown root:gyds "\$\{CONFIG_DIR\}\/account-password\.txt"/);
   assert.match(source, /chmod 640 "\$\{CONFIG_DIR\}\/account-password\.txt"/);
   assert.match(source, /chown root:gyds "\$\{CONFIG_DIR\}\/validator-password\.txt"/);
